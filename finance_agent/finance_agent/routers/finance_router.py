@@ -1,53 +1,39 @@
-"""
-Router: single entry point for other agents/systems to reach the Finance Agent.
-Dispatches inbound requests to the correct service. No calculation logic here.
-"""
-
-from abc import abstractmethod
-from typing import Union
-
-from finance_agent.finance_agent.core.interfaces import AgentInterface
-from finance_agent.finance_agent.schemas.freight import FreightCostRequest, FreightCostResponse
-from finance_agent.finance_agent.schemas.insurance import InsuranceCostRequest, InsuranceCostResponse
-from finance_agent.finance_agent.schemas.currency import CurrencyConversionRequest, CurrencyConversionResponse
-from finance_agent.finance_agent.schemas.cost_estimation import CostEstimationRequest, CostEstimationResponse
-from finance_agent.finance_agent.services.freight_cost_service import FreightCostService
-from finance_agent.finance_agent.services.insurance_cost_service import InsuranceCostService
-from finance_agent.finance_agent.services.currency_conversion_service import CurrencyConversionService
-from finance_agent.finance_agent.services.cost_estimation_service import CostEstimationService
-
-FinanceRequestType = Union[
-    FreightCostRequest, InsuranceCostRequest, CurrencyConversionRequest, CostEstimationRequest
-]
-FinanceResponseType = Union[
-    FreightCostResponse, InsuranceCostResponse, CurrencyConversionResponse, CostEstimationResponse
-]
+from finance_agent.finance_agent.container import (
+    currency_service,
+    freight_service,
+    import_duty_service,
+    insurance_service,
+    landed_cost_service,
+    profit_service,
+    tax_service,
+    report_service)
 
 
-class FinanceRouter(AgentInterface):
-    """Exposes Finance Agent capabilities to other agents via a single interface."""
+class FinanceRouter:
+    """
+    Entry point for the Finance Agent.
+    """
 
-    def __init__(
-        self,
-        freight_cost_service: FreightCostService,
-        insurance_cost_service: InsuranceCostService,
-        currency_conversion_service: CurrencyConversionService,
-        cost_estimation_service: CostEstimationService,
-    ) -> None:
-        self.freight_cost_service = freight_cost_service
-        self.insurance_cost_service = insurance_cost_service
-        self.currency_conversion_service = currency_conversion_service
-        self.cost_estimation_service = cost_estimation_service
+    def get_freight_cost(self, shipment):
+        return freight_service.execute(shipment)
 
-    @abstractmethod
-    def handle_request(self, request: FinanceRequestType) -> FinanceResponseType:
-        """Dispatch an inbound request to the matching service based on its type."""
-        if isinstance(request, FreightCostRequest):
-            return self.freight_cost_service.execute(request)
-        if isinstance(request, InsuranceCostRequest):
-            return self.insurance_cost_service.execute(request)
-        if isinstance(request, CurrencyConversionRequest):
-            return self.currency_conversion_service.execute(request)
-        if isinstance(request, CostEstimationRequest):
-            return self.cost_estimation_service.execute(request)
-        raise TypeError(f"Unsupported request type: {type(request)}")
+    def get_insurance_cost(self, shipment):
+        return insurance_service.execute(shipment)
+
+    def get_import_duty(self, shipment):
+        return import_duty_service.execute(shipment)
+
+    def get_tax(self, shipment):
+        return tax_service.execute(shipment)
+
+    def convert_currency(self, request):
+        return currency_service.execute(request)
+
+    def get_landed_cost(self, report):
+        return landed_cost_service.execute(report)
+
+    def get_profit(self, report, selling_price):
+        return profit_service.execute(report, selling_price)
+    
+    def generate_report(self, report):
+        return report_service.execute(report)

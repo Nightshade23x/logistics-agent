@@ -2,7 +2,7 @@
 Service responsible for estimating profit.
 """
 
-from abc import abstractmethod
+#from abc import abstractmethod
 from decimal import Decimal
 
 from finance_agent.finance_agent.core.interfaces import FinanceServiceInterface
@@ -14,7 +14,6 @@ class ProfitService(FinanceServiceInterface):
     Calculates estimated profit.
     """
 
-    @abstractmethod
     def execute(
         self,
         report: FinanceReport,
@@ -26,4 +25,7 @@ class ProfitService(FinanceServiceInterface):
         Profit = Selling Price - Total Cost
         """
 
-        return selling_price - report.total_cost
+        profit = Decimal(str(selling_price)) - report.total_cost
+        return profit
+
+    

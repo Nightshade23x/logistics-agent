@@ -2,7 +2,6 @@
 Service responsible for calculating landed cost.
 """
 
-from abc import abstractmethod
 from decimal import Decimal
 
 from finance_agent.finance_agent.core.interfaces import FinanceServiceInterface
@@ -14,17 +13,7 @@ class LandedCostService(FinanceServiceInterface):
     Calculates landed cost.
     """
 
-    @abstractmethod
     def execute(self, report: FinanceReport) -> Decimal:
-        """
-        Formula:
-
-        Freight
-        + Insurance
-        + Import Duty
-        + Taxes
-        """
-
         return (
             report.freight_cost
             + report.insurance_cost
