@@ -1,69 +1,64 @@
 """
-Service responsible for combined cost estimation.
-Composes FreightCostService, InsuranceCostService, and
-CurrencyConversionService rather than duplicating their logic.
+Finance Orchestrator Service.
+
+Coordinates all finance services and produces a FinanceReport.
 """
 
+from abc import abstractmethod
+from decimal import Decimal
+
 from finance_agent.core.interfaces import FinanceServiceInterface
-from finance_agent.schemas.cost_estimation import CostEstimationRequest, CostEstimationResponse
-from finance_agent.schemas.freight import FreightCostRequest
-from finance_agent.schemas.insurance import InsuranceCostRequest
-from finance_agent.schemas.currency import CurrencyConversionRequest
+from finance_agent.models.finance_report import FinanceReport
+from finance_agent.models.shipment import Shipment
 from finance_agent.services.freight_cost_service import FreightCostService
 from finance_agent.services.insurance_cost_service import InsuranceCostService
-from finance_agent.services.currency_conversion_service import CurrencyConversionService
+from finance_agent.services.import_duty_service import ImportDutyService
+from finance_agent.services.tax_service import TaxService
+from finance_agent.services.landed_cost_service import LandedCostService
 
 
 class CostEstimationService(FinanceServiceInterface):
-    """Combines freight and insurance cost into a total, optionally converted currency."""
+    """
+    Orchestrates all finance calculations.
+    """
 
     def __init__(
         self,
-        freight_cost_service: FreightCostService,
-        insurance_cost_service: InsuranceCostService,
-        currency_conversion_service: CurrencyConversionService,
+        freight_service: FreightCostService,
+        insurance_service: InsuranceCostService,
+        import_duty_service: ImportDutyService,
+        tax_service: TaxService,
+        landed_cost_service: LandedCostService,
     ) -> None:
-        self.freight_cost_service = freight_cost_service
-        self.insurance_cost_service = insurance_cost_service
-        self.currency_conversion_service = currency_conversion_service
 
-    def execute(self, request: CostEstimationRequest) -> CostEstimationResponse:
-        """Calculate total_cost = freight_cost + insurance_cost, converted if needed."""
-        freight_response = self.freight_cost_service.execute(
-            FreightCostRequest(
-                shipment_id=request.shipment_id,
-                weight_kg=request.weight_kg,
-                origin=request.origin,
-                destination=request.destination,
-                currency=request.currency,
-            )
+        self.freight_service = freight_service
+        self.insurance_service = insurance_service
+        self.import_duty_service = import_duty_service
+        self.tax_service = tax_service
+        self.landed_cost_service = landed_cost_service
+
+    @abstractmethod
+    def execute(self, shipment: Shipment) -> FinanceReport:
+
+        freight = self.freight_service.execute(shipment)
+        insurance = self.insurance_service.execute(shipment)
+        duty = self.import_duty_service.execute(shipment)
+        taxes = self.tax_service.execute(shipment)
+
+        report = FinanceReport(
+            shipment_id=shipment.shipment_id,
+            freight_cost=freight,
+            insurance_cost=insurance,
+            import_duty=duty,
+            taxes=taxes,
+            landed_cost=Decimal("0.00"),
+            currency=shipment.currency,
+            total_cost=Decimal("0.00"),
         )
-        insurance_response = self.insurance_cost_service.execute(
-            InsuranceCostRequest(
-                shipment_id=request.shipment_id,
-                declared_value=request.declared_value,
-                currency=request.currency,
-            )
-        )
 
-        subtotal = freight_response.freight_cost + insurance_response.insurance_cost
-        result_currency = request.currency
+        landed_cost = self.landed_cost_service.execute(report)
 
-        if request.target_currency != request.currency:
-            conversion = self.currency_conversion_service.execute(
-                CurrencyConversionRequest(
-                    amount=subtotal,
-                    from_currency=request.currency,
-                    to_currency=request.target_currency,
-                )
-            )
-            subtotal = conversion.converted_amount
-            result_currency = request.target_currency
+        report.landed_cost = landed_cost
+        report.total_cost = landed_cost
 
-        return CostEstimationResponse(
-            shipment_id=request.shipment_id,
-            freight_cost=freight_response.freight_cost,
-            insurance_cost=insurance_response.insurance_cost,
-            total_cost=subtotal,
-            currency=result_currency,
-        )
+        return report
