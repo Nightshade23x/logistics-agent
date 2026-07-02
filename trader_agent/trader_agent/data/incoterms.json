@@ -1,0 +1,12 @@
+{
+  "EXW": "Ex Works: Seller makes goods available at their premises. Buyer bears all costs and risks from that point onward.",
+  "FOB": "Free On Board: Seller delivers goods on board the vessel nominated by the buyer. Risk transfers once goods are on board.",
+  "CIF": "Cost, Insurance and Freight: Seller pays for cost, insurance, and freight to the named port of destination.",
+  "DDP": "Delivered Duty Paid: Seller bears all costs and risks, including import duties, until goods reach the buyer.",
+  "FCA": "Free Carrier: Seller delivers goods, cleared for export, to a carrier nominated by the buyer.",
+  "CPT": "Carriage Paid To: Seller pays for carriage to the named destination, but risk transfers once goods are handed to the first carrier.",
+  "CIP": "Carriage and Insurance Paid To: Like CPT, but seller also arranges insurance to the named destination.",
+  "DAP": "Delivered At Place: Seller delivers goods ready for unloading at the named destination, before import clearance.",
+  "DPU": "Delivered at Place Unloaded: Seller delivers and unloads goods at the named destination, before import clearance.",
+  "FAS": "Free Alongside Ship: Seller delivers goods alongside the vessel at the named port of shipment."
+}

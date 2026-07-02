@@ -1,0 +1,11 @@
+[
+  {"countries": ["india", "japan"], "agreement_name": "India-Japan CEPA"},
+  {"countries": ["india", "uae"], "agreement_name": "India-UAE CEPA"},
+  {"countries": ["usa", "canada"], "agreement_name": "USMCA"},
+  {"countries": ["usa", "mexico"], "agreement_name": "USMCA"},
+  {"countries": ["canada", "mexico"], "agreement_name": "USMCA"},
+  {"countries": ["uk", "australia"], "agreement_name": "UK-Australia FTA"},
+  {"countries": ["eu", "japan"], "agreement_name": "EU-Japan EPA"},
+  {"countries": ["india", "australia"], "agreement_name": "India-Australia ECTA"},
+  {"countries": ["uk", "india"], "agreement_name": "India-UK FTA"}
+]

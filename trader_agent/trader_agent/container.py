@@ -1,9 +1,15 @@
 """Dependency injection container for the Trader Agent MCP server.
 
-This module is the single place responsible for constructing service
-instances. server.py should only ever import from this module, never
-directly from the individual service modules.
+This module is the single place responsible for constructing repository
+and service instances. server.py should only ever import from this
+module, never directly from repositories/ or services/.
 """
+
+from .repositories.incoterms_repository import IncotermsRepository
+from .repositories.hs_code_repository import HsCodeRepository
+from .repositories.duty_repository import DutyRepository
+from .repositories.fta_repository import FtaRepository
+from .repositories.export_strategy_repository import ExportStrategyRepository
 
 from .services.incoterms_service import IncotermsService
 from .services.hs_code_service import HsCodeService
@@ -13,21 +19,29 @@ from .services.export_strategy_service import ExportStrategyService
 
 
 class Container:
-    """Holds singleton instances of all services used by the MCP server."""
+    """Holds singleton instances of all repositories and services."""
 
     def __init__(self) -> None:
-        """Instantiate all services with no external configuration required."""
-        self.incoterms_service: IncotermsService = IncotermsService()
-        self.hs_code_service: HsCodeService = HsCodeService()
-        self.duty_service: DutyService = DutyService()
-        self.fta_service: FtaService = FtaService()
-        self.export_strategy_service: ExportStrategyService = ExportStrategyService()
+        """Build repositories first, then inject them into their services."""
+        incoterms_repository = IncotermsRepository()
+        hs_code_repository = HsCodeRepository()
+        duty_repository = DutyRepository()
+        fta_repository = FtaRepository()
+        export_strategy_repository = ExportStrategyRepository()
+
+        self.incoterms_service: IncotermsService = IncotermsService(incoterms_repository)
+        self.hs_code_service: HsCodeService = HsCodeService(hs_code_repository)
+        self.duty_service: DutyService = DutyService(duty_repository)
+        self.fta_service: FtaService = FtaService(fta_repository)
+        self.export_strategy_service: ExportStrategyService = ExportStrategyService(
+            export_strategy_repository
+        )
 
 
 def build_container() -> Container:
     """Factory function that builds and returns a fully wired Container.
 
     Returns:
-        A Container instance with all services instantiated.
+        A Container instance with all repositories and services instantiated.
     """
     return Container()

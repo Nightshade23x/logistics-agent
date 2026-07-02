@@ -1,47 +1,50 @@
 """Service responsible for estimating import duties between countries."""
 
+from ..repositories.duty_repository import DutyRepository
+from ..schemas.duty import DutyRequest, DutyResponse
+
 
 class DutyService:
-    """Provides estimated duty rates for shipments between two countries.
+    """Provides estimated duty rates for shipments between two countries."""
 
-    This initial implementation uses a small in-memory table of flat
-    default duty rates, without regard to trade agreements. FTA-adjusted
-    rates are the responsibility of FtaService and can be combined with
-    this service's output in a later iteration.
-    """
+    def __init__(self, repository: DutyRepository) -> None:
+        """Initialize the DutyService with an injected repository.
 
-    def __init__(self) -> None:
-        """Initialize the DutyService with a static default duty rate table."""
-        self._default_rate_percent: float = 5.0
-        self._hs_code_rate_overrides: dict[str, float] = {
-            "8471.30": 0.0,
-            "8517.13": 0.0,
-            "6109.10": 16.5,
-            "6403.99": 20.0,
-            "9401.61": 3.0,
-            "0901.21": 0.0,
-        }
+        Args:
+            repository: Provides access to duty rate reference data.
+        """
+        self._repository = repository
 
-    def calculate(self, country_from: str, country_to: str, hs_code: str) -> str:
+    def calculate(self, request: DutyRequest) -> DutyResponse:
         """Calculate an estimated duty rate for a shipment.
 
         Args:
-            country_from: ISO country name/code of the exporting country.
-            country_to: ISO country name/code of the importing country.
-            hs_code: The HS code of the product being shipped.
+            request: The validated duty calculation request.
 
         Returns:
-            A description of the estimated duty rate and amount basis.
+            A DutyResponse describing the estimated duty rate.
         """
-        normalized_hs_code = hs_code.strip()
-        rate_percent = self._hs_code_rate_overrides.get(
-            normalized_hs_code, self._default_rate_percent
-        )
+        normalized_hs_code = request.hs_code.strip()
+        override_rate = self._repository.get_override_rate(normalized_hs_code)
 
-        return (
-            f"Estimated duty for HS code '{hs_code}' shipped from "
-            f"{country_from} to {country_to}: {rate_percent}% of declared "
-            f"customs value. This is a placeholder flat-rate estimate and "
-            f"does not account for applicable Free Trade Agreements; use "
-            f"check_fta to determine if a preferential rate may apply."
+        if override_rate is not None:
+            rate_percent = override_rate
+            rate_source = "hs_code_override"
+        else:
+            rate_percent = self._repository.get_default_rate()
+            rate_source = "default_flat_rate"
+
+        return DutyResponse(
+            country_from=request.country_from,
+            country_to=request.country_to,
+            hs_code=request.hs_code,
+            duty_rate_percent=rate_percent,
+            rate_source=rate_source,
+            message=(
+                f"Estimated duty for HS code '{request.hs_code}' shipped from "
+                f"{request.country_from} to {request.country_to}: {rate_percent}% "
+                f"of declared customs value. This is a placeholder estimate and "
+                f"does not account for applicable Free Trade Agreements; use "
+                f"check_fta to determine if a preferential rate may apply."
+            ),
         )

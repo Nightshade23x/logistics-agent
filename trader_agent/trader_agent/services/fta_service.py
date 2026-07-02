@@ -1,53 +1,56 @@
 """Service responsible for checking Free Trade Agreements (FTAs) between countries."""
 
+from ..repositories.fta_repository import FtaRepository
+from ..schemas.fta import FtaRequest, FtaResponse
+
 
 class FtaService:
-    """Provides lookups for known Free Trade Agreements between country pairs.
+    """Provides lookups for known Free Trade Agreements between country pairs."""
 
-    This initial implementation uses a small in-memory set of known FTAs.
-    Country matching is case-insensitive and order-independent.
-    """
+    def __init__(self, repository: FtaRepository) -> None:
+        """Initialize the FtaService with an injected repository.
 
-    def __init__(self) -> None:
-        """Initialize the FtaService with a static set of known FTA pairs."""
-        self._known_ftas: dict[frozenset[str], str] = {
-            frozenset({"india", "japan"}): "India-Japan CEPA",
-            frozenset({"india", "uae"}): "India-UAE CEPA",
-            frozenset({"usa", "canada"}): "USMCA",
-            frozenset({"usa", "mexico"}): "USMCA",
-            frozenset({"canada", "mexico"}): "USMCA",
-            frozenset({"uk", "australia"}): "UK-Australia FTA",
-            frozenset({"eu", "japan"}): "EU-Japan EPA",
-        }
+        Args:
+            repository: Provides access to FTA reference data.
+        """
+        self._repository = repository
 
-    def check(self, country_from: str, country_to: str) -> str:
+    def check(self, request: FtaRequest) -> FtaResponse:
         """Check whether a known Free Trade Agreement exists between two countries.
 
         Args:
-            country_from: ISO country name/code of the exporting country.
-            country_to: ISO country name/code of the importing country.
+            request: The validated FTA check request.
 
         Returns:
-            A description of the matching FTA if found, otherwise a
-            message indicating no known agreement was found in the
-            reference table.
+            An FtaResponse describing whether an agreement was found.
         """
-        pair_key = frozenset(
-            {country_from.strip().lower(), country_to.strip().lower()}
-        )
-        agreement_name = self._known_ftas.get(pair_key)
+        country_a = request.country_from.strip().lower()
+        country_b = request.country_to.strip().lower()
+        agreement_name = self._repository.find_agreement(country_a, country_b)
 
         if agreement_name:
-            return (
-                f"A Free Trade Agreement exists between {country_from} and "
-                f"{country_to}: {agreement_name}. Preferential duty rates "
-                f"may apply; verify specific product eligibility and "
-                f"rules of origin."
+            return FtaResponse(
+                country_from=request.country_from,
+                country_to=request.country_to,
+                fta_exists=True,
+                agreement_name=agreement_name,
+                message=(
+                    f"A Free Trade Agreement exists between {request.country_from} "
+                    f"and {request.country_to}: {agreement_name}. Preferential duty "
+                    f"rates may apply; verify specific product eligibility and "
+                    f"rules of origin."
+                ),
             )
 
-        return (
-            f"No known Free Trade Agreement found between {country_from} "
-            f"and {country_to} in the current reference table. This does "
-            f"not conclusively rule out an agreement; the reference table "
-            f"will be expanded in a future iteration."
+        return FtaResponse(
+            country_from=request.country_from,
+            country_to=request.country_to,
+            fta_exists=False,
+            agreement_name=None,
+            message=(
+                f"No known Free Trade Agreement found between {request.country_from} "
+                f"and {request.country_to} in the current reference table. This does "
+                f"not conclusively rule out an agreement; the reference table will "
+                f"be expanded in a future iteration."
+            ),
         )

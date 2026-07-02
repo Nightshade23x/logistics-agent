@@ -1,0 +1,12 @@
+{
+  "default_note": "No specific market notes available; conduct standard due diligence on import regulations, certification requirements, and local distribution channels.",
+  "market_notes": {
+    "usa": "Consider FDA/CPSC compliance if applicable, and factor in state-level sales tax variability.",
+    "eu": "Ensure CE marking compliance where applicable, and account for VAT registration requirements.",
+    "japan": "Local certification (e.g. PSE, JIS) may be required; consider working with a local distributor.",
+    "india": "Review GST implications and consider the India-UAE or India-Japan CEPA agreements if relevant.",
+    "uae": "Free zones like JAFZA may offer duty advantages; verify re-export rules if using UAE as a hub.",
+    "uk": "Confirm UKCA marking requirements and check post-Brexit trade agreement eligibility.",
+    "australia": "Verify labelling requirements and consider the India-Australia ECTA if shipping from India."
+  }
+}

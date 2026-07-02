@@ -8,39 +8,53 @@ from inside the outer trader_agent/ directory.
 from mcp.server.fastmcp import FastMCP
 
 from .container import build_container
+from .schemas import (
+    IncotermRequest,
+    IncotermResponse,
+    HsCodeRequest,
+    HsCodeResponse,
+    DutyRequest,
+    DutyResponse,
+    FtaRequest,
+    FtaResponse,
+    ExportStrategyRequest,
+    ExportStrategyResponse,
+)
 
 mcp = FastMCP("Trader Agent")
 container = build_container()
 
 
 @mcp.tool()
-def explain_incoterm(term: str) -> str:
+def explain_incoterm(term: str) -> IncotermResponse:
     """Explain the meaning of a given Incoterm.
 
     Args:
         term: The Incoterm code to explain (e.g. "FOB", "CIF", "EXW").
 
     Returns:
-        A human-readable explanation of the Incoterm.
+        A structured explanation of the Incoterm.
     """
-    return container.incoterms_service.explain(term)
+    request = IncotermRequest(term=term)
+    return container.incoterms_service.explain(request)
 
 
 @mcp.tool()
-def classify_hs_code(product_description: str) -> str:
+def classify_hs_code(product_description: str) -> HsCodeResponse:
     """Classify a product description into an HS (Harmonized System) code.
 
     Args:
         product_description: Free-text description of the product.
 
     Returns:
-        A best-effort HS code classification for the product.
+        A structured best-effort HS code classification for the product.
     """
-    return container.hs_code_service.classify(product_description)
+    request = HsCodeRequest(product_description=product_description)
+    return container.hs_code_service.classify(request)
 
 
 @mcp.tool()
-def calculate_duty(country_from: str, country_to: str, hs_code: str) -> str:
+def calculate_duty(country_from: str, country_to: str, hs_code: str) -> DutyResponse:
     """Calculate the estimated duty for a shipment between two countries.
 
     Args:
@@ -49,13 +63,16 @@ def calculate_duty(country_from: str, country_to: str, hs_code: str) -> str:
         hs_code: The HS code of the product being shipped.
 
     Returns:
-        An estimated duty rate and basis for the shipment.
+        A structured estimated duty rate and basis for the shipment.
     """
-    return container.duty_service.calculate(country_from, country_to, hs_code)
+    request = DutyRequest(country_from=country_from, country_to=country_to, hs_code=hs_code)
+    return container.duty_service.calculate(request)
 
 
 @mcp.tool()
-def suggest_export_strategy(product_description: str, target_market: str) -> str:
+def suggest_export_strategy(
+    product_description: str, target_market: str
+) -> ExportStrategyResponse:
     """Suggest an export strategy for a product entering a target market.
 
     Args:
@@ -63,13 +80,16 @@ def suggest_export_strategy(product_description: str, target_market: str) -> str
         target_market: The country or region being targeted for export.
 
     Returns:
-        An export strategy suggestion for the given product and market.
+        A structured export strategy suggestion for the given product and market.
     """
-    return container.export_strategy_service.suggest(product_description, target_market)
+    request = ExportStrategyRequest(
+        product_description=product_description, target_market=target_market
+    )
+    return container.export_strategy_service.suggest(request)
 
 
 @mcp.tool()
-def check_fta(country_from: str, country_to: str) -> str:
+def check_fta(country_from: str, country_to: str) -> FtaResponse:
     """Check whether a Free Trade Agreement (FTA) exists between two countries.
 
     Args:
@@ -77,9 +97,10 @@ def check_fta(country_from: str, country_to: str) -> str:
         country_to: ISO country name/code of the importing country.
 
     Returns:
-        A description of any known FTA between the two countries.
+        A structured description of any known FTA between the two countries.
     """
-    return container.fta_service.check(country_from, country_to)
+    request = FtaRequest(country_from=country_from, country_to=country_to)
+    return container.fta_service.check(request)
 
 
 if __name__ == "__main__":
