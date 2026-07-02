@@ -5,8 +5,8 @@ Concrete storage mechanism (DB, file, API) to be decided later.
 
 from abc import abstractmethod
 
-from finance_agent.core.interfaces import RepositoryInterface
-from finance_agent.models.cost import Cost
+from finance_agent.finance_agent.core.interfaces import RepositoryInterface
+from finance_agent.finance_agent.models.cost import Cost
 
 
 class CostRepository(RepositoryInterface):

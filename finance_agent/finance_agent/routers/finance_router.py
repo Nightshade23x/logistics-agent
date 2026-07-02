@@ -6,15 +6,15 @@ Dispatches inbound requests to the correct service. No calculation logic here.
 from abc import abstractmethod
 from typing import Union
 
-from finance_agent.core.interfaces import AgentInterface
-from finance_agent.schemas.freight import FreightCostRequest, FreightCostResponse
-from finance_agent.schemas.insurance import InsuranceCostRequest, InsuranceCostResponse
-from finance_agent.schemas.currency import CurrencyConversionRequest, CurrencyConversionResponse
-from finance_agent.schemas.cost_estimation import CostEstimationRequest, CostEstimationResponse
-from finance_agent.services.freight_cost_service import FreightCostService
-from finance_agent.services.insurance_cost_service import InsuranceCostService
-from finance_agent.services.currency_conversion_service import CurrencyConversionService
-from finance_agent.services.cost_estimation_service import CostEstimationService
+from finance_agent.finance_agent.core.interfaces import AgentInterface
+from finance_agent.finance_agent.schemas.freight import FreightCostRequest, FreightCostResponse
+from finance_agent.finance_agent.schemas.insurance import InsuranceCostRequest, InsuranceCostResponse
+from finance_agent.finance_agent.schemas.currency import CurrencyConversionRequest, CurrencyConversionResponse
+from finance_agent.finance_agent.schemas.cost_estimation import CostEstimationRequest, CostEstimationResponse
+from finance_agent.finance_agent.services.freight_cost_service import FreightCostService
+from finance_agent.finance_agent.services.insurance_cost_service import InsuranceCostService
+from finance_agent.finance_agent.services.currency_conversion_service import CurrencyConversionService
+from finance_agent.finance_agent.services.cost_estimation_service import CostEstimationService
 
 FinanceRequestType = Union[
     FreightCostRequest, InsuranceCostRequest, CurrencyConversionRequest, CostEstimationRequest

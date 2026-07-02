@@ -5,8 +5,8 @@ Service responsible for calculating landed cost.
 from abc import abstractmethod
 from decimal import Decimal
 
-from finance_agent.core.interfaces import FinanceServiceInterface
-from finance_agent.models.finance_report import FinanceReport
+from finance_agent.finance_agent.core.interfaces import FinanceServiceInterface
+from finance_agent.finance_agent.models.finance_report import FinanceReport
 
 
 class LandedCostService(FinanceServiceInterface):

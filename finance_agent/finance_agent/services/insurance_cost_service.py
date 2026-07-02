@@ -4,9 +4,9 @@ Service responsible for calculating insurance cost.
 
 from decimal import Decimal
 
-from finance_agent.core.interfaces import FinanceServiceInterface
-from finance_agent.models.shipment import Shipment
-from finance_agent.repositories.insurance_rate_repository import InsuranceRateRepository
+from finance_agent.finance_agent.core.interfaces import FinanceServiceInterface
+from finance_agent.finance_agent.models.shipment import Shipment
+from finance_agent.finance_agent.repositories.insurance_rate_repository import InsuranceRateRepository
 
 
 class InsuranceCostService(FinanceServiceInterface):

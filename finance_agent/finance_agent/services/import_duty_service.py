@@ -4,8 +4,8 @@ Service responsible for calculating import duty.
 
 from decimal import Decimal
 
-from finance_agent.models.shipment import Shipment
-from finance_agent.core.interfaces import FinanceServiceInterface
+from finance_agent.finance_agent.models.shipment import Shipment
+from finance_agent.finance_agent.core.interfaces import FinanceServiceInterface
 
 
 class ImportDutyService(FinanceServiceInterface):

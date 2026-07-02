@@ -7,14 +7,14 @@ Coordinates all finance services and produces a FinanceReport.
 from abc import abstractmethod
 from decimal import Decimal
 
-from finance_agent.core.interfaces import FinanceServiceInterface
-from finance_agent.models.finance_report import FinanceReport
-from finance_agent.models.shipment import Shipment
-from finance_agent.services.freight_cost_service import FreightCostService
-from finance_agent.services.insurance_cost_service import InsuranceCostService
-from finance_agent.services.import_duty_service import ImportDutyService
-from finance_agent.services.tax_service import TaxService
-from finance_agent.services.landed_cost_service import LandedCostService
+from finance_agent.finance_agent.core.interfaces import FinanceServiceInterface
+from finance_agent.finance_agent.models.finance_report import FinanceReport
+from finance_agent.finance_agent.models.shipment import Shipment
+from finance_agent.finance_agent.services.freight_cost_service import FreightCostService
+from finance_agent.finance_agent.services.insurance_cost_service import InsuranceCostService
+from finance_agent.finance_agent.services.import_duty_service import ImportDutyService
+from finance_agent.finance_agent.services.tax_service import TaxService
+from finance_agent.finance_agent.services.landed_cost_service import LandedCostService
 
 
 class CostEstimationService(FinanceServiceInterface):

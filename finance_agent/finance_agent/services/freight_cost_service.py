@@ -4,9 +4,9 @@ Service responsible for calculating freight cost.
 
 from decimal import Decimal
 
-from finance_agent.core.interfaces import FinanceServiceInterface
-from finance_agent.models.shipment import Shipment
-from finance_agent.repositories.freight_rate_repository import FreightRateRepository
+from finance_agent.finance_agent.core.interfaces import FinanceServiceInterface
+from finance_agent.finance_agent.models.shipment import Shipment
+from finance_agent.finance_agent.repositories.freight_rate_repository import FreightRateRepository
 
 
 class FreightCostService(FinanceServiceInterface):
