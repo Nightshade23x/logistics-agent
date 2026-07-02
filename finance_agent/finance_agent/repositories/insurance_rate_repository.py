@@ -1,15 +1,18 @@
 """
 Abstract repository for insurance rate lookups.
-No concrete data source (DB/API) implemented — stub interface only.
 """
 
 from abc import ABC, abstractmethod
+from decimal import Decimal
 
 
 class InsuranceRateRepository(ABC):
-    """Provides insurance rate data used to price shipment coverage."""
+    """Provides insurance rate data."""
 
     @abstractmethod
-    def get_rate(self, shipment_id: str) -> float:
-        """Return the insurance rate (fraction of declared value) for a shipment."""
+    def get_rate(
+        self,
+        shipment_id: str,
+    ) -> Decimal:
+        """Return insurance rate."""
         ...
