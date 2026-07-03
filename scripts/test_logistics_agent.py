@@ -191,6 +191,37 @@ def test_route_advisor_for_perishable_cargo():
     assert plan["route_plan"]["destination"] == "USA"
 
 
+
+def test_container_layout():
+    raw_items = [
+        {
+            "name": "Scooter",
+            "quantity": 2,
+            "length_m": 1.8,
+            "width_m": 0.7,
+            "height_m": 1.1,
+            "weight_kg": 90,
+            "stackable": False,
+        },
+        {
+            "name": "Glass bottles",
+            "quantity": 10,
+            "length_m": 0.3,
+            "width_m": 0.3,
+            "height_m": 0.4,
+            "weight_kg": 2,
+            "fragile": True,
+            "unload_priority": 1,
+        },
+    ]
+
+    plan = build_logistics_plan(raw_items)
+
+    assert "container_layout" in plan
+    assert plan["container_layout"]["layout_type"] == "rule_based_zone_layout"
+    assert len(plan["container_layout"]["zones"]) > 0
+
+
 def main():
     test_cbm_calculation()
     test_container_recommendation()
@@ -200,6 +231,7 @@ def main():
     test_item_resolver_uses_catalog()
     test_container_strategy()
     test_route_advisor_for_perishable_cargo()
+    test_container_layout()
     print("All logistics agent tests passed.")
 
 

@@ -139,6 +139,30 @@ def format_logistics_plan(plan: dict[str, Any], shipment_info: dict[str, Any] | 
         lines.append(f"  Total weight: {item['total_weight_kg']} kg")
         lines.append(f"  Categories: {categories}")
 
+    container_layout = plan.get("container_layout")
+    if container_layout:
+        lines.append("")
+        lines.append("CONTAINER LAYOUT DRAFT")
+        lines.append("-" * 30)
+        lines.append(f"Layout type: {container_layout['layout_type']}")
+        lines.append(f"Container: {container_layout['container']}")
+        lines.append("")
+
+        for zone in container_layout["zones"]:
+            lines.append(f"{zone['zone_name']}:")
+            lines.append(f"  {zone['description']}")
+
+            for item in zone["items"]:
+                lines.append(
+                    f"  - Step {item['sequence_number']}: {item['item_name']} x {item['quantity']}"
+                )
+
+            lines.append("")
+
+        lines.append("Layout notes:")
+        for note in container_layout["layout_notes"]:
+            lines.append(f"- {note}")
+
     lines.append("")
     lines.append("SUGGESTED LOADING SEQUENCE")
     lines.append("-" * 30)
