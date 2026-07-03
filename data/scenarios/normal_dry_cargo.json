@@ -1,0 +1,17 @@
+﻿{
+  "shipment_id": "SCENARIO-NORMAL-001",
+  "customer": "Normal Cargo Demo",
+  "origin": "India",
+  "destination": "USA",
+  "notes": "Standard dry cargo shipment.",
+  "items": [
+    {
+      "name": "pillows",
+      "quantity": 200
+    },
+    {
+      "name": "dining set",
+      "quantity": 20
+    }
+  ]
+}

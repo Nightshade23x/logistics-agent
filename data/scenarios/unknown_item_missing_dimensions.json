@@ -1,0 +1,17 @@
+﻿{
+  "shipment_id": "SCENARIO-UNKNOWN-001",
+  "customer": "Unknown Item Demo",
+  "origin": "India",
+  "destination": "USA",
+  "notes": "This scenario checks whether the agent asks for missing dimensions.",
+  "items": [
+    {
+      "name": "custom machine part",
+      "quantity": 10
+    },
+    {
+      "name": "TVs",
+      "quantity": 5
+    }
+  ]
+}

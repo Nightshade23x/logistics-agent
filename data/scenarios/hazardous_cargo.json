@@ -1,0 +1,20 @@
+﻿{
+  "shipment_id": "SCENARIO-HAZARDOUS-001",
+  "customer": "Hazardous Cargo Demo",
+  "origin": "India",
+  "destination": "USA",
+  "notes": "Hazardous cargo example using batteries.",
+  "items": [
+    {
+      "name": "Lithium batteries",
+      "quantity": 50,
+      "length_m": 0.4,
+      "width_m": 0.3,
+      "height_m": 0.2,
+      "weight_kg": 5,
+      "hazardous": true,
+      "stackable": true,
+      "unload_priority": 2
+    }
+  ]
+}
