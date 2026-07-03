@@ -9,6 +9,7 @@ from .repositories.country_risk_repository import CountryRiskRepository
 from .services.country_risk_service import CountryRiskService
 from .repositories.sanctions_repository import SanctionsRepository
 from .services.sanctions_service import SanctionsService
+from .services.risk_assessment_service import RiskAssessmentService
 
 
 class Container:
@@ -26,6 +27,11 @@ class Container:
 
         self.sanctions_service: SanctionsService = SanctionsService(
             sanctions_repository=sanctions_repository,
+        )
+
+        self.risk_assessment_service: RiskAssessmentService = RiskAssessmentService(
+            country_risk_service=self.country_risk_service,
+            sanctions_service=self.sanctions_service,
         )
 
 

@@ -10,6 +10,7 @@ from mcp.server.fastmcp import FastMCP
 from .container import build_container
 from .schemas.country_risk import CountryRiskRequest, CountryRiskResponse
 from .schemas.sanctions import CountrySanctionsRequest, CountrySanctionsResponse
+from .schemas.envelope import AgentResponse
 
 mcp = FastMCP("Risk Agent")
 container = build_container()
@@ -51,6 +52,22 @@ def get_country_sanctions(country: str) -> CountrySanctionsResponse:
     """
     request = CountrySanctionsRequest(country=country)
     return container.sanctions_service.get_country(request)
+
+
+@mcp.tool()
+def assess_trade_risk(country: str) -> AgentResponse:
+    """Run a full risk assessment for a country, in the standard agent contract format.
+
+    Combines corruption risk and sanctions checks into a single structured
+    response suitable for orchestration by the User Agent.
+
+    Args:
+        country: The country name to assess, e.g. "Brazil".
+
+    Returns:
+        A standard AgentResponse with summary, report, and handoff data.
+    """
+    return container.risk_assessment_service.assess(country)
 
 
 if __name__ == "__main__":
