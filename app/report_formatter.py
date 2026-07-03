@@ -1,0 +1,65 @@
+﻿from __future__ import annotations
+
+from typing import Any
+
+
+def format_logistics_plan(plan: dict[str, Any], shipment_info: dict[str, Any] | None = None) -> str:
+    lines: list[str] = []
+
+    if shipment_info:
+        lines.append("LOGISTICS SHIPMENT PLAN")
+        lines.append("=" * 30)
+        lines.append(f"Shipment ID: {shipment_info.get('shipment_id', 'N/A')}")
+        lines.append(f"Customer: {shipment_info.get('customer', 'N/A')}")
+        lines.append(f"Origin: {shipment_info.get('origin', 'N/A')}")
+        lines.append(f"Destination: {shipment_info.get('destination', 'N/A')}")
+
+        notes = shipment_info.get("notes")
+        if notes:
+            lines.append(f"Notes: {notes}")
+
+        lines.append("")
+
+    summary = plan["shipment_summary"]
+    container = plan["container_recommendation"]
+
+    lines.append("SHIPMENT SUMMARY")
+    lines.append("-" * 30)
+    lines.append(f"Total item units: {summary['total_items']}")
+    lines.append(f"Total CBM: {summary['total_cbm']}")
+    lines.append(f"Total weight: {summary['total_weight_kg']} kg")
+    lines.append("")
+
+    lines.append("CONTAINER RECOMMENDATION")
+    lines.append("-" * 30)
+    lines.append(f"Recommended container: {container['container_name']}")
+
+    if container["capacity_cbm"] is not None:
+        lines.append(f"Container capacity: {container['capacity_cbm']} CBM")
+        lines.append(f"Safe CBM limit: {container['safe_cbm_limit']} CBM")
+        lines.append(f"Max payload: {container['max_payload_kg']} kg")
+        lines.append(f"Estimated utilization: {container['estimated_utilization_percent']}%")
+
+    lines.append(f"Reason: {container['reason']}")
+    lines.append("")
+
+    lines.append("ITEM BREAKDOWN")
+    lines.append("-" * 30)
+
+    for item in plan["item_breakdown"]:
+        categories = ", ".join(item["cargo_categories"])
+
+        lines.append(f"- {item['name']} x {item['quantity']}")
+        lines.append(f"  Unit CBM: {item['unit_cbm']}")
+        lines.append(f"  Total CBM: {item['total_cbm']}")
+        lines.append(f"  Total weight: {item['total_weight_kg']} kg")
+        lines.append(f"  Categories: {categories}")
+
+    lines.append("")
+    lines.append("LOADING ADVICE")
+    lines.append("-" * 30)
+
+    for index, advice in enumerate(plan["loading_advice"], start=1):
+        lines.append(f"{index}. {advice}")
+
+    return "\n".join(lines)
