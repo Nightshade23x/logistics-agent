@@ -162,6 +162,35 @@ def test_container_strategy():
     assert len(plan["container_strategy"]["recommendations"]) > 0
 
 
+
+def test_route_advisor_for_perishable_cargo():
+    raw_items = [
+        {
+            "name": "Fresh food",
+            "quantity": 10,
+            "length_m": 0.5,
+            "width_m": 0.4,
+            "height_m": 0.3,
+            "weight_kg": 8,
+            "perishable": True,
+        }
+    ]
+
+    plan = build_logistics_plan(
+        raw_items,
+        shipment_context={
+            "origin": "India",
+            "destination": "USA",
+        },
+    )
+
+    assert "route_plan" in plan
+    assert plan["route_plan"]["route_type"] == "temperature_sensitive_route"
+    assert plan["route_plan"]["priority"] == "high"
+    assert plan["route_plan"]["origin"] == "India"
+    assert plan["route_plan"]["destination"] == "USA"
+
+
 def main():
     test_cbm_calculation()
     test_container_recommendation()
@@ -170,6 +199,7 @@ def main():
     test_logistics_risk_assessment()
     test_item_resolver_uses_catalog()
     test_container_strategy()
+    test_route_advisor_for_perishable_cargo()
     print("All logistics agent tests passed.")
 
 

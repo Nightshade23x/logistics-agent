@@ -97,6 +97,36 @@ def format_logistics_plan(plan: dict[str, Any], shipment_info: dict[str, Any] | 
             lines.append(f"- {requirement}")
         lines.append("")
 
+    route_plan = plan.get("route_plan")
+    if route_plan:
+        lines.append("ROUTE & HANDLING ADVISOR")
+        lines.append("-" * 30)
+        lines.append(f"Route type: {route_plan['route_type']}")
+        lines.append(f"Priority: {route_plan['priority'].upper()}")
+        lines.append(f"Summary: {route_plan['summary']}")
+        lines.append("")
+
+        lines.append("Route warnings:")
+        for warning in route_plan["route_warnings"]:
+            lines.append(f"- {warning}")
+
+        lines.append("")
+        lines.append("Handling priorities:")
+        for priority_item in route_plan["handling_priorities"]:
+            lines.append(f"- {priority_item}")
+
+        lines.append("")
+        lines.append("Route planning checkpoints:")
+        for checkpoint in route_plan["checkpoints"]:
+            lines.append(f"- {checkpoint}")
+
+        lines.append("")
+        lines.append("Missing information:")
+        for missing in route_plan["missing_info"]:
+            lines.append(f"- {missing}")
+
+        lines.append("")
+
     lines.append("ITEM BREAKDOWN")
     lines.append("-" * 30)
 

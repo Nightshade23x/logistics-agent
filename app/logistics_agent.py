@@ -6,6 +6,7 @@ from typing import Any
 from app.container_strategy import recommend_container_strategy
 from app.loading_planner import generate_loading_sequence
 from app.logistics_risk import assess_logistics_risk
+from app.route_advisor import recommend_route_and_handling
 
 
 @dataclass(frozen=True)
@@ -243,7 +244,7 @@ def generate_loading_advice(items: list[CargoItem]) -> list[str]:
     return advice
 
 
-def build_logistics_plan(raw_items: list[dict[str, Any]]) -> dict[str, Any]:
+def build_logistics_plan(raw_items: list[dict[str, Any]], shipment_context: dict[str, Any] | None = None) -> dict[str, Any]:
     items = [CargoItem(**raw_item) for raw_item in raw_items]
 
     item_breakdown = []
@@ -261,11 +262,20 @@ def build_logistics_plan(raw_items: list[dict[str, Any]]) -> dict[str, Any]:
 
     total_cbm = calculate_total_cbm(items)
     total_weight = calculate_total_weight(items)
+    shipment_context = shipment_context or {}
+
     container_recommendation = recommend_container(items)
     container_strategy = recommend_container_strategy(item_breakdown, container_recommendation)
     loading_advice = generate_loading_advice(items)
     loading_sequence = generate_loading_sequence(item_breakdown)
     logistics_risk = assess_logistics_risk(item_breakdown, container_recommendation)
+    route_plan = recommend_route_and_handling(
+        origin=shipment_context.get("origin"),
+        destination=shipment_context.get("destination"),
+        item_breakdown=item_breakdown,
+        container_strategy=container_strategy,
+        logistics_risk=logistics_risk,
+    )
 
     return {
         "shipment_summary": {
@@ -273,10 +283,12 @@ def build_logistics_plan(raw_items: list[dict[str, Any]]) -> dict[str, Any]:
             "total_cbm": total_cbm,
             "total_weight_kg": total_weight,
         },
+        "shipment_context": shipment_context,
         "item_breakdown": item_breakdown,
         "container_recommendation": container_recommendation,
         "container_strategy": container_strategy,
         "logistics_risk": logistics_risk,
+        "route_plan": route_plan,
         "loading_sequence": loading_sequence,
         "loading_advice": loading_advice,
     }

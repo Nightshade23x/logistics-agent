@@ -31,7 +31,19 @@ def main() -> None:
         shipment_data = json.load(file)
 
     resolution = resolve_items(shipment_data["items"])
-    plan = build_logistics_plan(resolution["resolved_items"])
+
+    shipment_context = {
+        "shipment_id": shipment_data.get("shipment_id"),
+        "customer": shipment_data.get("customer"),
+        "origin": shipment_data.get("origin"),
+        "destination": shipment_data.get("destination"),
+        "notes": shipment_data.get("notes"),
+    }
+
+    plan = build_logistics_plan(
+        resolution["resolved_items"],
+        shipment_context=shipment_context,
+    )
 
     plan["input_resolution"] = {
         "issues": resolution["issues"],
