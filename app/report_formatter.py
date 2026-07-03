@@ -20,6 +20,28 @@ def format_logistics_plan(plan: dict[str, Any], shipment_info: dict[str, Any] | 
 
         lines.append("")
 
+    input_resolution = plan.get("input_resolution")
+    if input_resolution:
+        lines.append("INPUT ASSUMPTIONS & MISSING INFO")
+        lines.append("-" * 30)
+
+        issues = input_resolution.get("issues", [])
+        unresolved_items = input_resolution.get("unresolved_items", [])
+
+        if issues:
+            for issue in issues:
+                lines.append(f"- {issue}")
+        else:
+            lines.append("- No input assumptions were needed.")
+
+        if unresolved_items:
+            lines.append("")
+            lines.append("Unresolved items:")
+            for item in unresolved_items:
+                lines.append(f"- {item.get('name', 'Unknown item')}")
+
+        lines.append("")
+
     summary = plan["shipment_summary"]
     container = plan["container_recommendation"]
 

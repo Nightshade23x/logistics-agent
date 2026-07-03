@@ -4,6 +4,7 @@ import sys
 ROOT_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT_DIR))
 
+from app.item_resolver import resolve_items
 from app.logistics_agent import CargoItem, build_logistics_plan, calculate_total_cbm, recommend_container
 
 
@@ -122,12 +123,30 @@ def test_logistics_risk_assessment():
     assert len(plan["logistics_risk"]["requirements"]) > 0
 
 
+
+def test_item_resolver_uses_catalog():
+    raw_items = [
+        {
+            "name": "TVs",
+            "quantity": 5,
+        }
+    ]
+
+    resolution = resolve_items(raw_items)
+
+    assert len(resolution["resolved_items"]) == 1
+    assert resolution["resolved_items"][0]["length_m"] == 1.2
+    assert resolution["resolved_items"][0]["fragile"] is True
+    assert len(resolution["issues"]) == 1
+
+
 def main():
     test_cbm_calculation()
     test_container_recommendation()
     test_full_logistics_plan()
     test_loading_sequence()
     test_logistics_risk_assessment()
+    test_item_resolver_uses_catalog()
     print("All logistics agent tests passed.")
 
 
