@@ -7,6 +7,8 @@ module, never directly from repositories/ or services/.
 
 from .repositories.country_risk_repository import CountryRiskRepository
 from .services.country_risk_service import CountryRiskService
+from .repositories.sanctions_repository import SanctionsRepository
+from .services.sanctions_service import SanctionsService
 
 
 class Container:
@@ -18,6 +20,12 @@ class Container:
 
         self.country_risk_service: CountryRiskService = CountryRiskService(
             country_risk_repository=country_risk_repository,
+        )
+
+        sanctions_repository = SanctionsRepository()
+
+        self.sanctions_service: SanctionsService = SanctionsService(
+            sanctions_repository=sanctions_repository,
         )
 
 
