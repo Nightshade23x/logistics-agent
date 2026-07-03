@@ -1,15 +1,31 @@
 ﻿from __future__ import annotations
 
 import json
+from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Any
 
 
 CATALOG_PATH = Path(__file__).resolve().parents[1] / "data" / "item_catalog.json"
+FUZZY_MATCH_THRESHOLD = 0.78
 
 
 def _normalize_name(name: str) -> str:
-    return name.lower().strip().replace("-", " ")
+    return " ".join(name.lower().strip().replace("-", " ").split())
+
+
+def _singularize(word: str) -> str:
+    if word.endswith("ies") and len(word) > 3:
+        return word[:-3] + "y"
+
+    if word.endswith("s") and len(word) > 3:
+        return word[:-1]
+
+    return word
+
+
+def _normalized_tokens(name: str) -> set[str]:
+    return {_singularize(token) for token in _normalize_name(name).split()}
 
 
 def load_item_catalog(catalog_path: Path | None = None) -> list[dict[str, Any]]:
@@ -19,17 +35,67 @@ def load_item_catalog(catalog_path: Path | None = None) -> list[dict[str, Any]]:
         return json.load(file)
 
 
-def find_catalog_match(item_name: str, catalog: list[dict[str, Any]]) -> dict[str, Any] | None:
-    normalized_item_name = _normalize_name(item_name)
+def _candidate_names(catalog_item: dict[str, Any]) -> list[str]:
+    return [catalog_item["canonical_name"], *catalog_item.get("aliases", [])]
+
+
+def _match_score(item_name: str, candidate_name: str) -> float:
+    normalized_item = _normalize_name(item_name)
+    normalized_candidate = _normalize_name(candidate_name)
+
+    if normalized_item == normalized_candidate:
+        return 1.0
+
+    item_tokens = _normalized_tokens(normalized_item)
+    candidate_tokens = _normalized_tokens(normalized_candidate)
+
+    if item_tokens == candidate_tokens:
+        return 0.98
+
+    if normalized_candidate in normalized_item or normalized_item in normalized_candidate:
+        return 0.92
+
+    token_overlap = 0.0
+    if item_tokens and candidate_tokens:
+        token_overlap = len(item_tokens.intersection(candidate_tokens)) / len(
+            item_tokens.union(candidate_tokens)
+        )
+
+    sequence_score = SequenceMatcher(
+        None,
+        normalized_item,
+        normalized_candidate,
+    ).ratio()
+
+    return max(sequence_score, token_overlap)
+
+
+def _find_catalog_match_with_score(
+    item_name: str,
+    catalog: list[dict[str, Any]],
+) -> tuple[dict[str, Any] | None, str | None, float]:
+    best_item: dict[str, Any] | None = None
+    best_name: str | None = None
+    best_score = 0.0
 
     for catalog_item in catalog:
-        possible_names = [catalog_item["canonical_name"], *catalog_item.get("aliases", [])]
-        normalized_names = {_normalize_name(name) for name in possible_names}
+        for candidate_name in _candidate_names(catalog_item):
+            score = _match_score(item_name, candidate_name)
 
-        if normalized_item_name in normalized_names:
-            return catalog_item
+            if score > best_score:
+                best_item = catalog_item
+                best_name = candidate_name
+                best_score = score
 
-    return None
+    if best_score >= FUZZY_MATCH_THRESHOLD:
+        return best_item, best_name, best_score
+
+    return None, None, best_score
+
+
+def find_catalog_match(item_name: str, catalog: list[dict[str, Any]]) -> dict[str, Any] | None:
+    catalog_item, _, _ = _find_catalog_match_with_score(item_name, catalog)
+    return catalog_item
 
 
 def _has_dimensions(raw_item: dict[str, Any]) -> bool:
@@ -39,8 +105,12 @@ def _has_dimensions(raw_item: dict[str, Any]) -> bool:
     )
 
 
+def _has_direct_cbm(raw_item: dict[str, Any]) -> bool:
+    return raw_item.get("total_cbm") not in {None, ""} or raw_item.get("cbm") not in {None, ""}
+
+
 def _merge_with_catalog(raw_item: dict[str, Any], catalog_item: dict[str, Any]) -> dict[str, Any]:
-    merged = {
+    return {
         "name": raw_item.get("name", catalog_item["canonical_name"]),
         "quantity": raw_item["quantity"],
         "length_m": raw_item.get("length_m", catalog_item["length_m"]),
@@ -55,16 +125,42 @@ def _merge_with_catalog(raw_item: dict[str, Any], catalog_item: dict[str, Any]) 
         "unload_priority": raw_item.get("unload_priority", catalog_item.get("unload_priority", 3)),
     }
 
-    return merged
+
+def _merge_direct_cbm(
+    raw_item: dict[str, Any],
+    catalog_item: dict[str, Any] | None,
+) -> dict[str, Any]:
+    quantity = int(raw_item.get("quantity", 1))
+    total_cbm = float(raw_item.get("total_cbm", raw_item.get("cbm")))
+    unit_cbm = total_cbm / quantity
+
+    base = catalog_item or {}
+
+    return {
+        "name": raw_item.get("name", base.get("canonical_name", "Unknown item")),
+        "quantity": quantity,
+        "length_m": unit_cbm,
+        "width_m": 1.0,
+        "height_m": 1.0,
+        "weight_kg": raw_item.get("weight_kg", base.get("weight_kg", 0.0)),
+        "fragile": raw_item.get("fragile", base.get("fragile", False)),
+        "perishable": raw_item.get("perishable", base.get("perishable", False)),
+        "hazardous": raw_item.get("hazardous", base.get("hazardous", False)),
+        "radioactive": raw_item.get("radioactive", base.get("radioactive", False)),
+        "stackable": raw_item.get("stackable", base.get("stackable", True)),
+        "unload_priority": raw_item.get("unload_priority", base.get("unload_priority", 3)),
+    }
 
 
 def resolve_items(raw_items: list[dict[str, Any]]) -> dict[str, Any]:
     """
     Converts a simple item list into full cargo item data.
 
-    If dimensions are already provided, the item is used directly.
-    If dimensions are missing, the item catalog is used to estimate them.
-    If no catalog match exists, the item is returned as unresolved.
+    Supported input styles:
+    - Full dimensions: length_m, width_m, height_m
+    - Catalog-based lookup: item name + quantity
+    - Direct CBM: item name + total_cbm/cbm
+    - Fuzzy catalog matching for close item names
     """
     catalog = load_item_catalog()
     resolved_items: list[dict[str, Any]] = []
@@ -74,6 +170,21 @@ def resolve_items(raw_items: list[dict[str, Any]]) -> dict[str, Any]:
     for raw_item in raw_items:
         item_name = raw_item.get("name", "Unknown item")
 
+        catalog_match, matched_name, score = _find_catalog_match_with_score(item_name, catalog)
+
+        if _has_direct_cbm(raw_item):
+            resolved_items.append(_merge_direct_cbm(raw_item, catalog_match))
+            issues.append(
+                f"{item_name}: direct CBM was provided, so CBM was used instead of estimating dimensions."
+            )
+
+            if catalog_match:
+                issues.append(
+                    f"{item_name}: handling properties were matched from catalog item '{matched_name}' with confidence {score:.2f}."
+                )
+
+            continue
+
         if "quantity" not in raw_item:
             unresolved_items.append(raw_item)
             issues.append(f"{item_name}: missing quantity.")
@@ -82,8 +193,6 @@ def resolve_items(raw_items: list[dict[str, Any]]) -> dict[str, Any]:
         if _has_dimensions(raw_item):
             resolved_items.append(raw_item)
             continue
-
-        catalog_match = find_catalog_match(item_name, catalog)
 
         if catalog_match is None:
             unresolved_items.append(raw_item)
@@ -95,7 +204,8 @@ def resolve_items(raw_items: list[dict[str, Any]]) -> dict[str, Any]:
 
         resolved_items.append(_merge_with_catalog(raw_item, catalog_match))
         issues.append(
-            f"{item_name}: dimensions and handling properties were estimated from the item catalog."
+            f"{item_name}: dimensions and handling properties were estimated from catalog item "
+            f"'{matched_name}' with confidence {score:.2f}."
         )
 
     return {

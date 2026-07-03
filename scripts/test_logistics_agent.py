@@ -7,6 +7,7 @@ sys.path.insert(0, str(ROOT_DIR))
 from app.item_resolver import resolve_items
 from app.logistics_agent import CargoItem, build_logistics_plan, calculate_total_cbm, recommend_container
 from app.logistics_service import run_logistics_agent
+from app.text_shipment_parser import parse_shipment_text
 
 
 def test_cbm_calculation():
@@ -347,6 +348,54 @@ def test_handoff_payload():
     assert "cargo_categories" in response["handoff_payload"]
 
 
+
+def test_text_shipment_parser():
+    parsed = parse_shipment_text("10 cubic meters of tiles, 50 TVs, 5 scooters")
+
+    assert len(parsed["items"]) == 3
+    assert parsed["items"][0]["name"] == "tiles"
+    assert parsed["items"][0]["total_cbm"] == 10
+    assert parsed["items"][1]["quantity"] == 50
+
+
+def test_text_input_runs_through_logistics_agent():
+    parsed = parse_shipment_text("10 cubic meters of tiles, 50 TVs, 5 scooters")
+
+    shipment_data = {
+        "shipment_id": "TEST-TEXT-001",
+        "customer": "Test Customer",
+        "origin": "India",
+        "destination": "USA",
+        "items": parsed["items"],
+    }
+
+    response = run_logistics_agent(shipment_data)
+
+    assert response["plan"] is not None
+    assert response["handoff_payload"]["total_cbm"] > 0
+    assert response["status"] in {
+        "ready_for_review",
+        "review_required",
+        "critical_review_required",
+        "partial_plan_needs_more_information",
+    }
+
+
+def test_fuzzy_catalog_matching():
+    resolution = resolve_items(
+        [
+            {
+                "name": "televisions",
+                "quantity": 2,
+            }
+        ]
+    )
+
+    assert len(resolution["resolved_items"]) == 1
+    assert resolution["resolved_items"][0]["length_m"] == 1.2
+    assert resolution["unresolved_items"] == []
+
+
 def main():
     test_cbm_calculation()
     test_container_recommendation()
@@ -362,6 +411,9 @@ def main():
     test_readiness_checklist()
     test_container_options()
     test_handoff_payload()
+    test_text_shipment_parser()
+    test_text_input_runs_through_logistics_agent()
+    test_fuzzy_catalog_matching()
     print("All logistics agent tests passed.")
 
 
