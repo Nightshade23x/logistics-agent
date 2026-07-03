@@ -1,4 +1,4 @@
-"""Pydantic schemas for the check_product_compliance tool."""
+"""Pydantic schemas for compliance-related tools."""
 
 from pydantic import BaseModel, Field
 
@@ -56,4 +56,31 @@ class ComplianceCheckResponse(BaseModel):
     )
     notes: str | None = Field(
         default=None, description="Additional practical notes about handling this product."
+    )
+
+
+class BatchComplianceCheckRequest(BaseModel):
+    """Input schema for checking multiple products' trade compliance status at once."""
+
+    product_descriptions: list[str] = Field(
+        ...,
+        description="List of free-text product descriptions to check, e.g. a shipment manifest.",
+        min_length=1,
+    )
+
+
+class BatchComplianceCheckResponse(BaseModel):
+    """Output schema for a batch compliance check result."""
+
+    results: list[ComplianceCheckResponse] = Field(
+        ..., description="One compliance check result per input product description, in order."
+    )
+    restricted_count: int = Field(
+        ..., description="Number of products with status 'restricted'."
+    )
+    prohibited_count: int = Field(
+        ..., description="Number of products with status 'prohibited'."
+    )
+    unknown_count: int = Field(
+        ..., description="Number of products with status 'unknown' (not found in reference data)."
     )

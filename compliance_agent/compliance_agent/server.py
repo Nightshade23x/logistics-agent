@@ -8,7 +8,12 @@ from inside the outer compliance_agent/ directory.
 from mcp.server.fastmcp import FastMCP
 
 from .container import build_container
-from .schemas.compliance import ComplianceCheckRequest, ComplianceCheckResponse
+from .schemas.compliance import (
+    ComplianceCheckRequest,
+    ComplianceCheckResponse,
+    BatchComplianceCheckRequest,
+    BatchComplianceCheckResponse,
+)
 from .schemas.hazard_class import HazardClassInfoRequest, HazardClassInfoResponse
 
 mcp = FastMCP("Compliance Agent")
@@ -54,6 +59,24 @@ def check_product_compliance(product_description: str) -> ComplianceCheckRespons
     """
     request = ComplianceCheckRequest(product_description=product_description)
     return container.compliance_service.check(request)
+
+
+@mcp.tool()
+def batch_check_compliance(product_descriptions: list[str]) -> BatchComplianceCheckResponse:
+    """Check compliance status for multiple products at once, e.g. a shipment manifest.
+
+    Applies the same lookup as check_product_compliance to each product in
+    the list, and returns a combined result with summary counts.
+
+    Args:
+        product_descriptions: List of free-text product descriptions to check.
+
+    Returns:
+        A BatchComplianceCheckResponse with one result per input product,
+        in the same order, plus counts of restricted/prohibited/unknown items.
+    """
+    request = BatchComplianceCheckRequest(product_descriptions=product_descriptions)
+    return container.compliance_service.check_batch(request)
 
 
 if __name__ == "__main__":

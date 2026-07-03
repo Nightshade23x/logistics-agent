@@ -2,7 +2,12 @@
 
 from ..repositories.restricted_products_repository import RestrictedProductsRepository
 from ..repositories.hazard_class_repository import HazardClassRepository
-from ..schemas.compliance import ComplianceCheckRequest, ComplianceCheckResponse
+from ..schemas.compliance import (
+    ComplianceCheckRequest,
+    ComplianceCheckResponse,
+    BatchComplianceCheckRequest,
+    BatchComplianceCheckResponse,
+)
 
 
 class ComplianceService:
@@ -79,4 +84,29 @@ class ComplianceService:
             required_licenses=entry.get("required_licenses", []),
             required_certificates=entry.get("required_certificates", []),
             notes=entry.get("notes"),
+        )
+
+    def check_batch(self, request: BatchComplianceCheckRequest) -> BatchComplianceCheckResponse:
+        """Check the compliance status of multiple product descriptions at once.
+
+        Reuses check() for each item rather than duplicating lookup logic,
+        so the two tools can never disagree on how a single product resolves.
+
+        Args:
+            request: The validated batch compliance check request.
+
+        Returns:
+            A BatchComplianceCheckResponse with one result per input product,
+            plus summary counts of restricted/prohibited/unknown items.
+        """
+        results = [
+            self.check(ComplianceCheckRequest(product_description=description))
+            for description in request.product_descriptions
+        ]
+
+        return BatchComplianceCheckResponse(
+            results=results,
+            restricted_count=sum(1 for r in results if r.status == "restricted"),
+            prohibited_count=sum(1 for r in results if r.status == "prohibited"),
+            unknown_count=sum(1 for r in results if r.status == "unknown"),
         )

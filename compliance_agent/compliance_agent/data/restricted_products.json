@@ -9,11 +9,7 @@
     "responsible_department": "IMO (sea) / IATA (air) / national civil aviation and maritime authorities",
     "required_permits": [],
     "required_licenses": [],
-    "required_certificates": [
-      "UN38.3 Test Report",
-      "Safety Data Sheet (SDS/MSDS)",
-      "Dangerous Goods Declaration (DGD) if above threshold watt-hours"
-    ],
+    "required_certificates": ["UN38.3 Test Report", "Safety Data Sheet (SDS/MSDS)", "Dangerous Goods Declaration (DGD) if above threshold watt-hours"],
     "notes": "Damaged or defective batteries cannot be shipped without prior approval from the National Competent Authority. Banned on passenger aircraft as cargo since 2016."
   },
   {
@@ -145,5 +141,70 @@
     "required_licenses": [],
     "required_certificates": [],
     "notes": "If the product contains a battery, check the lithium battery entries instead."
+  },
+  {
+    "product": "Perfumery products and alcohol-based cosmetics",
+    "keywords": ["perfume", "cologne", "fragrance", "eau de", "perfumery"],
+    "status": "restricted",
+    "hazard_class": "3",
+    "un_numbers": ["UN1266"],
+    "reason": "Contains flammable solvents (typically ethanol/isopropanol); classified as Class 3 Flammable Liquid under IMDG/IATA/ADR when flash point is below 60-65°C.",
+    "responsible_department": "IMO (sea) / IATA (air) / national civil aviation and maritime authorities",
+    "required_permits": [],
+    "required_licenses": [],
+    "required_certificates": ["Safety Data Sheet (SDS/MSDS)", "Dangerous Goods Declaration (DGD)"],
+    "notes": "May qualify for Limited Quantity (LQ) exemption if inner packaging is under 5L/30kg, reducing documentation burden. Bulk shipments always require full DG declaration."
+  },
+  {
+    "product": "Dry ice (solid carbon dioxide)",
+    "keywords": ["dry ice", "solid carbon dioxide", "cardice"],
+    "status": "restricted",
+    "hazard_class": "9",
+    "un_numbers": ["UN1845"],
+    "reason": "Sublimates into CO2 gas which can displace oxygen in enclosed spaces (asphyxiation risk); classified as Class 9 Miscellaneous Dangerous Goods.",
+    "responsible_department": "IMO (sea) / IATA (air)",
+    "required_permits": [],
+    "required_licenses": [],
+    "required_certificates": ["Shipper's declaration not required for dry ice used only as refrigerant, but package marking with net weight is mandatory"],
+    "notes": "Commonly used with perishable/biological shipments (e.g. UN3373 Category B substances). Net quantity in kg must be marked on the outer package."
+  },
+  {
+    "product": "Safety matches",
+    "keywords": ["safety match", "matchstick", "matchbox"],
+    "status": "restricted",
+    "hazard_class": "4",
+    "un_numbers": ["UN1944"],
+    "reason": "Readily combustible solid; classified as Class 4.1 Flammable Solid under IMDG/IATA/ADR.",
+    "responsible_department": "IMO (sea) / IATA (air) / national civil aviation and maritime authorities",
+    "required_permits": [],
+    "required_licenses": [],
+    "required_certificates": ["Safety Data Sheet (SDS/MSDS)"],
+    "notes": "Strike-anywhere matches (UN1331) are subject to stricter handling than safety matches (UN1944). Confirm exact match type before shipment."
+  },
+  {
+    "product": "Diagnostic/biological specimens (Category B)",
+    "keywords": ["biological specimen", "diagnostic specimen", "blood sample", "lab specimen"],
+    "status": "restricted",
+    "hazard_class": "6",
+    "un_numbers": ["UN3373"],
+    "reason": "Human or animal material transported for diagnosis/investigation purposes; classified as Class 6.2 Infectious Substance, Category B.",
+    "responsible_department": "National health/civil aviation authority, WHO guidelines for packaging",
+    "required_permits": ["Import permit from destination country's health authority (varies by country)"],
+    "required_licenses": [],
+    "required_certificates": ["Triple packaging system compliance (P650)", "Shipper's declaration not required for UN3373 itself but package marking is mandatory"],
+    "notes": "Distinct from Category A infectious substances (UN2814/UN2900), which carry far stricter requirements. Do not confuse the two categories."
+  },
+  {
+    "product": "Portable fire extinguishers",
+    "keywords": ["fire extinguisher"],
+    "status": "restricted",
+    "hazard_class": "2",
+    "un_numbers": ["UN1044"],
+    "reason": "Contains compressed or liquefied gas under pressure; classified as Class 2.2 Non-Flammable Gas under IMDG/IATA.",
+    "responsible_department": "IMO (sea) / IATA (air)",
+    "required_permits": [],
+    "required_licenses": [],
+    "required_certificates": ["Safety Data Sheet (SDS/MSDS)", "Proof pressure has been released/valve is protected from accidental discharge, per carrier requirements"],
+    "notes": "Some carriers accept fire extinguishers as excepted from full DG requirements if the valve is protected against accidental discharge; confirm with the specific carrier."
   }
 ]
