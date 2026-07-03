@@ -6,6 +6,17 @@ from typing import Any
 
 
 FIELD_PATTERNS = {
+    "bill_of_lading_number": r"Bill of Lading Number:\s*(.+)",
+    "certificate_number": r"Certificate Number:\s*(.+)",
+    "shipper": r"Shipper:\s*(.+)",
+    "consignee": r"Consignee:\s*(.+)",
+    "exporter": r"Exporter:\s*(.+)",
+    "importer": r"Importer:\s*(.+)",
+    "port_of_loading": r"Port of Loading:\s*(.+)",
+    "port_of_discharge": r"Port of Discharge:\s*(.+)",
+    "vessel": r"Vessel:\s*(.+)",
+    "container_number": r"Container Number:\s*(.+)",
+    "seal_number": r"Seal Number:\s*(.+)",
     "invoice_number": r"Invoice Number:\s*(.+)",
     "packing_list_number": r"Packing List Number:\s*(.+)",
     "supplier": r"Supplier:\s*(.+)",

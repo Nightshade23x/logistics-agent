@@ -9,6 +9,7 @@ sys.path.insert(0, str(ROOT_DIR))
 from app.document_parser import parse_trade_document
 from app.document_service import run_document_agent_from_file, run_document_agent_from_text
 from app.document_pair_service import run_document_pair_agent_from_files, run_document_pair_agent_from_texts
+from app.document_set_service import run_document_set_agent_from_files, run_document_set_agent_from_texts
 
 
 def test_parse_invoice():
@@ -179,6 +180,40 @@ def test_document_pair_agent_from_files():
     assert "handoff_requests" in response
 
 
+
+def test_document_set_complete_documents():
+    paths = [
+        ROOT_DIR / "data" / "documents" / "sample_invoice.txt",
+        ROOT_DIR / "data" / "documents" / "sample_packing_list.txt",
+        ROOT_DIR / "data" / "documents" / "sample_bill_of_lading.txt",
+        ROOT_DIR / "data" / "documents" / "sample_certificate_of_origin.txt",
+    ]
+
+    response = run_document_set_agent_from_files(paths)
+
+    assert response["agent_name"] == "document_ai_agent"
+    assert response["status"] == "ready_for_review"
+    assert response["missing_information"] == []
+    assert "invoice" in response["handoff_payload"]["documents_present"]
+    assert "packing_list" in response["handoff_payload"]["documents_present"]
+    assert "bill_of_lading" in response["handoff_payload"]["documents_present"]
+    assert "certificate_of_origin" in response["handoff_payload"]["documents_present"]
+
+
+def test_document_set_missing_documents():
+    paths = [
+        ROOT_DIR / "data" / "documents" / "sample_invoice.txt",
+        ROOT_DIR / "data" / "documents" / "sample_packing_list.txt",
+    ]
+
+    response = run_document_set_agent_from_files(paths)
+
+    assert response["status"] == "needs_more_information"
+    assert "bill_of_lading" in response["missing_information"]
+    assert "certificate_of_origin" in response["missing_information"]
+    assert response["handoff_requests"][0]["target_agent"] == "user_agent"
+
+
 def main() -> None:
     test_parse_invoice()
     test_parse_packing_list_dimensions()
@@ -187,6 +222,8 @@ def main() -> None:
     test_document_pair_validation_matching_documents()
     test_document_pair_validation_detects_quantity_mismatch()
     test_document_pair_agent_from_files()
+    test_document_set_complete_documents()
+    test_document_set_missing_documents()
 
     print("All document agent tests passed.")
 

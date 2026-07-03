@@ -1,0 +1,17 @@
+﻿BILL OF LADING
+
+Bill of Lading Number: BOL-2026-001
+Shipper: Mumbai Export House
+Consignee: Global Retail LLC
+Origin Country: India
+Destination Country: USA
+Port of Loading: Nhava Sheva
+Port of Discharge: Los Angeles
+Vessel: Ocean Star
+Container Number: MSKU1234567
+Seal Number: SEAL98765
+
+Cargo Description:
+Ceramic tiles, TVs, and scooters
+
+Total Weight: 2250 kg
