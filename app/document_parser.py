@@ -14,7 +14,7 @@ FIELD_PATTERNS = {
     "destination_country": r"Destination Country:\s*(.+)",
     "currency": r"Currency:\s*(.+)",
     "total_value": r"Total Value:\s*([0-9,.]+)",
-    "total_weight_kg": r"Total Weight:\s*([0-9,.]+)\s*kg",
+    "total_weight_kg": r"^Total Weight:\s*([0-9,.]+)\s*kg",
 }
 
 
@@ -34,7 +34,7 @@ def read_document_text(path: str | Path) -> str:
 
 
 def _extract_field(text: str, pattern: str) -> str | float | None:
-    match = re.search(pattern, text, re.IGNORECASE)
+    match = re.search(pattern, text, re.IGNORECASE | re.MULTILINE)
 
     if not match:
         return None
