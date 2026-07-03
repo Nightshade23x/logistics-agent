@@ -7,6 +7,8 @@ from app.container_layout import generate_container_layout
 from app.container_strategy import recommend_container_strategy
 from app.loading_planner import generate_loading_sequence
 from app.logistics_risk import assess_logistics_risk
+from app.packaging_advisor import generate_packaging_plan
+from app.readiness_checklist import generate_readiness_checklist
 from app.route_advisor import recommend_route_and_handling
 
 
@@ -277,9 +279,19 @@ def build_logistics_plan(raw_items: list[dict[str, Any]], shipment_context: dict
         container_strategy=container_strategy,
         logistics_risk=logistics_risk,
     )
+    packaging_plan = generate_packaging_plan(item_breakdown)
     container_layout = generate_container_layout(
         loading_sequence=loading_sequence,
         container_recommendation=container_recommendation,
+    )
+    readiness_checklist = generate_readiness_checklist(
+        shipment_context=shipment_context,
+        item_breakdown=item_breakdown,
+        container_recommendation=container_recommendation,
+        container_strategy=container_strategy,
+        logistics_risk=logistics_risk,
+        route_plan=route_plan,
+        packaging_plan=packaging_plan,
     )
 
     return {
@@ -294,7 +306,9 @@ def build_logistics_plan(raw_items: list[dict[str, Any]], shipment_context: dict
         "container_strategy": container_strategy,
         "logistics_risk": logistics_risk,
         "route_plan": route_plan,
+        "packaging_plan": packaging_plan,
         "container_layout": container_layout,
         "loading_sequence": loading_sequence,
+        "readiness_checklist": readiness_checklist,
         "loading_advice": loading_advice,
     }

@@ -257,6 +257,54 @@ def test_logistics_service_contract():
     )
 
 
+
+def test_packaging_plan():
+    raw_items = [
+        {
+            "name": "Glass bottles",
+            "quantity": 10,
+            "length_m": 0.3,
+            "width_m": 0.3,
+            "height_m": 0.4,
+            "weight_kg": 2,
+            "fragile": True,
+        }
+    ]
+
+    plan = build_logistics_plan(raw_items)
+
+    assert "packaging_plan" in plan
+    assert plan["packaging_plan"]["packaging_risk_level"] in {"moderate", "high", "critical"}
+    assert "FRAGILE" in plan["packaging_plan"]["recommended_labels"]
+
+
+def test_readiness_checklist():
+    raw_items = [
+        {
+            "name": "TV",
+            "quantity": 5,
+            "length_m": 1.2,
+            "width_m": 0.2,
+            "height_m": 0.8,
+            "weight_kg": 12,
+            "fragile": True,
+            "stackable": False,
+        }
+    ]
+
+    plan = build_logistics_plan(
+        raw_items,
+        shipment_context={
+            "origin": "India",
+            "destination": "USA",
+        },
+    )
+
+    assert "readiness_checklist" in plan
+    assert "readiness_status" in plan["readiness_checklist"]
+    assert len(plan["readiness_checklist"]["sections"]) >= 3
+
+
 def main():
     test_cbm_calculation()
     test_container_recommendation()
@@ -268,6 +316,8 @@ def main():
     test_route_advisor_for_perishable_cargo()
     test_container_layout()
     test_logistics_service_contract()
+    test_packaging_plan()
+    test_readiness_checklist()
     print("All logistics agent tests passed.")
 
 

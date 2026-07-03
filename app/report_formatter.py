@@ -139,6 +139,36 @@ def format_logistics_plan(plan: dict[str, Any], shipment_info: dict[str, Any] | 
         lines.append(f"  Total weight: {item['total_weight_kg']} kg")
         lines.append(f"  Categories: {categories}")
 
+    packaging_plan = plan.get("packaging_plan")
+    if packaging_plan:
+        lines.append("")
+        lines.append("PACKAGING & SECURING PLAN")
+        lines.append("-" * 30)
+        lines.append(f"Packaging risk level: {packaging_plan['packaging_risk_level'].upper()}")
+        lines.append("")
+        lines.append("Recommended materials:")
+        for material in packaging_plan["recommended_materials"]:
+            lines.append(f"- {material}")
+        lines.append("")
+        lines.append("Recommended labels:")
+        for label in packaging_plan["recommended_labels"]:
+            lines.append(f"- {label}")
+        lines.append("")
+        lines.append("Item-level packaging:")
+        for item in packaging_plan["per_item_packaging"]:
+            lines.append(f"- {item['item_name']} x {item['quantity']}")
+            lines.append(f"  Risk level: {item['risk_level'].upper()}")
+            lines.append("  Packaging actions:")
+            for action in item["packaging_actions"]:
+                lines.append(f"  - {action}")
+            lines.append("  Securing actions:")
+            for action in item["securing_actions"]:
+                lines.append(f"  - {action}")
+        lines.append("")
+        lines.append("General packaging notes:")
+        for note in packaging_plan["general_notes"]:
+            lines.append(f"- {note}")
+
     container_layout = plan.get("container_layout")
     if container_layout:
         lines.append("")
@@ -180,5 +210,25 @@ def format_logistics_plan(plan: dict[str, Any], shipment_info: dict[str, Any] | 
 
     for index, advice in enumerate(plan["loading_advice"], start=1):
         lines.append(f"{index}. {advice}")
+
+    readiness = plan.get("readiness_checklist")
+    if readiness:
+        lines.append("")
+        lines.append("SHIPMENT READINESS CHECKLIST")
+        lines.append("-" * 30)
+        lines.append(f"Readiness status: {readiness['readiness_status']}")
+
+        blocking_items = readiness.get("blocking_items", [])
+        if blocking_items:
+            lines.append("")
+            lines.append("Blocking items:")
+            for item in blocking_items:
+                lines.append(f"- {item}")
+
+        for section in readiness["sections"]:
+            lines.append("")
+            lines.append(section["title"] + ":")
+            for item in section["items"]:
+                lines.append(f"- {item}")
 
     return "\n".join(lines)
