@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from typing import Any
 
@@ -8,78 +8,21 @@ from app.logistics_agent import build_logistics_plan
 from app.report_formatter import format_logistics_plan
 
 
-def _build_shipment_context(shipment_data: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "shipment_id": shipment_data.get("shipment_id"),
-        "customer": shipment_data.get("customer"),
-        "origin": shipment_data.get("origin"),
-        "destination": shipment_data.get("destination"),
-        "notes": shipment_data.get("notes"),
-    }
+def _collect_cargo_categories(plan: dict[str, Any]) -> set[str]:
+    categories: set[str] = set()
+
+    for item in plan.get("item_breakdown", []):
+        item_categories = item.get("categories", [])
+        if isinstance(item_categories, list):
+            categories.update(item_categories)
+
+    return categories
 
 
-def _determine_status(
-    plan: dict[str, Any] | None,
-    unresolved_items: list[dict[str, Any]],
-) -> str:
-    if plan is None:
-        return "needs_more_information"
+def _build_handoff_requests(plan: dict[str, Any]) -> list[dict[str, Any]]:
+    categories = _collect_cargo_categories(plan)
 
-    if unresolved_items:
-        return "partial_plan_needs_more_information"
-
-    risk_level = plan.get("logistics_risk", {}).get("risk_level")
-    container_priority = plan.get("container_strategy", {}).get("priority")
-    route_priority = plan.get("route_plan", {}).get("priority")
-
-    if "critical" in {risk_level, container_priority, route_priority}:
-        return "critical_review_required"
-
-    if "high" in {risk_level, container_priority, route_priority}:
-        return "review_required"
-
-    return "ready_for_review"
-
-
-def _build_summary(plan: dict[str, Any] | None, status: str) -> str:
-    if plan is None:
-        return "The logistics agent could not create a plan because item dimensions or catalog matches are missing."
-
-    summary = plan["shipment_summary"]
-    container = plan["container_recommendation"]
-
-    return (
-        f"Logistics plan status: {status}. "
-        f"Total cargo is {summary['total_cbm']} CBM and {summary['total_weight_kg']} kg. "
-        f"Recommended container: {container['container_name']}."
-    )
-
-
-def _collect_missing_information(
-    plan: dict[str, Any] | None,
-    unresolved_items: list[dict[str, Any]],
-) -> list[str]:
-    missing_info: list[str] = []
-
-    for item in unresolved_items:
-        missing_info.append(
-            f"{item.get('name', 'Unknown item')}: dimensions are missing and no catalog match was found."
-        )
-
-    if plan is not None:
-        route_missing = plan.get("route_plan", {}).get("missing_info", [])
-        missing_info.extend(route_missing)
-
-    return missing_info
-
-
-def _build_handoff_requests(plan: dict[str, Any] | None) -> list[dict[str, Any]]:
-    if plan is None:
-        return []
-
-    handoff_requests: list[dict[str, Any]] = []
-
-    handoff_requests.append(
+    requests = [
         {
             "target_agent": "financial_agent",
             "reason": "Estimate freight cost, insurance cost, financial risk, and shipment budget based on CBM, weight, route, and cargo risk.",
@@ -87,82 +30,126 @@ def _build_handoff_requests(plan: dict[str, Any] | None) -> list[dict[str, Any]]
                 "total_cbm",
                 "total_weight_kg",
                 "container_recommendation",
+                "recommended_load_type",
                 "origin",
                 "destination",
                 "risk_level",
                 "cargo_categories",
             ],
         }
-    )
+    ]
 
-    cargo_categories = {
-        category
-        for item in plan.get("item_breakdown", [])
-        for category in item.get("cargo_categories", [])
-    }
-
-    if cargo_categories.intersection({"hazardous", "radioactive", "perishable"}):
-        handoff_requests.append(
+    if categories.intersection({"hazardous", "radioactive", "perishable"}):
+        requests.append(
             {
                 "target_agent": "compliance_agent",
                 "reason": "Check special cargo regulations, documentation, carrier acceptance, and country-specific restrictions.",
                 "inputs_needed": [
+                    "cargo_categories",
                     "origin",
                     "destination",
-                    "cargo_categories",
-                    "container_strategy",
-                    "route_plan",
+                    "item_breakdown",
+                    "route_type",
                 ],
             }
         )
 
-    return handoff_requests
+    return requests
+
+
+def _determine_status(
+    input_resolution: dict[str, Any],
+    plan: dict[str, Any],
+) -> str:
+    unresolved_items = input_resolution.get("unresolved_items", [])
+
+    if unresolved_items:
+        return "partial_plan_needs_more_information"
+
+    readiness_status = (
+        plan.get("readiness_checklist", {})
+        .get("readiness_status", "")
+        .lower()
+    )
+
+    risk_level = (
+        plan.get("logistics_risk", {})
+        .get("risk_level", "")
+        .lower()
+    )
+
+    container_fit_status = (
+        plan.get("container_fit", {})
+        .get("fit_status", "")
+        .lower()
+    )
+
+    if readiness_status == "not_ready_blockers_found":
+        return "critical_review_required"
+
+    if container_fit_status == "specialist_required":
+        return "critical_review_required"
+
+    if risk_level == "critical":
+        return "critical_review_required"
+
+    if risk_level in {"high", "moderate"}:
+        return "review_required"
+
+    if readiness_status in {
+        "specialist_review_required",
+        "ready_for_review_with_high_risk",
+    }:
+        return "review_required"
+
+    return "ready_for_review"
 
 
 def run_logistics_agent(shipment_data: dict[str, Any]) -> dict[str, Any]:
-    """
-    Official entry point for the logistics agent.
-
-    This function is designed so the future multi-agent system can call the
-    logistics agent and receive a consistent structured response.
-    """
     raw_items = shipment_data.get("items", [])
-    shipment_context = _build_shipment_context(shipment_data)
 
-    resolution = resolve_items(raw_items)
-    resolved_items = resolution["resolved_items"]
-    unresolved_items = resolution["unresolved_items"]
+    input_resolution = resolve_items(raw_items)
 
-    if not resolved_items:
-        status = "needs_more_information"
-        summary = _build_summary(None, status)
-
-        return {
-            "agent_name": "logistics_agent",
-            "status": status,
-            "summary": summary,
-            "plan": None,
-            "report": summary,
-            "input_resolution": resolution,
-            "missing_information": _collect_missing_information(None, unresolved_items),
-            "handoff_requests": [],
-        }
+    shipment_context = {
+        "shipment_id": shipment_data.get("shipment_id"),
+        "customer": shipment_data.get("customer"),
+        "origin": shipment_data.get("origin"),
+        "destination": shipment_data.get("destination"),
+        "notes": shipment_data.get("notes"),
+    }
 
     plan = build_logistics_plan(
-        resolved_items,
+        input_resolution["resolved_items"],
         shipment_context=shipment_context,
     )
 
-    plan["input_resolution"] = {
-        "issues": resolution["issues"],
-        "unresolved_items": unresolved_items,
-    }
-
-    status = _determine_status(plan, unresolved_items)
-    summary = _build_summary(plan, status)
-    report = format_logistics_plan(plan, shipment_context)
-
+    report = format_logistics_plan(plan)
+    status = _determine_status(input_resolution, plan)
     handoff_payload = build_handoff_payload(plan)
+    handoff_requests = _build_handoff_requests(plan)
+
+    missing_information = [
+        *input_resolution.get("issues", []),
+        *plan.get("route_plan", {}).get("missing_information", []),
+    ]
+
+    container_recommendation = plan.get("container_recommendation", {})
+    recommended_container = (
+        container_recommendation.get("recommended_container")
+        or container_recommendation.get("container")
+        or container_recommendation.get("container_name")
+        or container_recommendation.get("name")
+        or container_recommendation.get("selected_container")
+        or "Unknown container"
+    )
+
+    summary = (
+        f"Logistics plan status: {status}. "
+        f"Total cargo is {plan['shipment_summary']['total_cbm']} CBM and "
+        f"{plan['shipment_summary']['total_weight_kg']} kg. "
+        f"Recommended container: "
+        f"{recommended_container}."
+    )
 
     return {
         "agent_name": "logistics_agent",
@@ -170,8 +157,8 @@ def run_logistics_agent(shipment_data: dict[str, Any]) -> dict[str, Any]:
         "summary": summary,
         "plan": plan,
         "report": report,
-        "input_resolution": resolution,
-        "missing_information": _collect_missing_information(plan, unresolved_items),
+        "input_resolution": input_resolution,
+        "missing_information": missing_information,
         "handoff_payload": handoff_payload,
-        "handoff_requests": _build_handoff_requests(plan),
+        "handoff_requests": handoff_requests,
     }

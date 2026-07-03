@@ -43,6 +43,7 @@ def build_handoff_payload(plan: dict[str, Any]) -> dict[str, Any]:
         "total_cbm": shipment_summary.get("total_cbm"),
         "total_weight_kg": shipment_summary.get("total_weight_kg"),
         "recommended_container": container.get("container_name"),
+        "recommended_load_type": plan.get("shipping_load_type", {}).get("recommended_load_type"),
         "container_utilization_percent": container.get("estimated_utilization_percent"),
         "container_options": plan.get("container_options", []),
         "risk_level": logistics_risk.get("risk_level"),

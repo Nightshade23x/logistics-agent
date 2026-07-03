@@ -7,6 +7,7 @@ from app.input_quality import assess_input_quality
 from app.container_layout import generate_container_layout
 from app.container_options import generate_container_options
 from app.container_fit import assess_container_fit
+from app.shipping_load_advisor import recommend_shipping_load_type
 from app.container_strategy import recommend_container_strategy
 from app.loading_planner import generate_loading_sequence
 from app.logistics_risk import assess_logistics_risk
@@ -280,6 +281,20 @@ def build_logistics_plan(raw_items: list[dict[str, Any]], shipment_context: dict
     loading_advice = generate_loading_advice(items)
     loading_sequence = generate_loading_sequence(item_breakdown)
     logistics_risk = assess_logistics_risk(item_breakdown, container_recommendation)
+    shipping_load_type = recommend_shipping_load_type(
+        total_cbm=total_cbm,
+        total_weight_kg=total_weight,
+        item_breakdown=item_breakdown,
+        logistics_risk=logistics_risk,
+        container_recommendation=container_recommendation,
+    )
+    shipping_load_type = recommend_shipping_load_type(
+        total_cbm=total_cbm,
+        total_weight_kg=total_weight,
+        item_breakdown=item_breakdown,
+        logistics_risk=logistics_risk,
+        container_recommendation=container_recommendation,
+    )
     route_plan = recommend_route_and_handling(
         origin=shipment_context.get("origin"),
         destination=shipment_context.get("destination"),
@@ -316,6 +331,8 @@ def build_logistics_plan(raw_items: list[dict[str, Any]], shipment_context: dict
         "container_options": container_options,
         "container_strategy": container_strategy,
         "logistics_risk": logistics_risk,
+        "shipping_load_type": shipping_load_type,
+        "shipping_load_type": shipping_load_type,
         "route_plan": route_plan,
         "packaging_plan": packaging_plan,
         "container_layout": container_layout,

@@ -561,6 +561,81 @@ def test_container_fit_reports_smallest_standard_fit():
     assert result["smallest_standard_container_fit"] == "20ft Standard Container"
 
 
+
+def test_shipping_load_type_lcl_suitable():
+    raw_items = [
+        {
+            "name": "Small cartons",
+            "quantity": 10,
+            "length": 40,
+            "width": 30,
+            "height": 30,
+            "dimension_unit": "cm",
+            "weight_kg": 5,
+            "stackable": True,
+        }
+    ]
+
+    plan = build_logistics_plan(raw_items)
+
+    assert "shipping_load_type" in plan
+    assert plan["shipping_load_type"]["recommended_load_type"] in {
+        "lcl_suitable",
+        "compare_lcl_fcl",
+    }
+
+
+def test_shipping_load_type_fcl_for_fragile_large_cargo():
+    raw_items = [
+        {
+            "name": "TV",
+            "quantity": 50,
+            "length": 120,
+            "width": 20,
+            "height": 80,
+            "dimension_unit": "cm",
+            "weight_kg": 12,
+            "fragile": True,
+            "stackable": False,
+        }
+    ]
+
+    plan = build_logistics_plan(raw_items)
+
+    assert "shipping_load_type" in plan
+    assert plan["shipping_load_type"]["recommended_load_type"] in {
+        "fcl_preferred",
+        "compare_lcl_fcl",
+        "specialist_fcl_review",
+    }
+
+
+def test_handoff_payload_includes_shipping_load_type():
+    shipment_data = {
+        "shipment_id": "TEST-FCL-LCL-001",
+        "customer": "Test Customer",
+        "origin": "India",
+        "destination": "USA",
+        "items": [
+            {
+                "name": "Small cartons",
+                "quantity": 10,
+                "length": 40,
+                "width": 30,
+                "height": 30,
+                "dimension_unit": "cm",
+                "weight_kg": 5,
+            }
+        ],
+    }
+
+    response = run_logistics_agent(shipment_data)
+    payload = response["handoff_payload"]
+
+    assert "recommended_load_type" in payload
+    assert payload["recommended_load_type"] is not None
+
+
 def main():
     test_cbm_calculation()
     test_container_recommendation()
@@ -587,6 +662,9 @@ def main():
     test_container_fit_detects_oversized_item()
     test_container_fit_passes_normal_item()
     test_container_fit_reports_smallest_standard_fit()
+    test_shipping_load_type_lcl_suitable()
+    test_shipping_load_type_fcl_for_fragile_large_cargo()
+    test_handoff_payload_includes_shipping_load_type()
     print("All logistics agent tests passed.")
 
 

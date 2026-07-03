@@ -118,6 +118,26 @@ def format_logistics_plan(plan: dict[str, Any], shipment_info: dict[str, Any] | 
             lines.append(f"   Reason: {option['reason']}")
         lines.append("")
 
+    shipping_load_type = plan.get("shipping_load_type")
+    if shipping_load_type:
+        lines.append("FCL / LCL SHIPPING LOAD TYPE")
+        lines.append("-" * 30)
+        lines.append(f"Recommended load type: {shipping_load_type['recommended_load_type'].upper()}")
+        lines.append(f"Confidence: {shipping_load_type['confidence'].upper()}")
+        lines.append(f"Reason: {shipping_load_type['reason']}")
+        lines.append("")
+        lines.append(f"FCL: {shipping_load_type['fcl_meaning']}")
+        lines.append(f"LCL: {shipping_load_type['lcl_meaning']}")
+        lines.append("")
+        lines.append("Warnings:")
+        for warning in shipping_load_type["warnings"]:
+            lines.append(f"- {warning}")
+        lines.append("")
+        lines.append("Recommendations:")
+        for recommendation in shipping_load_type["recommendations"]:
+            lines.append(f"- {recommendation}")
+        lines.append("")
+
     container_strategy = plan.get("container_strategy")
     if container_strategy:
         lines.append("CONTAINER STRATEGY")
