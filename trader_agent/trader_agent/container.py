@@ -16,13 +16,14 @@ from .services.hs_code_service import HsCodeService
 from .services.duty_service import DutyService
 from .services.fta_service import FtaService
 from .services.export_strategy_service import ExportStrategyService
+from .services.orchestrator_service import OrchestratorService
 
 
 class Container:
     """Holds singleton instances of all repositories and services."""
 
     def __init__(self) -> None:
-        """Build repositories first, then inject them into their services."""
+        """Build repositories first, then services, then the orchestrator."""
         incoterms_repository = IncotermsRepository()
         hs_code_repository = HsCodeRepository()
         duty_repository = DutyRepository()
@@ -35,6 +36,15 @@ class Container:
         self.fta_service: FtaService = FtaService(fta_repository)
         self.export_strategy_service: ExportStrategyService = ExportStrategyService(
             export_strategy_repository
+        )
+
+        # The orchestrator depends on the four services above, not on
+        # repositories directly, so it is built last.
+        self.orchestrator_service: OrchestratorService = OrchestratorService(
+            hs_code_service=self.hs_code_service,
+            duty_service=self.duty_service,
+            fta_service=self.fta_service,
+            export_strategy_service=self.export_strategy_service,
         )
 
 

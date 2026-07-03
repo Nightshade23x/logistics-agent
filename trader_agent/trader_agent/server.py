@@ -20,6 +20,7 @@ from .schemas import (
     ExportStrategyRequest,
     ExportStrategyResponse,
 )
+from .schemas.export_plan import ExportPlanRequest, ExportPlanResponse
 
 mcp = FastMCP("Trader Agent")
 container = build_container()
@@ -102,6 +103,35 @@ def check_fta(country_from: str, country_to: str) -> FtaResponse:
     request = FtaRequest(country_from=country_from, country_to=country_to)
     return container.fta_service.check(request)
 
+@mcp.tool()
+def plan_export(
+    product_description: str, country_from: str, country_to: str, target_market: str
+) -> ExportPlanResponse:
+    """Run a full export-planning workflow for a product and market.
+
+    Chains together HS code classification, duty estimation, an FTA
+    check, and an export strategy suggestion into a single coordinated
+    result, so the agent can reason about a shipment end to end in one
+    call instead of four separate ones.
+
+    Args:
+        product_description: Free-text description of the product.
+        country_from: ISO country name/code of the exporting country.
+        country_to: ISO country name/code of the importing country.
+        target_market: The country or region being targeted for export
+            (often the same as country_to).
+
+    Returns:
+        A structured export plan combining all four step results plus
+        an overall summary.
+    """
+    request = ExportPlanRequest(
+        product_description=product_description,
+        country_from=country_from,
+        country_to=country_to,
+        target_market=target_market,
+    )
+    return container.orchestrator_service.plan(request)
 
 if __name__ == "__main__":
     mcp.run()
