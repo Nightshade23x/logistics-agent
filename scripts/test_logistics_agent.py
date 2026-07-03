@@ -58,10 +58,44 @@ def test_full_logistics_plan():
     assert len(plan["loading_advice"]) > 0
 
 
+
+def test_loading_sequence():
+    raw_items = [
+        {
+            "name": "Ceramic tiles",
+            "quantity": 100,
+            "length_m": 0.6,
+            "width_m": 0.6,
+            "height_m": 0.08,
+            "weight_kg": 12,
+            "fragile": True,
+            "stackable": True,
+            "unload_priority": 3,
+        },
+        {
+            "name": "Pillows",
+            "quantity": 100,
+            "length_m": 0.5,
+            "width_m": 0.4,
+            "height_m": 0.2,
+            "weight_kg": 1,
+            "unload_priority": 1,
+        },
+    ]
+
+    plan = build_logistics_plan(raw_items)
+
+    assert "loading_sequence" in plan
+    assert len(plan["loading_sequence"]) == 2
+    assert plan["loading_sequence"][0]["item_name"] == "Ceramic tiles"
+    assert plan["loading_sequence"][0]["sequence_number"] == 1
+
+
 def main():
     test_cbm_calculation()
     test_container_recommendation()
     test_full_logistics_plan()
+    test_loading_sequence()
     print("All logistics agent tests passed.")
 
 

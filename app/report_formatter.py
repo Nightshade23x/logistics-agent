@@ -56,6 +56,17 @@ def format_logistics_plan(plan: dict[str, Any], shipment_info: dict[str, Any] | 
         lines.append(f"  Categories: {categories}")
 
     lines.append("")
+    lines.append("SUGGESTED LOADING SEQUENCE")
+    lines.append("-" * 30)
+
+    for item in plan.get("loading_sequence", []):
+        categories = ", ".join(item["categories"])
+        lines.append(f"{item['sequence_number']}. {item['item_name']} x {item['quantity']}")
+        lines.append(f"   Zone: {item['suggested_zone']}")
+        lines.append(f"   Categories: {categories}")
+        lines.append(f"   Reason: {item['reason']}")
+
+    lines.append("")
     lines.append("LOADING ADVICE")
     lines.append("-" * 30)
 

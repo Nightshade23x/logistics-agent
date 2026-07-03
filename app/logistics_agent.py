@@ -3,6 +3,8 @@
 from dataclasses import asdict, dataclass
 from typing import Any
 
+from app.loading_planner import generate_loading_sequence
+
 
 @dataclass(frozen=True)
 class CargoItem:
@@ -259,6 +261,7 @@ def build_logistics_plan(raw_items: list[dict[str, Any]]) -> dict[str, Any]:
     total_weight = calculate_total_weight(items)
     container_recommendation = recommend_container(items)
     loading_advice = generate_loading_advice(items)
+    loading_sequence = generate_loading_sequence(item_breakdown)
 
     return {
         "shipment_summary": {
@@ -268,5 +271,6 @@ def build_logistics_plan(raw_items: list[dict[str, Any]]) -> dict[str, Any]:
         },
         "item_breakdown": item_breakdown,
         "container_recommendation": container_recommendation,
+        "loading_sequence": loading_sequence,
         "loading_advice": loading_advice,
     }
