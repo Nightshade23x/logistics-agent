@@ -60,3 +60,12 @@ def currency(request: CurrencyConversionRequest):
 @app.post("/finance/report")
 def report(shipment: Shipment):
     return router.generate_report(shipment)
+
+@app.post("/finance/roi")
+def roi(
+    report: FinanceReport,
+    selling_price: float
+):
+    return {
+        "roi_percent": router.get_roi(report, selling_price)
+    }

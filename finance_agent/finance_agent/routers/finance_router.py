@@ -5,8 +5,10 @@ from finance_agent.finance_agent.container import (
     insurance_service,
     landed_cost_service,
     profit_service,
+    roi_service,
     tax_service,
     report_service)
+from finance_agent.finance_agent.models import shipment
 
 
 class FinanceRouter:
@@ -37,3 +39,6 @@ class FinanceRouter:
     
     def generate_report(self, report):
         return report_service.execute(report)
+    
+    def get_roi(self, report, selling_price):
+        return roi_service.execute(report, selling_price)

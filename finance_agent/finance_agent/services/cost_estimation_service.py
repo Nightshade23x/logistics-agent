@@ -37,7 +37,7 @@ class CostEstimationService(FinanceServiceInterface):
         self.tax_service = tax_service
         self.landed_cost_service = landed_cost_service
 
-    @abstractmethod
+    
     def execute(self, shipment: Shipment) -> FinanceReport:
 
         freight = self.freight_service.execute(shipment)

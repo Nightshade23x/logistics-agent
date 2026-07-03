@@ -10,6 +10,10 @@ from finance_agent.finance_agent.services.landed_cost_service import LandedCostS
 from finance_agent.finance_agent.services.profit_service import ProfitService
 from finance_agent.finance_agent.services.tax_service import TaxService
 from finance_agent.finance_agent.services.report_service import ReportService
+from finance_agent.finance_agent.services.cost_estimation_service import CostEstimationService
+from finance_agent.finance_agent.services.cost_estimation_service import CostEstimationService
+from finance_agent.finance_agent.services.roi_service import RoiService
+
 
 freight_repo = InMemoryFreightRateRepository()
 insurance_repo = InMemoryInsuranceRateRepository()
@@ -24,4 +28,17 @@ tax_service = TaxService()
 landed_cost_service = LandedCostService()
 profit_service = ProfitService()
 
-report_service = ReportService()
+cost_estimation_service = CostEstimationService(
+    freight_service=freight_service,
+    insurance_service=insurance_service,
+    import_duty_service=import_duty_service,
+    tax_service=tax_service,
+    landed_cost_service=landed_cost_service,
+)
+
+roi_service = RoiService()
+
+report_service = ReportService(
+    cost_estimation_service=cost_estimation_service,
+    profit_service=profit_service,
+)
