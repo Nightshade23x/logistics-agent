@@ -140,6 +140,28 @@ def test_item_resolver_uses_catalog():
     assert len(resolution["issues"]) == 1
 
 
+
+def test_container_strategy():
+    raw_items = [
+        {
+            "name": "Frozen food",
+            "quantity": 20,
+            "length_m": 0.5,
+            "width_m": 0.4,
+            "height_m": 0.3,
+            "weight_kg": 10,
+            "perishable": True,
+        }
+    ]
+
+    plan = build_logistics_plan(raw_items)
+
+    assert "container_strategy" in plan
+    assert plan["container_strategy"]["strategy_type"] == "refrigerated_or_temperature_controlled"
+    assert plan["container_strategy"]["priority"] == "high"
+    assert len(plan["container_strategy"]["recommendations"]) > 0
+
+
 def main():
     test_cbm_calculation()
     test_container_recommendation()
@@ -147,6 +169,7 @@ def main():
     test_loading_sequence()
     test_logistics_risk_assessment()
     test_item_resolver_uses_catalog()
+    test_container_strategy()
     print("All logistics agent tests passed.")
 
 

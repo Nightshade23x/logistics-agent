@@ -3,6 +3,7 @@
 from dataclasses import asdict, dataclass
 from typing import Any
 
+from app.container_strategy import recommend_container_strategy
 from app.loading_planner import generate_loading_sequence
 from app.logistics_risk import assess_logistics_risk
 
@@ -261,6 +262,7 @@ def build_logistics_plan(raw_items: list[dict[str, Any]]) -> dict[str, Any]:
     total_cbm = calculate_total_cbm(items)
     total_weight = calculate_total_weight(items)
     container_recommendation = recommend_container(items)
+    container_strategy = recommend_container_strategy(item_breakdown, container_recommendation)
     loading_advice = generate_loading_advice(items)
     loading_sequence = generate_loading_sequence(item_breakdown)
     logistics_risk = assess_logistics_risk(item_breakdown, container_recommendation)
@@ -273,6 +275,7 @@ def build_logistics_plan(raw_items: list[dict[str, Any]]) -> dict[str, Any]:
         },
         "item_breakdown": item_breakdown,
         "container_recommendation": container_recommendation,
+        "container_strategy": container_strategy,
         "logistics_risk": logistics_risk,
         "loading_sequence": loading_sequence,
         "loading_advice": loading_advice,

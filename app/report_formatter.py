@@ -65,6 +65,22 @@ def format_logistics_plan(plan: dict[str, Any], shipment_info: dict[str, Any] | 
     lines.append(f"Reason: {container['reason']}")
     lines.append("")
 
+    container_strategy = plan.get("container_strategy")
+    if container_strategy:
+        lines.append("CONTAINER STRATEGY")
+        lines.append("-" * 30)
+        lines.append(f"Strategy type: {container_strategy['strategy_type']}")
+        lines.append(f"Priority: {container_strategy['priority'].upper()}")
+        lines.append("")
+        lines.append("Warnings:")
+        for warning in container_strategy["warnings"]:
+            lines.append(f"- {warning}")
+        lines.append("")
+        lines.append("Recommendations:")
+        for recommendation in container_strategy["recommendations"]:
+            lines.append(f"- {recommendation}")
+        lines.append("")
+
     risk = plan.get("logistics_risk")
     if risk:
         lines.append("OPERATIONAL WARNINGS & REQUIREMENTS")
