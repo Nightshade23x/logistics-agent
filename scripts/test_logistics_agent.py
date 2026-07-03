@@ -305,6 +305,48 @@ def test_readiness_checklist():
     assert len(plan["readiness_checklist"]["sections"]) >= 3
 
 
+
+def test_container_options():
+    raw_items = [
+        {
+            "name": "Small Cargo",
+            "quantity": 10,
+            "length_m": 0.5,
+            "width_m": 0.5,
+            "height_m": 0.5,
+            "weight_kg": 5,
+        }
+    ]
+
+    plan = build_logistics_plan(raw_items)
+
+    assert "container_options" in plan
+    assert len(plan["container_options"]) > 0
+    assert "option_name" in plan["container_options"][0]
+
+
+def test_handoff_payload():
+    shipment_data = {
+        "shipment_id": "TEST-HANDOFF-001",
+        "customer": "Test Customer",
+        "origin": "India",
+        "destination": "USA",
+        "items": [
+            {
+                "name": "TVs",
+                "quantity": 5,
+            }
+        ],
+    }
+
+    response = run_logistics_agent(shipment_data)
+
+    assert "handoff_payload" in response
+    assert response["handoff_payload"]["total_cbm"] is not None
+    assert response["handoff_payload"]["recommended_container"] is not None
+    assert "cargo_categories" in response["handoff_payload"]
+
+
 def main():
     test_cbm_calculation()
     test_container_recommendation()
@@ -318,6 +360,8 @@ def main():
     test_logistics_service_contract()
     test_packaging_plan()
     test_readiness_checklist()
+    test_container_options()
+    test_handoff_payload()
     print("All logistics agent tests passed.")
 
 

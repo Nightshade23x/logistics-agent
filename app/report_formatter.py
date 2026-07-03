@@ -65,6 +65,19 @@ def format_logistics_plan(plan: dict[str, Any], shipment_info: dict[str, Any] | 
     lines.append(f"Reason: {container['reason']}")
     lines.append("")
 
+    container_options = plan.get("container_options", [])
+    if container_options:
+        lines.append("CONTAINER OPTIONS")
+        lines.append("-" * 30)
+        for index, option in enumerate(container_options, start=1):
+            lines.append(f"{index}. {option['option_name']}")
+            lines.append(f"   Containers: {option['container_count']}")
+            lines.append(f"   Safe CBM: {option['total_safe_cbm']}")
+            lines.append(f"   Payload: {option['total_payload_kg']} kg")
+            lines.append(f"   Estimated utilization: {option['estimated_utilization_percent']}%")
+            lines.append(f"   Reason: {option['reason']}")
+        lines.append("")
+
     container_strategy = plan.get("container_strategy")
     if container_strategy:
         lines.append("CONTAINER STRATEGY")

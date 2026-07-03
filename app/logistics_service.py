@@ -2,6 +2,7 @@
 
 from typing import Any
 
+from app.handoff_payload import build_handoff_payload
 from app.item_resolver import resolve_items
 from app.logistics_agent import build_logistics_plan
 from app.report_formatter import format_logistics_plan
@@ -161,6 +162,8 @@ def run_logistics_agent(shipment_data: dict[str, Any]) -> dict[str, Any]:
     summary = _build_summary(plan, status)
     report = format_logistics_plan(plan, shipment_context)
 
+    handoff_payload = build_handoff_payload(plan)
+
     return {
         "agent_name": "logistics_agent",
         "status": status,
@@ -169,5 +172,6 @@ def run_logistics_agent(shipment_data: dict[str, Any]) -> dict[str, Any]:
         "report": report,
         "input_resolution": resolution,
         "missing_information": _collect_missing_information(plan, unresolved_items),
+        "handoff_payload": handoff_payload,
         "handoff_requests": _build_handoff_requests(plan),
     }

@@ -4,7 +4,6 @@ created initial skeleton and initialized repo
 Discussed with partner and divided tasks at hand
 
 day 2
-- Created initial project skeleton and pushed it to GitHub.
 - Created and worked on the `logistics` branch.
 - Added core Logistics Agent V1 structure.
 - Added CBM calculation for shipment items.
