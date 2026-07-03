@@ -6,6 +6,7 @@ sys.path.insert(0, str(ROOT_DIR))
 
 from app.item_resolver import resolve_items
 from app.logistics_agent import CargoItem, build_logistics_plan, calculate_total_cbm, recommend_container
+from app.logistics_service import run_logistics_agent
 
 
 def test_cbm_calculation():
@@ -222,6 +223,40 @@ def test_container_layout():
     assert len(plan["container_layout"]["zones"]) > 0
 
 
+
+def test_logistics_service_contract():
+    shipment_data = {
+        "shipment_id": "TEST-SERVICE-001",
+        "customer": "Test Customer",
+        "origin": "India",
+        "destination": "USA",
+        "items": [
+            {
+                "name": "TVs",
+                "quantity": 5,
+            }
+        ],
+    }
+
+    response = run_logistics_agent(shipment_data)
+
+    assert response["agent_name"] == "logistics_agent"
+    assert response["status"] in {
+        "ready_for_review",
+        "review_required",
+        "critical_review_required",
+        "partial_plan_needs_more_information",
+        "needs_more_information",
+    }
+    assert response["plan"] is not None
+    assert "report" in response
+    assert "handoff_requests" in response
+    assert any(
+        request["target_agent"] == "financial_agent"
+        for request in response["handoff_requests"]
+    )
+
+
 def main():
     test_cbm_calculation()
     test_container_recommendation()
@@ -232,6 +267,7 @@ def main():
     test_container_strategy()
     test_route_advisor_for_perishable_cargo()
     test_container_layout()
+    test_logistics_service_contract()
     print("All logistics agent tests passed.")
 
 
