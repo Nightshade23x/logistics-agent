@@ -7,7 +7,7 @@ from typing import Any
 _SPLIT_PATTERN = re.compile(r"\s*(?:,|;|\band\b)\s*", re.IGNORECASE)
 
 _CBM_PATTERN = re.compile(
-    r"^(?P<cbm>\d+(?:\.\d+)?)\s*(?:cbm|cubic meters?|cubic metres?)\s+(?:of\s+)?(?P<name>.+)$",
+    r"^(?P<cbm>\d+(?:\.\d+)?)\s*(?P<unit>cbm|m3|m\^3|cubic meters?|cubic metres?|ft3|ft\^3|cubic feet|cubic foot)\s+(?:of\s+)?(?P<name>.+)$",
     re.IGNORECASE,
 )
 
@@ -46,6 +46,7 @@ def parse_shipment_text(text: str) -> dict[str, Any]:
                     "name": _clean_item_name(cbm_match.group("name")),
                     "quantity": 1,
                     "total_cbm": float(cbm_match.group("cbm")),
+                    "volume_unit": cbm_match.group("unit"),
                 }
             )
             continue

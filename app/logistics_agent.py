@@ -11,6 +11,7 @@ from app.logistics_risk import assess_logistics_risk
 from app.packaging_advisor import generate_packaging_plan
 from app.readiness_checklist import generate_readiness_checklist
 from app.route_advisor import recommend_route_and_handling
+from app.unit_converter import normalize_item_units
 
 
 @dataclass(frozen=True)
@@ -249,7 +250,8 @@ def generate_loading_advice(items: list[CargoItem]) -> list[str]:
 
 
 def build_logistics_plan(raw_items: list[dict[str, Any]], shipment_context: dict[str, Any] | None = None) -> dict[str, Any]:
-    items = [CargoItem(**raw_item) for raw_item in raw_items]
+    normalized_raw_items = [normalize_item_units(raw_item) for raw_item in raw_items]
+    items = [CargoItem(**raw_item) for raw_item in normalized_raw_items]
 
     item_breakdown = []
     for item in items:

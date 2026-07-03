@@ -5,6 +5,8 @@ from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Any
 
+from app.unit_converter import convert_volume_to_cbm
+
 
 CATALOG_PATH = Path(__file__).resolve().parents[1] / "data" / "item_catalog.json"
 FUZZY_MATCH_THRESHOLD = 0.78
@@ -131,7 +133,9 @@ def _merge_direct_cbm(
     catalog_item: dict[str, Any] | None,
 ) -> dict[str, Any]:
     quantity = int(raw_item.get("quantity", 1))
-    total_cbm = float(raw_item.get("total_cbm", raw_item.get("cbm")))
+    raw_volume = float(raw_item.get("total_cbm", raw_item.get("cbm")))
+    volume_unit = raw_item.get("volume_unit", raw_item.get("cbm_unit", "cbm"))
+    total_cbm = convert_volume_to_cbm(raw_volume, volume_unit)
     unit_cbm = total_cbm / quantity
 
     base = catalog_item or {}

@@ -396,6 +396,64 @@ def test_fuzzy_catalog_matching():
     assert resolution["unresolved_items"] == []
 
 
+
+def test_dimension_unit_conversion_cm():
+    raw_items = [
+        {
+            "name": "TV",
+            "quantity": 50,
+            "length": 120,
+            "width": 20,
+            "height": 80,
+            "dimension_unit": "cm",
+            "weight": 12,
+            "weight_unit": "kg",
+            "fragile": True,
+            "stackable": False,
+        }
+    ]
+
+    plan = build_logistics_plan(raw_items)
+
+    assert plan["shipment_summary"]["total_cbm"] == 9.6
+    assert plan["shipment_summary"]["total_weight_kg"] == 600
+
+
+def test_dimension_unit_conversion_inches_and_pounds():
+    raw_items = [
+        {
+            "name": "Test Box",
+            "quantity": 1,
+            "length": 12,
+            "width": 12,
+            "height": 12,
+            "dimension_unit": "in",
+            "weight": 22.0462,
+            "weight_unit": "lb",
+        }
+    ]
+
+    plan = build_logistics_plan(raw_items)
+
+    assert round(plan["shipment_summary"]["total_cbm"], 4) == 0.0283
+    assert round(plan["shipment_summary"]["total_weight_kg"], 2) == 10.0
+
+
+def test_text_parser_cubic_feet_conversion():
+    parsed = parse_shipment_text("10 cubic feet of tiles")
+    shipment_data = {
+        "shipment_id": "TEST-FT3-001",
+        "customer": "Test Customer",
+        "origin": "India",
+        "destination": "USA",
+        "items": parsed["items"],
+    }
+
+    response = run_logistics_agent(shipment_data)
+
+    assert round(response["handoff_payload"]["total_cbm"], 4) == 0.2832
+
+
 def main():
     test_cbm_calculation()
     test_container_recommendation()
@@ -414,6 +472,9 @@ def main():
     test_text_shipment_parser()
     test_text_input_runs_through_logistics_agent()
     test_fuzzy_catalog_matching()
+    test_dimension_unit_conversion_cm()
+    test_dimension_unit_conversion_inches_and_pounds()
+    test_text_parser_cubic_feet_conversion()
     print("All logistics agent tests passed.")
 
 
