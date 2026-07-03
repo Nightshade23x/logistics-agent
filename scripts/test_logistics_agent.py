@@ -454,6 +454,47 @@ def test_text_parser_cubic_feet_conversion():
     assert round(response["handoff_payload"]["total_cbm"], 4) == 0.2832
 
 
+
+def test_input_quality_detects_unit_mistake():
+    raw_items = [
+        {
+            "name": "TV",
+            "quantity": 1,
+            "length_m": 120,
+            "width_m": 20,
+            "height_m": 80,
+            "weight_kg": 12,
+            "fragile": True,
+        }
+    ]
+
+    plan = build_logistics_plan(raw_items)
+
+    assert "input_quality" in plan
+    assert plan["input_quality"]["quality_level"] in {"needs_review", "poor"}
+    assert len(plan["input_quality"]["warnings"]) > 0
+
+
+def test_input_quality_good_for_normal_input():
+    raw_items = [
+        {
+            "name": "TV",
+            "quantity": 1,
+            "length": 120,
+            "width": 20,
+            "height": 80,
+            "dimension_unit": "cm",
+            "weight_kg": 12,
+            "fragile": True,
+        }
+    ]
+
+    plan = build_logistics_plan(raw_items)
+
+    assert "input_quality" in plan
+    assert plan["input_quality"]["quality_level"] in {"good", "needs_review"}
+
+
 def main():
     test_cbm_calculation()
     test_container_recommendation()
@@ -475,6 +516,8 @@ def main():
     test_dimension_unit_conversion_cm()
     test_dimension_unit_conversion_inches_and_pounds()
     test_text_parser_cubic_feet_conversion()
+    test_input_quality_detects_unit_mistake()
+    test_input_quality_good_for_normal_input()
     print("All logistics agent tests passed.")
 
 

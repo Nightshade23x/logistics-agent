@@ -3,6 +3,7 @@
 from dataclasses import asdict, dataclass
 from typing import Any
 
+from app.input_quality import assess_input_quality
 from app.container_layout import generate_container_layout
 from app.container_options import generate_container_options
 from app.container_strategy import recommend_container_strategy
@@ -269,6 +270,7 @@ def build_logistics_plan(raw_items: list[dict[str, Any]], shipment_context: dict
     total_cbm = calculate_total_cbm(items)
     total_weight = calculate_total_weight(items)
     shipment_context = shipment_context or {}
+    input_quality = assess_input_quality(item_breakdown)
 
     container_recommendation = recommend_container(items)
     container_options = generate_container_options(total_cbm, total_weight)
@@ -305,6 +307,7 @@ def build_logistics_plan(raw_items: list[dict[str, Any]], shipment_context: dict
             "total_weight_kg": total_weight,
         },
         "shipment_context": shipment_context,
+        "input_quality": input_quality,
         "item_breakdown": item_breakdown,
         "container_recommendation": container_recommendation,
         "container_options": container_options,

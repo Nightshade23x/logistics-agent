@@ -42,6 +42,22 @@ def format_logistics_plan(plan: dict[str, Any], shipment_info: dict[str, Any] | 
 
         lines.append("")
 
+    input_quality = plan.get("input_quality")
+    if input_quality:
+        lines.append("INPUT QUALITY CHECK")
+        lines.append("-" * 30)
+        lines.append(f"Quality level: {input_quality['quality_level'].upper()}")
+        lines.append(f"Quality score: {input_quality['quality_score']}")
+        lines.append("")
+        lines.append("Warnings:")
+        for warning in input_quality["warnings"]:
+            lines.append(f"- {warning}")
+        lines.append("")
+        lines.append("Recommendations:")
+        for recommendation in input_quality["recommendations"]:
+            lines.append(f"- {recommendation}")
+        lines.append("")
+
     summary = plan["shipment_summary"]
     container = plan["container_recommendation"]
 
@@ -171,9 +187,23 @@ def format_logistics_plan(plan: dict[str, Any], shipment_info: dict[str, Any] | 
         for item in packaging_plan["per_item_packaging"]:
             lines.append(f"- {item['item_name']} x {item['quantity']}")
             lines.append(f"  Risk level: {item['risk_level'].upper()}")
+
+            lines.append("  Assigned labels:")
+            for label in item["recommended_labels"]:
+                lines.append(f"  - {label}")
+
+            lines.append(
+                f"  Label instruction: Please apply the following labels to this cargo: {', '.join(item['recommended_labels'])}."
+            )
+
+            lines.append("  Recommended materials:")
+            for material in item["recommended_materials"]:
+                lines.append(f"  - {material}")
+
             lines.append("  Packaging actions:")
             for action in item["packaging_actions"]:
                 lines.append(f"  - {action}")
+
             lines.append("  Securing actions:")
             for action in item["securing_actions"]:
                 lines.append(f"  - {action}")
