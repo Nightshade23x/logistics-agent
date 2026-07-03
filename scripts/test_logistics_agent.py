@@ -495,6 +495,72 @@ def test_input_quality_good_for_normal_input():
     assert plan["input_quality"]["quality_level"] in {"good", "needs_review"}
 
 
+
+def test_container_fit_detects_oversized_item():
+    raw_items = [
+        {
+            "name": "Oversized machine",
+            "quantity": 1,
+            "length_m": 13,
+            "width_m": 3,
+            "height_m": 3,
+            "weight_kg": 5000,
+            "stackable": False,
+        }
+    ]
+
+    plan = build_logistics_plan(raw_items)
+
+    assert "container_fit" in plan
+    assert plan["container_fit"]["fit_status"] in {
+        "review_required",
+        "specialist_required",
+    }
+
+
+def test_container_fit_passes_normal_item():
+    raw_items = [
+        {
+            "name": "TV",
+            "quantity": 1,
+            "length": 120,
+            "width": 20,
+            "height": 80,
+            "dimension_unit": "cm",
+            "weight_kg": 12,
+            "fragile": True,
+            "stackable": False,
+        }
+    ]
+
+    plan = build_logistics_plan(raw_items)
+
+    assert "container_fit" in plan
+    assert plan["container_fit"]["item_fit_results"][0]["fits_selected_container"] is True
+
+
+
+def test_container_fit_reports_smallest_standard_fit():
+    raw_items = [
+        {
+            "name": "TV",
+            "quantity": 1,
+            "length": 120,
+            "width": 20,
+            "height": 80,
+            "dimension_unit": "cm",
+            "weight_kg": 12,
+            "fragile": True,
+            "stackable": False,
+        }
+    ]
+
+    plan = build_logistics_plan(raw_items)
+    result = plan["container_fit"]["item_fit_results"][0]
+
+    assert result["smallest_standard_container_fit"] == "20ft Standard Container"
+
+
 def main():
     test_cbm_calculation()
     test_container_recommendation()
@@ -518,6 +584,9 @@ def main():
     test_text_parser_cubic_feet_conversion()
     test_input_quality_detects_unit_mistake()
     test_input_quality_good_for_normal_input()
+    test_container_fit_detects_oversized_item()
+    test_container_fit_passes_normal_item()
+    test_container_fit_reports_smallest_standard_fit()
     print("All logistics agent tests passed.")
 
 

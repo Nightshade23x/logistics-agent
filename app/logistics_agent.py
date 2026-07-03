@@ -6,6 +6,7 @@ from typing import Any
 from app.input_quality import assess_input_quality
 from app.container_layout import generate_container_layout
 from app.container_options import generate_container_options
+from app.container_fit import assess_container_fit
 from app.container_strategy import recommend_container_strategy
 from app.loading_planner import generate_loading_sequence
 from app.logistics_risk import assess_logistics_risk
@@ -273,6 +274,7 @@ def build_logistics_plan(raw_items: list[dict[str, Any]], shipment_context: dict
     input_quality = assess_input_quality(item_breakdown)
 
     container_recommendation = recommend_container(items)
+    container_fit = assess_container_fit(item_breakdown, container_recommendation)
     container_options = generate_container_options(total_cbm, total_weight)
     container_strategy = recommend_container_strategy(item_breakdown, container_recommendation)
     loading_advice = generate_loading_advice(items)
@@ -310,6 +312,7 @@ def build_logistics_plan(raw_items: list[dict[str, Any]], shipment_context: dict
         "input_quality": input_quality,
         "item_breakdown": item_breakdown,
         "container_recommendation": container_recommendation,
+        "container_fit": container_fit,
         "container_options": container_options,
         "container_strategy": container_strategy,
         "logistics_risk": logistics_risk,

@@ -68,6 +68,30 @@ def format_logistics_plan(plan: dict[str, Any], shipment_info: dict[str, Any] | 
     lines.append(f"Total weight: {summary['total_weight_kg']} kg")
     lines.append("")
 
+    container_fit = plan.get("container_fit")
+    if container_fit:
+        lines.append("PHYSICAL CONTAINER FIT CHECK")
+        lines.append("-" * 30)
+        lines.append(f"Fit status: {container_fit['fit_status'].upper()}")
+        lines.append(f"Container checked: {container_fit['selected_container_checked']}")
+        lines.append(f"Note: {container_fit['note']}")
+        lines.append("")
+        lines.append("Warnings:")
+        for warning in container_fit["warnings"]:
+            lines.append(f"- {warning}")
+        lines.append("")
+        lines.append("Recommendations:")
+        for recommendation in container_fit["recommendations"]:
+            lines.append(f"- {recommendation}")
+        lines.append("")
+        lines.append("Item fit results:")
+        for item in container_fit["item_fit_results"]:
+            lines.append(f"- {item['item_name']} x {item['quantity']}")
+            lines.append(f"  Fits selected container: {item['fits_selected_container']}")
+            lines.append(f"  Passes selected container door: {item['passes_selected_container_door']}")
+            lines.append(f"  Smallest standard fit: {item['smallest_standard_container_fit']}")
+        lines.append("")
+
     lines.append("CONTAINER RECOMMENDATION")
     lines.append("-" * 30)
     lines.append(f"Recommended container: {container['container_name']}")
