@@ -91,11 +91,43 @@ def test_loading_sequence():
     assert plan["loading_sequence"][0]["sequence_number"] == 1
 
 
+
+def test_logistics_risk_assessment():
+    raw_items = [
+        {
+            "name": "Glass bottles",
+            "quantity": 10,
+            "length_m": 0.3,
+            "width_m": 0.3,
+            "height_m": 0.4,
+            "weight_kg": 2,
+            "fragile": True,
+        },
+        {
+            "name": "Scooter",
+            "quantity": 2,
+            "length_m": 1.8,
+            "width_m": 0.7,
+            "height_m": 1.1,
+            "weight_kg": 90,
+            "stackable": False,
+        },
+    ]
+
+    plan = build_logistics_plan(raw_items)
+
+    assert "logistics_risk" in plan
+    assert plan["logistics_risk"]["risk_level"] in {"moderate", "high", "critical"}
+    assert len(plan["logistics_risk"]["warnings"]) > 0
+    assert len(plan["logistics_risk"]["requirements"]) > 0
+
+
 def main():
     test_cbm_calculation()
     test_container_recommendation()
     test_full_logistics_plan()
     test_loading_sequence()
+    test_logistics_risk_assessment()
     print("All logistics agent tests passed.")
 
 

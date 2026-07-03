@@ -43,6 +43,22 @@ def format_logistics_plan(plan: dict[str, Any], shipment_info: dict[str, Any] | 
     lines.append(f"Reason: {container['reason']}")
     lines.append("")
 
+    risk = plan.get("logistics_risk")
+    if risk:
+        lines.append("OPERATIONAL WARNINGS & REQUIREMENTS")
+        lines.append("-" * 30)
+        lines.append(f"Risk level: {risk['risk_level'].upper()}")
+        lines.append(f"Risk score: {risk['risk_score']}")
+        lines.append("")
+        lines.append("Warnings:")
+        for warning in risk["warnings"]:
+            lines.append(f"- {warning}")
+        lines.append("")
+        lines.append("Requirements:")
+        for requirement in risk["requirements"]:
+            lines.append(f"- {requirement}")
+        lines.append("")
+
     lines.append("ITEM BREAKDOWN")
     lines.append("-" * 30)
 

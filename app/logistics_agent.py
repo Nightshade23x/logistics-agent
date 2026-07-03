@@ -4,6 +4,7 @@ from dataclasses import asdict, dataclass
 from typing import Any
 
 from app.loading_planner import generate_loading_sequence
+from app.logistics_risk import assess_logistics_risk
 
 
 @dataclass(frozen=True)
@@ -262,6 +263,7 @@ def build_logistics_plan(raw_items: list[dict[str, Any]]) -> dict[str, Any]:
     container_recommendation = recommend_container(items)
     loading_advice = generate_loading_advice(items)
     loading_sequence = generate_loading_sequence(item_breakdown)
+    logistics_risk = assess_logistics_risk(item_breakdown, container_recommendation)
 
     return {
         "shipment_summary": {
@@ -271,6 +273,7 @@ def build_logistics_plan(raw_items: list[dict[str, Any]]) -> dict[str, Any]:
         },
         "item_breakdown": item_breakdown,
         "container_recommendation": container_recommendation,
+        "logistics_risk": logistics_risk,
         "loading_sequence": loading_sequence,
         "loading_advice": loading_advice,
     }
