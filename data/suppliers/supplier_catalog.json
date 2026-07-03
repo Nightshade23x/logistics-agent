@@ -1,4 +1,4 @@
-﻿[
+[
   {
     "supplier_id": "SUP-IN-001",
     "supplier_name": "Mumbai Export House",
@@ -133,20 +133,5 @@
     "available_quantity": 7000,
     "currency": "USD",
     "notes": "Fragile packaging recommended."
-  },
-  {
-    "supplier_id": "SUP-CN-003",
-    "supplier_name": "Qingdao Glass Products",
-    "country": "China",
-    "product_name": "Glass bottles",
-    "category": "glassware",
-    "unit_price_usd": 1.0,
-    "quality_score": 7.6,
-    "supplier_rating": 4.0,
-    "lead_time_days": 24,
-    "minimum_order_quantity": 100,
-    "available_quantity": 20000,
-    "currency": "USD",
-    "notes": "Low-cost glassware supplier."
   }
 ]

@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import json
 from pathlib import Path
@@ -25,18 +25,10 @@ def _build_handoff_payload(plan: dict[str, Any]) -> dict[str, Any]:
         "estimated_total_procurement_cost_usd": summary["estimated_total_procurement_cost_usd"],
         "currency": summary["currency"],
         "supplier_countries": sorted(
-            {
-                item["country"]
-                for item in plan["selected_items"]
-                if item.get("country")
-            }
+            {item["country"] for item in plan["selected_items"] if item.get("country")}
         ),
         "product_categories": sorted(
-            {
-                item["category"]
-                for item in plan["selected_items"]
-                if item.get("category")
-            }
+            {item["category"] for item in plan["selected_items"] if item.get("category")}
         ),
     }
 
@@ -90,8 +82,7 @@ def _build_handoff_requests(plan: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def format_shopping_report(plan: dict[str, Any]) -> str:
-    lines: list[str] = []
-
+    lines = []
     context = plan["request_context"]
     summary = plan["procurement_summary"]
 
@@ -106,11 +97,14 @@ def format_shopping_report(plan: dict[str, Any]) -> str:
     lines.append("PROCUREMENT SUMMARY")
     lines.append("-" * 30)
     lines.append(f"Selected suppliers: {summary['selected_supplier_count']}")
-    lines.append(f"Estimated total procurement cost: {summary['estimated_total_procurement_cost_usd']} {summary['currency']}")
+    lines.append(
+        f"Estimated total procurement cost: {summary['estimated_total_procurement_cost_usd']} {summary['currency']}"
+    )
     lines.append("")
 
     lines.append("ITEM RESULTS")
     lines.append("-" * 30)
+
     for result in plan["item_results"]:
         lines.append(f"- {result['requested_item']} x {result['requested_quantity']}")
 

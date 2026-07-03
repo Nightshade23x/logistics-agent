@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from pathlib import Path
 import sys
@@ -23,12 +23,7 @@ def test_build_shopping_plan():
         "request_id": "TEST-SHOP-001",
         "customer": "Test Customer",
         "destination_country": "USA",
-        "items": [
-            {
-                "name": "TVs",
-                "quantity": 50,
-            }
-        ],
+        "items": [{"name": "TVs", "quantity": 50}],
     }
 
     plan = build_shopping_plan(request_data)
@@ -43,12 +38,7 @@ def test_shopping_agent_response_contract():
         "request_id": "TEST-SHOP-002",
         "customer": "Test Customer",
         "destination_country": "USA",
-        "items": [
-            {
-                "name": "Scooters",
-                "quantity": 5,
-            }
-        ],
+        "items": [{"name": "Scooters", "quantity": 5}],
     }
 
     response = run_shopping_agent(request_data)
@@ -68,12 +58,7 @@ def test_unknown_product_needs_more_information():
         "request_id": "TEST-SHOP-003",
         "customer": "Test Customer",
         "destination_country": "USA",
-        "items": [
-            {
-                "name": "Unknown cargo item",
-                "quantity": 10,
-            }
-        ],
+        "items": [{"name": "Unknown cargo item", "quantity": 10}],
     }
 
     response = run_shopping_agent(request_data)

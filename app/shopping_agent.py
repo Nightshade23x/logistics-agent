@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import json
 from difflib import SequenceMatcher
@@ -16,10 +16,8 @@ def _normalize(text: str) -> str:
 def _singularize(word: str) -> str:
     if word.endswith("ies") and len(word) > 3:
         return word[:-3] + "y"
-
     if word.endswith("s") and len(word) > 3:
         return word[:-1]
-
     return word
 
 
@@ -29,14 +27,13 @@ def _tokens(text: str) -> set[str]:
 
 def load_supplier_catalog(path: Path | None = None) -> list[dict[str, Any]]:
     catalog_path = path or CATALOG_PATH
-
     with catalog_path.open("r", encoding="utf-8-sig") as file:
         return json.load(file)
 
 
-def _match_score(requested_name: str, supplier_product_name: str) -> float:
+def _match_score(requested_name: str, product_name: str) -> float:
     requested = _normalize(requested_name)
-    product = _normalize(supplier_product_name)
+    product = _normalize(product_name)
 
     if requested == product:
         return 1.0
@@ -57,7 +54,6 @@ def _match_score(requested_name: str, supplier_product_name: str) -> float:
         )
 
     sequence_score = SequenceMatcher(None, requested, product).ratio()
-
     return max(token_overlap, sequence_score)
 
 
@@ -66,11 +62,10 @@ def find_supplier_matches(
     catalog: list[dict[str, Any]],
     threshold: float = 0.72,
 ) -> list[dict[str, Any]]:
-    matches: list[dict[str, Any]] = []
+    matches = []
 
     for supplier_item in catalog:
         score = _match_score(item_name, supplier_item["product_name"])
-
         if score >= threshold:
             match = dict(supplier_item)
             match["match_score"] = round(score, 2)
@@ -91,37 +86,27 @@ def find_alternatives(
     catalog: list[dict[str, Any]],
     limit: int = 3,
 ) -> list[dict[str, Any]]:
-    scored_items = []
+    alternatives = []
 
     for supplier_item in catalog:
         score = _match_score(item_name, supplier_item["product_name"])
-        alternative = dict(supplier_item)
-        alternative["similarity_score"] = round(score, 2)
-        scored_items.append(alternative)
+        option = dict(supplier_item)
+        option["similarity_score"] = round(score, 2)
+        alternatives.append(option)
 
-    return sorted(
-        scored_items,
-        key=lambda item: -item["similarity_score"],
-    )[:limit]
+    return sorted(alternatives, key=lambda item: -item["similarity_score"])[:limit]
 
 
-def _availability_status(requested_quantity: int, supplier_item: dict[str, Any]) -> str:
-    minimum_order = int(supplier_item["minimum_order_quantity"])
-    available_quantity = int(supplier_item["available_quantity"])
-
-    if requested_quantity < minimum_order:
+def _availability_status(quantity: int, supplier_item: dict[str, Any]) -> str:
+    if quantity < int(supplier_item["minimum_order_quantity"]):
         return "below_minimum_order_quantity"
-
-    if requested_quantity > available_quantity:
+    if quantity > int(supplier_item["available_quantity"]):
         return "insufficient_stock"
-
     return "available"
 
 
-def _score_supplier(requested_quantity: int, supplier_item: dict[str, Any]) -> float:
-    availability = _availability_status(requested_quantity, supplier_item)
-
-    if availability != "available":
+def _score_supplier(quantity: int, supplier_item: dict[str, Any]) -> float:
+    if _availability_status(quantity, supplier_item) != "available":
         return 0.0
 
     price = float(supplier_item["unit_price_usd"])
@@ -143,12 +128,9 @@ def _score_supplier(requested_quantity: int, supplier_item: dict[str, Any]) -> f
     )
 
 
-def _build_supplier_option(
-    requested_quantity: int,
-    supplier_item: dict[str, Any],
-) -> dict[str, Any]:
-    total_cost = requested_quantity * float(supplier_item["unit_price_usd"])
-    availability = _availability_status(requested_quantity, supplier_item)
+def _build_supplier_option(quantity: int, supplier_item: dict[str, Any]) -> dict[str, Any]:
+    total_cost = quantity * float(supplier_item["unit_price_usd"])
+    availability = _availability_status(quantity, supplier_item)
 
     return {
         "supplier_id": supplier_item["supplier_id"],
@@ -157,7 +139,7 @@ def _build_supplier_option(
         "product_name": supplier_item["product_name"],
         "category": supplier_item["category"],
         "unit_price_usd": supplier_item["unit_price_usd"],
-        "requested_quantity": requested_quantity,
+        "requested_quantity": quantity,
         "estimated_total_cost_usd": round(total_cost, 2),
         "quality_score": supplier_item["quality_score"],
         "supplier_rating": supplier_item["supplier_rating"],
@@ -166,24 +148,18 @@ def _build_supplier_option(
         "available_quantity": supplier_item["available_quantity"],
         "availability_status": availability,
         "match_score": supplier_item.get("match_score", 0),
-        "overall_score": _score_supplier(requested_quantity, supplier_item),
+        "overall_score": _score_supplier(quantity, supplier_item),
         "notes": supplier_item.get("notes", ""),
     }
 
 
 def _select_recommendations(options: list[dict[str, Any]]) -> dict[str, Any]:
     available_options = [
-        option
-        for option in options
-        if option["availability_status"] == "available"
+        option for option in options if option["availability_status"] == "available"
     ]
 
     if not available_options:
-        return {
-            "cheapest": None,
-            "best_quality": None,
-            "balanced": None,
-        }
+        return {"cheapest": None, "best_quality": None, "balanced": None}
 
     cheapest = min(available_options, key=lambda option: option["unit_price_usd"])
     best_quality = max(
@@ -218,20 +194,15 @@ def evaluate_shopping_item(
     quantity = int(requested_item["quantity"])
 
     matches = find_supplier_matches(item_name, catalog)
-    options = [
-        _build_supplier_option(quantity, match)
-        for match in matches
-    ]
-
+    options = [_build_supplier_option(quantity, match) for match in matches]
     recommendations = _select_recommendations(options)
 
-    issues: list[str] = []
-    alternatives: list[dict[str, Any]] = []
+    issues = []
+    alternatives = []
 
     if not matches:
         issues.append(f"{item_name}: no supplier match found.")
         alternatives = find_alternatives(item_name, catalog)
-
     elif not any(option["availability_status"] == "available" for option in options):
         issues.append(
             f"{item_name}: suppliers found, but none can satisfy quantity/MOQ/stock requirements."
@@ -253,8 +224,7 @@ def build_shopping_plan(request_data: dict[str, Any]) -> dict[str, Any]:
     requested_items = request_data.get("items", [])
 
     item_results = [
-        evaluate_shopping_item(item, catalog)
-        for item in requested_items
+        evaluate_shopping_item(item, catalog) for item in requested_items
     ]
 
     selected_items = []
@@ -262,15 +232,12 @@ def build_shopping_plan(request_data: dict[str, Any]) -> dict[str, Any]:
 
     for result in item_results:
         balanced = result["recommendations"].get("balanced")
-
         if balanced:
             selected_items.append(balanced)
             total_procurement_cost += balanced["estimated_total_cost_usd"]
 
     all_issues = [
-        issue
-        for result in item_results
-        for issue in result["issues"]
+        issue for result in item_results for issue in result["issues"]
     ]
 
     if all_issues:

@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from pathlib import Path
 import sys
@@ -29,6 +29,7 @@ def main() -> None:
     print("")
     print("HANDOFF REQUESTS")
     print("-" * 30)
+
     for request in response["handoff_requests"]:
         print(f"Target agent: {request['target_agent']}")
         print(f"Reason: {request['reason']}")
