@@ -10,6 +10,7 @@ from app.document_parser import parse_trade_document
 from app.document_service import run_document_agent_from_file, run_document_agent_from_text
 from app.document_pair_service import run_document_pair_agent_from_files, run_document_pair_agent_from_texts
 from app.document_set_service import run_document_set_agent_from_files, run_document_set_agent_from_texts
+from app.document_ai_router import run_document_ai_agent
 
 
 def test_parse_invoice():
@@ -214,6 +215,52 @@ def test_document_set_missing_documents():
     assert response["handoff_requests"][0]["target_agent"] == "user_agent"
 
 
+
+def test_document_ai_router_single_document():
+    paths = [
+        ROOT_DIR / "data" / "documents" / "sample_invoice.txt",
+    ]
+
+    response = run_document_ai_agent(paths)
+
+    assert response["agent_name"] == "document_ai_agent"
+    assert response["plan"]["document_type"] == "invoice"
+
+
+def test_document_ai_router_pair_documents():
+    paths = [
+        ROOT_DIR / "data" / "documents" / "sample_invoice.txt",
+        ROOT_DIR / "data" / "documents" / "sample_packing_list.txt",
+    ]
+
+    response = run_document_ai_agent(paths)
+
+    assert response["agent_name"] == "document_ai_agent"
+    assert "consistency" in response["plan"]
+
+
+def test_document_ai_router_document_set():
+    paths = [
+        ROOT_DIR / "data" / "documents" / "sample_invoice.txt",
+        ROOT_DIR / "data" / "documents" / "sample_packing_list.txt",
+        ROOT_DIR / "data" / "documents" / "sample_bill_of_lading.txt",
+        ROOT_DIR / "data" / "documents" / "sample_certificate_of_origin.txt",
+    ]
+
+    response = run_document_ai_agent(paths)
+
+    assert response["agent_name"] == "document_ai_agent"
+    assert "validation" in response["plan"]
+    assert response["status"] == "ready_for_review"
+
+
+def test_document_ai_router_no_documents():
+    response = run_document_ai_agent([])
+
+    assert response["status"] == "needs_more_information"
+    assert "uploaded_documents" in response["missing_information"]
+
+
 def main() -> None:
     test_parse_invoice()
     test_parse_packing_list_dimensions()
@@ -224,6 +271,10 @@ def main() -> None:
     test_document_pair_agent_from_files()
     test_document_set_complete_documents()
     test_document_set_missing_documents()
+    test_document_ai_router_single_document()
+    test_document_ai_router_pair_documents()
+    test_document_ai_router_document_set()
+    test_document_ai_router_no_documents()
 
     print("All document agent tests passed.")
 
