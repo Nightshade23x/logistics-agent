@@ -7,6 +7,7 @@ from typing import Any
 from app.purchase_order import generate_purchase_order_drafts, format_purchase_order_drafts
 from app.shopping_agent import build_shopping_plan
 from app.shopping_text_parser import parse_shopping_request_text
+from app.supplier_shortlist import build_supplier_shortlist, format_supplier_shortlist
 
 
 def read_shopping_request(path: str | Path) -> dict[str, Any]:
@@ -22,6 +23,7 @@ def read_shopping_request_text(path: str | Path) -> dict[str, Any]:
 def _build_handoff_payload(
     plan: dict[str, Any],
     purchase_order_drafts: list[dict[str, Any]],
+    supplier_shortlist: list[dict[str, Any]],
 ) -> dict[str, Any]:
     context = plan["request_context"]
     summary = plan["procurement_summary"]
@@ -38,6 +40,7 @@ def _build_handoff_payload(
         "budget_check": plan["budget_check"],
         "procurement_risk": plan["procurement_risk"],
         "purchase_order_drafts": purchase_order_drafts,
+        "supplier_shortlist": supplier_shortlist,
         "supplier_countries": sorted(
             {
                 item["country"]
@@ -67,6 +70,7 @@ def _build_handoff_requests(plan: dict[str, Any]) -> list[dict[str, Any]]:
                 "budget_check",
                 "procurement_risk",
                 "purchase_order_drafts",
+                "supplier_shortlist",
             ],
         },
         {
@@ -78,6 +82,7 @@ def _build_handoff_requests(plan: dict[str, Any]) -> list[dict[str, Any]]:
                 "destination_country",
                 "procurement_risk",
                 "purchase_order_drafts",
+                "supplier_shortlist",
             ],
         },
         {
@@ -89,6 +94,7 @@ def _build_handoff_requests(plan: dict[str, Any]) -> list[dict[str, Any]]:
                 "destination_country",
                 "procurement_risk",
                 "purchase_order_drafts",
+                "supplier_shortlist",
             ],
         },
     ]
@@ -123,6 +129,7 @@ def _preferences_are_present(preferences: dict[str, Any]) -> bool:
 def format_shopping_report(
     plan: dict[str, Any],
     purchase_order_drafts: list[dict[str, Any]],
+    supplier_shortlist: list[dict[str, Any]],
 ) -> str:
     lines = []
 
@@ -181,6 +188,11 @@ def format_shopping_report(
         for note in procurement_risk["risk_notes"]:
             lines.append(f"- {note}")
 
+    lines.append("")
+
+    lines.append("SUPPLIER SHORTLIST")
+    lines.append("-" * 30)
+    lines.append(format_supplier_shortlist(supplier_shortlist))
     lines.append("")
 
     lines.append("PURCHASE ORDER DRAFTS")
@@ -263,8 +275,9 @@ def format_shopping_report(
 def run_shopping_agent(request_data: dict[str, Any]) -> dict[str, Any]:
     plan = build_shopping_plan(request_data)
     purchase_order_drafts = generate_purchase_order_drafts(plan)
-    report = format_shopping_report(plan, purchase_order_drafts)
-    handoff_payload = _build_handoff_payload(plan, purchase_order_drafts)
+    supplier_shortlist = build_supplier_shortlist(plan)
+    report = format_shopping_report(plan, purchase_order_drafts, supplier_shortlist)
+    handoff_payload = _build_handoff_payload(plan, purchase_order_drafts, supplier_shortlist)
     handoff_requests = _build_handoff_requests(plan)
 
     return {
@@ -275,7 +288,8 @@ def run_shopping_agent(request_data: dict[str, Any]) -> dict[str, Any]:
             f"Selected {plan['procurement_summary']['selected_supplier_count']} supplier option(s). "
             f"Estimated procurement cost: {plan['procurement_summary']['estimated_total_procurement_cost_usd']} USD. "
             f"Overall procurement risk: {plan['procurement_risk']['overall_risk_level']}. "
-            f"Created {len(purchase_order_drafts)} draft purchase order(s)."
+            f"Created {len(purchase_order_drafts)} draft purchase order(s). "
+            f"Shortlisted {len(supplier_shortlist)} supplier option(s)."
         ),
         "plan": plan,
         "report": report,

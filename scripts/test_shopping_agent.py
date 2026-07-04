@@ -15,6 +15,7 @@ from app.shopping_service import (
     run_shopping_agent_from_text,
 )
 from app.shopping_text_parser import parse_shopping_request_text
+from app.supplier_shortlist import build_supplier_shortlist
 
 
 def test_supplier_matching():
@@ -286,6 +287,35 @@ def test_purchase_order_generation_from_plan():
     assert purchase_orders[0]["line_items"][0]["product_name"] == "TVs"
 
 
+
+def test_supplier_shortlist_is_created():
+    path = ROOT_DIR / "data" / "suppliers" / "sample_shopping_request_text.txt"
+
+    response = run_shopping_agent_from_any_file(path)
+    shortlist = response["handoff_payload"]["supplier_shortlist"]
+
+    assert len(shortlist) >= 3
+    assert any(option["is_selected"] for option in shortlist)
+    assert "SUPPLIER SHORTLIST" in response["report"]
+
+
+def test_supplier_shortlist_from_plan():
+    request_data = {
+        "request_id": "TEST-SHORTLIST-001",
+        "customer": "Test Customer",
+        "destination_country": "USA",
+        "items": [{"name": "TVs", "quantity": 50}],
+    }
+
+    plan = build_shopping_plan(request_data)
+    shortlist = build_supplier_shortlist(plan)
+
+    assert len(shortlist) >= 1
+    assert "supplier_name" in shortlist[0]
+    assert "risk_level" in shortlist[0]
+    assert "is_selected" in shortlist[0]
+
+
 def main() -> None:
     test_supplier_matching()
     test_build_shopping_plan()
@@ -302,6 +332,8 @@ def main() -> None:
     test_procurement_risk_in_report()
     test_purchase_order_drafts_are_created()
     test_purchase_order_generation_from_plan()
+    test_supplier_shortlist_is_created()
+    test_supplier_shortlist_from_plan()
 
     print("All shopping agent tests passed.")
 
