@@ -6,6 +6,8 @@ from .clients.finance_client import FinanceClient
 from .services.shipment_parser_service import ShipmentParserService
 from .services.synthesis_service import SynthesisService
 from .services.orchestrator_service import OrchestratorService
+from .services.verdict_service import VerdictService
+
 
 
 class Container:
@@ -19,10 +21,13 @@ class Container:
 
         self.parser_service = ShipmentParserService(llm=llm)
         self.synthesis_service = SynthesisService(llm=llm)
+        self.verdict_service = VerdictService()
+
 
         self.orchestrator_service = OrchestratorService(
             parser_service=self.parser_service,
             synthesis_service=self.synthesis_service,
+            verdict_service=self.verdict_service,
             risk_client=self.risk_client,
             compliance_client=self.compliance_client,
             trader_client=self.trader_client,

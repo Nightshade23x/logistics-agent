@@ -12,6 +12,7 @@ class OrchestratorService:
         self,
         parser_service: ShipmentParserService,
         synthesis_service: SynthesisService,
+        verdict_service,
         risk_client: McpAgentClient,
         compliance_client: McpAgentClient,
         trader_client: McpAgentClient,
@@ -19,6 +20,7 @@ class OrchestratorService:
     ) -> None:
         self._parser_service = parser_service
         self._synthesis_service = synthesis_service
+        self._verdict_service = verdict_service
         self._risk_client = risk_client
         self._compliance_client = compliance_client
         self._trader_client = trader_client
@@ -91,6 +93,10 @@ class OrchestratorService:
         except Exception as exc:
             agent_errors["finance_agent"] = str(exc)
 
+        verdict = self._verdict_service.derive(
+            compliance_report, trader_report, finance_report, risk_report, agent_errors
+        )
+
         synthesis = self._synthesis_service.synthesize(
             compliance_report, trader_report, finance_report, risk_report, agent_errors
         )
@@ -103,4 +109,5 @@ class OrchestratorService:
             risk_report=risk_report,
             agent_errors=agent_errors,
             synthesis=synthesis,
+            verdict=verdict,
         ) 
