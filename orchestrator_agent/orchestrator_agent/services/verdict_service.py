@@ -27,25 +27,28 @@ class VerdictService:
                 warnings.append(f"{agent_name} did not respond ({error}); its data is unavailable.")
 
         if compliance_report:
-            if compliance_report.get("status") == "prohibited":
+            inner = compliance_report.get("report", {})
+            handoff = compliance_report.get("handoff_payload", {})
+
+            if handoff.get("status") == "prohibited":
                 blockers.append(
-                    f"Compliance: '{compliance_report.get('product_description')}' is prohibited "
-                    f"for trade -- {compliance_report.get('reason', '')}"
+                    f"Compliance: '{inner.get('product_description')}' is prohibited "
+                    f"for trade -- {inner.get('reason', '')}"
                 )
-            elif compliance_report.get("status") == "restricted":
+            elif handoff.get("status") == "restricted":
                 warnings.append(
-                    f"Compliance: '{compliance_report.get('product_description')}' is restricted "
-                    f"-- {compliance_report.get('reason', '')}"
+                    f"Compliance: '{inner.get('product_description')}' is restricted "
+                    f"-- {inner.get('reason', '')}"
                 )
-                next_steps.extend(compliance_report.get("required_certificates", []))
-                next_steps.extend(compliance_report.get("required_permits", []))
-            elif compliance_report.get("status") == "unknown":
+                next_steps.extend(handoff.get("required_certificates", []))
+                next_steps.extend(handoff.get("required_permits", []))
+            elif handoff.get("status") == "unknown":
                 warnings.append(
-                    f"Compliance: '{compliance_report.get('product_description')}' is not in the "
+                    f"Compliance: '{inner.get('product_description')}' is not in the "
                     f"reference dataset -- manual verification required before shipping."
                 )
-            if compliance_report.get("destination_restricted"):
-                blockers.append(f"Compliance: {compliance_report.get('destination_notes', '')}")
+            if handoff.get("destination_restricted"):
+                blockers.append(f"Compliance: {inner.get('destination_notes', '')}")
 
         if risk_report.get("report", {}).get("sanctions", {}).get("sanctions_status") not in (
             None, "unknown", "no_sanctions",

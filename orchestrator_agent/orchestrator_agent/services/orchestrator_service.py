@@ -41,7 +41,7 @@ class OrchestratorService:
         compliance_report: dict = {}
         try:
             compliance_report = self._compliance_client.call_tool_sync(
-                "check_product_compliance",
+                "assess_compliance",
                 {
                     "product_description": shipment.product_description,
                     "destination_country": shipment.country_to,
