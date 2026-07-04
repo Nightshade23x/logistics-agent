@@ -17,6 +17,8 @@ from .services.duty_service import DutyService
 from .services.fta_service import FtaService
 from .services.export_strategy_service import ExportStrategyService
 from .services.orchestrator_service import OrchestratorService
+from .services.trade_assessment_service import TradeAssessmentService
+
 
 
 class Container:
@@ -46,6 +48,11 @@ class Container:
             fta_service=self.fta_service,
             export_strategy_service=self.export_strategy_service,
         )
+
+        self.trade_assessment_service: TradeAssessmentService = TradeAssessmentService(
+            orchestrator_service=self.orchestrator_service,
+        )
+
 
 
 def build_container() -> Container:

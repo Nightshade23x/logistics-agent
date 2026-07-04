@@ -21,6 +21,8 @@ from .schemas import (
     ExportStrategyResponse,
 )
 from .schemas.export_plan import ExportPlanRequest, ExportPlanResponse
+from .schemas.agent_response import AgentResponse
+
 
 mcp = FastMCP("Trader Agent")
 container = build_container()
@@ -132,6 +134,34 @@ def plan_export(
         target_market=target_market,
     )
     return container.orchestrator_service.plan(request)
+
+@mcp.tool()
+def assess_trade_plan(
+    product_description: str, country_from: str, country_to: str, target_market: str
+) -> AgentResponse:
+    """Run a full export-planning assessment in the standard agent contract format.
+
+    Same underlying workflow as plan_export (HS code, duty, FTA, export
+    strategy), wrapped in the standard response contract for orchestration
+    by the User Agent.
+
+    Args:
+        product_description: Free-text description of the product.
+        country_from: ISO country name/code of the exporting country.
+        country_to: ISO country name/code of the importing country.
+        target_market: The country or region being targeted for export.
+
+    Returns:
+        A standard AgentResponse with summary, report, and handoff data.
+    """
+    request = ExportPlanRequest(
+        product_description=product_description,
+        country_from=country_from,
+        country_to=country_to,
+        target_market=target_market,
+    )
+    return container.trade_assessment_service.assess(request)
+
 
 if __name__ == "__main__":
     mcp.run()
