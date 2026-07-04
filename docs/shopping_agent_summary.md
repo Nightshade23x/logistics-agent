@@ -2,15 +2,16 @@
 
 ## Current Version
 
-Shopping Agent V1.1 is complete.
+Shopping Agent V1.3 is complete.
 
-The Shopping Agent helps choose suppliers for requested products. It compares local supplier catalog data and recommends supplier options based on price, quality, rating, lead time, stock, MOQ, and user preferences.
+The Shopping Agent helps choose suppliers for requested products. It compares local supplier catalog data and recommends supplier options based on price, quality, rating, lead time, stock, MOQ, user preferences, budget constraints, and supplier risk.
 
 It follows the shared multi-agent contract and prepares handoff data for Finance, Trader, Compliance, and User Agent.
 
 ## Main Capabilities
 
 - Reads a shopping request from JSON.
+- Reads a shopping request from natural language text.
 - Matches requested products to supplier catalog items.
 - Handles simple plural matching, such as TV and TVs.
 - Compares supplier options by:
@@ -36,16 +37,36 @@ It follows the shared multi-agent contract and prepares handoff data for Finance
   - maximum budget
 - Filters supplier options that do not meet user preferences.
 - Checks whether selected procurement plan is within budget.
+- Assesses supplier and procurement risk.
+- Adds risk fields to selected suppliers:
+  - risk score
+  - risk level
+  - risk notes
+- Adds overall procurement risk summary.
+
+## Natural Language Example
+
+The Shopping Agent can parse text such as:
+
+I need 50 TVs, 5 scooters, and 100 ceramic tiles.
+Prefer suppliers from India.
+Avoid China.
+Maximum lead time 20 days.
+Minimum quality score 8.
+Budget 13000 USD.
 
 ## Main Files
 
 - app/shopping_agent.py: Core supplier matching, filtering, scoring, and procurement planning.
 - app/shopping_service.py: Agent contract response, report formatting, handoff payload, and handoff requests.
-- scripts/run_shopping_agent.py: Runs the Shopping Agent from a request file.
+- app/shopping_text_parser.py: Parses natural language shopping requests.
+- app/shopping_risk.py: Supplier and procurement risk scoring.
+- scripts/run_shopping_agent.py: Runs the Shopping Agent from JSON or text request files.
 - scripts/test_shopping_agent.py: Tests Shopping Agent features.
 - data/suppliers/supplier_catalog.json: Local supplier catalog.
-- data/suppliers/sample_shopping_request.json: Basic sample request.
-- data/suppliers/sample_shopping_request_with_preferences.json: Request with supplier preferences and budget constraints.
+- data/suppliers/sample_shopping_request.json: Basic sample JSON request.
+- data/suppliers/sample_shopping_request_with_preferences.json: JSON request with supplier preferences and budget constraints.
+- data/suppliers/sample_shopping_request_text.txt: Natural language request.
 
 ## Agent Output
 
@@ -88,6 +109,7 @@ The handoff payload includes:
 - estimated_total_procurement_cost_usd
 - currency
 - budget_check
+- procurement_risk
 - supplier_countries
 - product_categories
 
@@ -96,13 +118,13 @@ The handoff payload includes:
 The Shopping Agent sends information to:
 
 Finance Agent:
-For landed cost, ROI, insurance, budget, and financial planning.
+For landed cost, ROI, insurance, budget, procurement risk, and financial planning.
 
 Trader Agent:
-For HS codes, Incoterms, duties, and trade strategy.
+For HS codes, Incoterms, duties, supplier countries, and trade strategy.
 
 Compliance Agent:
-For product restrictions, permits, certificates, and country checks.
+For product restrictions, permits, certificates, supplier country checks, and risk review.
 
 User Agent:
 Only when clarification is needed.
@@ -119,13 +141,17 @@ All shopping agent tests passed.
 
 ## How to Run Demo
 
-Run basic request:
+Run basic JSON request:
 
 python scripts\run_shopping_agent.py
 
-Run request with preferences:
+Run JSON request with preferences:
 
 python scripts\run_shopping_agent.py data\suppliers\sample_shopping_request_with_preferences.json
+
+Run natural language request:
+
+python scripts\run_shopping_agent.py data\suppliers\sample_shopping_request_text.txt
 
 ## Current Limitations
 
@@ -139,11 +165,11 @@ python scripts\run_shopping_agent.py data\suppliers\sample_shopping_request_with
 
 ## Future Improvements
 
-Possible V1.2 upgrades:
+Possible next upgrades:
 
-- Natural language shopping request parser.
-- Supplier risk scoring.
 - Purchase order draft generation.
 - Supplier shortlist export.
+- Integration with Logistics Agent.
+- Integration with Finance, Trader, and Compliance agents.
 - Better category matching.
-- Integration with Document AI, Logistics, Finance, Trader, and Compliance agents.
+- Real supplier API or web search later.
