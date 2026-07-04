@@ -21,14 +21,24 @@ def _build_handoff_payload(plan: dict[str, Any]) -> dict[str, Any]:
         "customer": context.get("customer"),
         "destination_country": context.get("destination_country"),
         "preferred_currency": context.get("preferred_currency"),
+        "preferences": plan["preferences"],
         "selected_items": plan["selected_items"],
         "estimated_total_procurement_cost_usd": summary["estimated_total_procurement_cost_usd"],
         "currency": summary["currency"],
+        "budget_check": plan["budget_check"],
         "supplier_countries": sorted(
-            {item["country"] for item in plan["selected_items"] if item.get("country")}
+            {
+                item["country"]
+                for item in plan["selected_items"]
+                if item.get("country")
+            }
         ),
         "product_categories": sorted(
-            {item["category"] for item in plan["selected_items"] if item.get("category")}
+            {
+                item["category"]
+                for item in plan["selected_items"]
+                if item.get("category")
+            }
         ),
     }
 
@@ -37,11 +47,12 @@ def _build_handoff_requests(plan: dict[str, Any]) -> list[dict[str, Any]]:
     requests = [
         {
             "target_agent": "finance_agent",
-            "reason": "Use selected supplier options and procurement costs for total landed cost, ROI, and budget planning.",
+            "reason": "Use selected supplier options, budget check, and procurement costs for total landed cost, ROI, and budget planning.",
             "inputs_needed": [
                 "selected_items",
                 "estimated_total_procurement_cost_usd",
                 "currency",
+                "budget_check",
             ],
         },
         {
@@ -69,11 +80,13 @@ def _build_handoff_requests(plan: dict[str, Any]) -> list[dict[str, Any]]:
             0,
             {
                 "target_agent": "user_agent",
-                "reason": "Ask the user to clarify products or quantities that could not be matched to available suppliers.",
+                "reason": "Ask the user to clarify product requirements, budget, or supplier preferences.",
                 "inputs_needed": [
                     "issues",
                     "corrected_product_names",
                     "corrected_quantities",
+                    "revised_budget",
+                    "revised_supplier_preferences",
                 ],
             },
         )
@@ -81,10 +94,19 @@ def _build_handoff_requests(plan: dict[str, Any]) -> list[dict[str, Any]]:
     return requests
 
 
+def _preferences_are_present(preferences: dict[str, Any]) -> bool:
+    return any(
+        value not in (None, [], "")
+        for value in preferences.values()
+    )
+
+
 def format_shopping_report(plan: dict[str, Any]) -> str:
     lines = []
     context = plan["request_context"]
     summary = plan["procurement_summary"]
+    preferences = plan["preferences"]
+    budget_check = plan["budget_check"]
 
     lines.append("SHOPPING AGENT REPORT")
     lines.append("=" * 30)
@@ -94,12 +116,27 @@ def format_shopping_report(plan: dict[str, Any]) -> str:
     lines.append(f"Status: {plan['status']}")
     lines.append("")
 
+    if _preferences_are_present(preferences):
+        lines.append("PREFERENCES AND CONSTRAINTS")
+        lines.append("-" * 30)
+        lines.append(f"Preferred supplier countries: {preferences['preferred_supplier_countries'] or 'none'}")
+        lines.append(f"Excluded supplier countries: {preferences['excluded_supplier_countries'] or 'none'}")
+        lines.append(f"Max lead time days: {preferences['max_lead_time_days'] or 'none'}")
+        lines.append(f"Minimum quality score: {preferences['minimum_quality_score'] or 'none'}")
+        lines.append(f"Max budget USD: {preferences['max_budget_usd'] or 'none'}")
+        lines.append("")
+
     lines.append("PROCUREMENT SUMMARY")
     lines.append("-" * 30)
     lines.append(f"Selected suppliers: {summary['selected_supplier_count']}")
     lines.append(
         f"Estimated total procurement cost: {summary['estimated_total_procurement_cost_usd']} {summary['currency']}"
     )
+
+    if budget_check["max_budget_usd"] is not None:
+        lines.append(f"Budget limit: {budget_check['max_budget_usd']} USD")
+        lines.append(f"Within budget: {budget_check['within_budget']}")
+
     lines.append("")
 
     lines.append("ITEM RESULTS")
@@ -126,17 +163,32 @@ def format_shopping_report(plan: dict[str, Any]) -> str:
             lines.append(f"    Quality score: {balanced['quality_score']}")
             lines.append(f"    Supplier rating: {balanced['supplier_rating']}")
             lines.append(f"    Lead time: {balanced['lead_time_days']} days")
+            lines.append(f"    Preferred country: {balanced['is_preferred_country']}")
             lines.append(f"    Overall score: {balanced['overall_score']}")
 
         if cheapest:
             lines.append(
-                f"  Cheapest option: {cheapest['supplier_name']} at {cheapest['unit_price_usd']} USD/unit"
+                f"  Cheapest eligible option: {cheapest['supplier_name']} - {cheapest['unit_price_usd']} USD/unit"
             )
 
         if best_quality:
             lines.append(
-                f"  Best quality option: {best_quality['supplier_name']} with quality score {best_quality['quality_score']}"
+                f"  Best quality eligible option: {best_quality['supplier_name']} with quality score {best_quality['quality_score']}"
             )
+
+        filtered_options = [
+            option
+            for option in result["supplier_options"]
+            if option["selection_status"] == "not_eligible"
+        ]
+
+        if filtered_options:
+            lines.append("  Filtered supplier options:")
+            for option in filtered_options:
+                reasons = option["preference_issues"] or [option["availability_status"]]
+                lines.append(
+                    f"  - {option['supplier_name']} ({option['country']}): {', '.join(reasons)}"
+                )
 
         if result["alternatives"]:
             lines.append("  Possible alternatives:")
