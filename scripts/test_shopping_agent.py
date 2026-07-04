@@ -6,6 +6,7 @@ import sys
 ROOT_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT_DIR))
 
+from app.purchase_order import generate_purchase_order_drafts
 from app.shopping_agent import build_shopping_plan, find_supplier_matches, load_supplier_catalog
 from app.shopping_service import (
     run_shopping_agent,
@@ -256,6 +257,35 @@ def test_procurement_risk_in_report():
     assert "procurement_risk" in response["handoff_payload"]
 
 
+
+def test_purchase_order_drafts_are_created():
+    path = ROOT_DIR / "data" / "suppliers" / "sample_shopping_request_text.txt"
+
+    response = run_shopping_agent_from_any_file(path)
+    purchase_orders = response["handoff_payload"]["purchase_order_drafts"]
+
+    assert len(purchase_orders) == 3
+    assert all(order["status"] == "draft" for order in purchase_orders)
+    assert all(order["total_amount_usd"] > 0 for order in purchase_orders)
+    assert "PURCHASE ORDER DRAFTS" in response["report"]
+
+
+def test_purchase_order_generation_from_plan():
+    request_data = {
+        "request_id": "TEST-PO-001",
+        "customer": "Test Customer",
+        "destination_country": "USA",
+        "items": [{"name": "TVs", "quantity": 50}],
+    }
+
+    plan = build_shopping_plan(request_data)
+    purchase_orders = generate_purchase_order_drafts(plan)
+
+    assert len(purchase_orders) == 1
+    assert purchase_orders[0]["purchase_order_id"].startswith("PO-")
+    assert purchase_orders[0]["line_items"][0]["product_name"] == "TVs"
+
+
 def main() -> None:
     test_supplier_matching()
     test_build_shopping_plan()
@@ -270,6 +300,8 @@ def main() -> None:
     test_shopping_agent_from_any_text_file()
     test_supplier_risk_fields_are_present()
     test_procurement_risk_in_report()
+    test_purchase_order_drafts_are_created()
+    test_purchase_order_generation_from_plan()
 
     print("All shopping agent tests passed.")
 
