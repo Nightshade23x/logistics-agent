@@ -44,6 +44,11 @@ class FakeHazardClassRepository:
     def get_class_info(self, hazard_class: str):
         return None
 
+class FakeCountryRestrictionsRepository:
+    """Fake with no restrictions data, for isolated service tests."""
+
+    def get_restrictions(self, country: str) -> dict | None:
+        return None
 
 class TestComplianceServiceBatchIsolated:
     """Tests ComplianceService.check_batch logic using fake repositories."""
@@ -52,6 +57,8 @@ class TestComplianceServiceBatchIsolated:
         service = ComplianceService(
             restricted_products_repository=FakeRestrictedProductsRepository(),
             hazard_class_repository=FakeHazardClassRepository(),
+            country_restrictions_repository=FakeCountryRestrictionsRepository(),
+
         )
         request = BatchComplianceCheckRequest(
             product_descriptions=["lithium battery pack", "ammunition rounds", "a plain t-shirt"]
@@ -70,6 +77,8 @@ class TestComplianceServiceBatchIsolated:
         service = ComplianceService(
             restricted_products_repository=FakeRestrictedProductsRepository(),
             hazard_class_repository=FakeHazardClassRepository(),
+            country_restrictions_repository=FakeCountryRestrictionsRepository(),
+
         )
         request = BatchComplianceCheckRequest(
             product_descriptions=["ammunition", "lithium battery"]
@@ -106,3 +115,5 @@ class TestBatchCheckComplianceToolIntegration:
         with pytest.raises(ValidationError):
             from ..schemas.compliance import BatchComplianceCheckRequest
             BatchComplianceCheckRequest(product_descriptions=[])
+
+

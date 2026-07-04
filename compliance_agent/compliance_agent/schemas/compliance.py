@@ -4,10 +4,13 @@ from pydantic import BaseModel, Field
 
 
 class ComplianceCheckRequest(BaseModel):
-    """Input schema for checking a product's trade compliance status."""
-
     product_description: str = Field(
         ..., description="Free-text description of the product to check.", min_length=1
+    )
+    destination_country: str | None = Field(
+        default=None,
+        description="Destination country for the shipment, e.g. 'Iran'. "
+        "If omitted, only product-level compliance is checked.",
     )
 
 
@@ -58,14 +61,28 @@ class ComplianceCheckResponse(BaseModel):
         default=None, description="Additional practical notes about handling this product."
     )
 
+    destination_country: str | None = Field(
+        default=None, description="The destination country that was checked, if provided."
+    )
+    destination_restricted: bool = Field(
+        default=False,
+        description="Whether the destination country has known trade restrictions "
+        "applicable to this shipment.",
+    )
+    destination_notes: str | None = Field(
+        default=None,
+        description="Explanation of destination-country restrictions, if any apply.",
+    )
 
 class BatchComplianceCheckRequest(BaseModel):
-    """Input schema for checking multiple products' trade compliance status at once."""
-
     product_descriptions: list[str] = Field(
         ...,
         description="List of free-text product descriptions to check, e.g. a shipment manifest.",
         min_length=1,
+    )
+    destination_country: str | None = Field(
+        default=None,
+        description="Destination country applied to every product in the batch, if provided.",
     )
 
 
@@ -83,4 +100,16 @@ class BatchComplianceCheckResponse(BaseModel):
     )
     unknown_count: int = Field(
         ..., description="Number of products with status 'unknown' (not found in reference data)."
+    )
+    destination_country: str | None = Field(
+        default=None, description="The destination country that was checked, if provided."
+    )
+    destination_restricted: bool = Field(
+        default=False,
+        description="Whether the destination country has known trade restrictions "
+        "applicable to this shipment.",
+    )
+    destination_notes: str | None = Field(
+        default=None,
+        description="Explanation of destination-country restrictions, if any apply.",
     )

@@ -78,6 +78,27 @@ def batch_check_compliance(product_descriptions: list[str]) -> BatchComplianceCh
     request = BatchComplianceCheckRequest(product_descriptions=product_descriptions)
     return container.compliance_service.check_batch(request)
 
+@mcp.tool()
+def check_product_compliance(
+    product_description: str, destination_country: str | None = None
+) -> ComplianceCheckResponse:
+    """... (existing docstring, add a line about destination_country) ..."""
+    request = ComplianceCheckRequest(
+        product_description=product_description, destination_country=destination_country
+    )
+    return container.compliance_service.check(request)
+
+
+@mcp.tool()
+def batch_check_compliance(
+    product_descriptions: list[str], destination_country: str | None = None
+) -> BatchComplianceCheckResponse:
+    """... (existing docstring) ..."""
+    request = BatchComplianceCheckRequest(
+        product_descriptions=product_descriptions, destination_country=destination_country
+    )
+    return container.compliance_service.check_batch(request)
+
 
 if __name__ == "__main__":
     mcp.run()

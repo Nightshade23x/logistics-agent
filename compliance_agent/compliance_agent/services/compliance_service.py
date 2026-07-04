@@ -8,7 +8,7 @@ from ..schemas.compliance import (
     BatchComplianceCheckRequest,
     BatchComplianceCheckResponse,
 )
-
+from ..repositories.country_restrictions_repository import CountryRestrictionsRepository
 
 class ComplianceService:
     """Checks whether a product is allowed, restricted, or prohibited for trade."""
@@ -17,15 +17,38 @@ class ComplianceService:
         self,
         restricted_products_repository: RestrictedProductsRepository,
         hazard_class_repository: HazardClassRepository,
+        country_restrictions_repository: CountryRestrictionsRepository,
     ) -> None:
-        """Initialize the ComplianceService with its two repository dependencies.
-
-        Args:
-            restricted_products_repository: Provides product-level compliance data.
-            hazard_class_repository: Provides IMDG hazard class reference data.
-        """
         self._restricted_products_repository = restricted_products_repository
         self._hazard_class_repository = hazard_class_repository
+        self._country_restrictions_repository = country_restrictions_repository
+
+    
+    def _check_destination(
+        self, destination_country: str | None, hazard_class: str | None, normalized_description: str
+    ) -> tuple[bool, str | None]:
+        if destination_country is None:
+            return False, None
+
+        restrictions = self._country_restrictions_repository.get_restrictions(destination_country)
+
+        if restrictions is None:
+            return False, (
+                f"No specific restriction data on file for '{destination_country}'. "
+                f"This does not confirm the destination is unrestricted — verify manually."
+            )
+
+        if restrictions["requires_license_for_all"]:
+            return True, restrictions["restriction_note"]
+
+        if hazard_class and hazard_class in restrictions["restricted_hazard_classes"]:
+            return True, restrictions["restriction_note"]
+
+        for keyword in restrictions["restricted_keywords"]:
+            if keyword in normalized_description:
+                return True, restrictions["restriction_note"]
+
+        return False, None
 
     def check(self, request: ComplianceCheckRequest) -> ComplianceCheckResponse:
         """Check the compliance status of a product description.
@@ -42,6 +65,9 @@ class ComplianceService:
         entry = self._restricted_products_repository.find_match(normalized_description)
 
         if entry is None:
+            destination_restricted, destination_notes = self._check_destination(
+                request.destination_country, None, normalized_description
+            )
             return ComplianceCheckResponse(
                 product_description=request.product_description,
                 matched=False,
@@ -61,6 +87,9 @@ class ComplianceService:
                 required_licenses=[],
                 required_certificates=[],
                 notes=None,
+                destination_country=request.destination_country,
+                destination_restricted=destination_restricted,
+                destination_notes=destination_notes,
             )
 
         hazard_class = entry.get("hazard_class")
@@ -69,6 +98,10 @@ class ComplianceService:
             class_info = self._hazard_class_repository.get_class_info(hazard_class)
             if class_info is not None:
                 hazard_class_name = class_info["name"]
+
+        destination_restricted, destination_notes = self._check_destination(
+            request.destination_country, hazard_class, normalized_description
+        )
 
         return ComplianceCheckResponse(
             product_description=request.product_description,
@@ -84,23 +117,17 @@ class ComplianceService:
             required_licenses=entry.get("required_licenses", []),
             required_certificates=entry.get("required_certificates", []),
             notes=entry.get("notes"),
+            destination_country=request.destination_country,
+            destination_restricted=destination_restricted,
+            destination_notes=destination_notes,
         )
 
     def check_batch(self, request: BatchComplianceCheckRequest) -> BatchComplianceCheckResponse:
-        """Check the compliance status of multiple product descriptions at once.
-
-        Reuses check() for each item rather than duplicating lookup logic,
-        so the two tools can never disagree on how a single product resolves.
-
-        Args:
-            request: The validated batch compliance check request.
-
-        Returns:
-            A BatchComplianceCheckResponse with one result per input product,
-            plus summary counts of restricted/prohibited/unknown items.
-        """
         results = [
-            self.check(ComplianceCheckRequest(product_description=description))
+            self.check(ComplianceCheckRequest(
+                product_description=description,
+                destination_country=request.destination_country,
+            ))
             for description in request.product_descriptions
         ]
 
@@ -110,3 +137,5 @@ class ComplianceService:
             prohibited_count=sum(1 for r in results if r.status == "prohibited"),
             unknown_count=sum(1 for r in results if r.status == "unknown"),
         )
+
+        

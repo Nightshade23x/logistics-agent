@@ -42,6 +42,8 @@ class TestComplianceServiceIsolated:
         service = ComplianceService(
             restricted_products_repository=FakeRestrictedProductsRepository(),
             hazard_class_repository=FakeHazardClassRepository(),
+            country_restrictions_repository=FakeCountryRestrictionsRepository(),
+
         )
         response = service.check(ComplianceCheckRequest(product_description="a fake widget"))
         assert response.matched is True
@@ -53,6 +55,8 @@ class TestComplianceServiceIsolated:
         service = ComplianceService(
             restricted_products_repository=FakeRestrictedProductsRepository(),
             hazard_class_repository=FakeHazardClassRepository(),
+            country_restrictions_repository=FakeCountryRestrictionsRepository(),
+
         )
         response = service.check(ComplianceCheckRequest(product_description="a mystery item"))
         assert response.matched is False
@@ -80,3 +84,10 @@ class TestCheckProductComplianceToolIntegration:
         response = server.check_product_compliance("an unrecognizable made-up item")
         assert response.status == "unknown"
         assert response.matched is False
+
+
+class FakeCountryRestrictionsRepository:
+    """Fake with no restrictions data, for isolated service tests."""
+
+    def get_restrictions(self, country: str) -> dict | None:
+        return None

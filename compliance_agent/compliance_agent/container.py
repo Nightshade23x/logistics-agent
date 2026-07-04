@@ -9,6 +9,8 @@ from .repositories.restricted_products_repository import RestrictedProductsRepos
 from .repositories.hazard_class_repository import HazardClassRepository
 from .services.compliance_service import ComplianceService
 from .services.hazard_class_service import HazardClassService
+from .repositories.country_restrictions_repository import CountryRestrictionsRepository
+
 
 
 class Container:
@@ -18,11 +20,14 @@ class Container:
         """Build repositories first, then inject them into services."""
         restricted_products_repository = RestrictedProductsRepository()
         hazard_class_repository = HazardClassRepository()
+        country_restrictions_repository = CountryRestrictionsRepository()
 
         self.compliance_service: ComplianceService = ComplianceService(
             restricted_products_repository=restricted_products_repository,
             hazard_class_repository=hazard_class_repository,
+            country_restrictions_repository=country_restrictions_repository,
         )
+        
         self.hazard_class_service: HazardClassService = HazardClassService(
             hazard_class_repository=hazard_class_repository,
         )
