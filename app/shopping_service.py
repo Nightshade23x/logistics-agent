@@ -5,11 +5,17 @@ from pathlib import Path
 from typing import Any
 
 from app.shopping_agent import build_shopping_plan
+from app.shopping_text_parser import parse_shopping_request_text
 
 
 def read_shopping_request(path: str | Path) -> dict[str, Any]:
     with Path(path).open("r", encoding="utf-8-sig") as file:
         return json.load(file)
+
+
+def read_shopping_request_text(path: str | Path) -> dict[str, Any]:
+    with Path(path).open("r", encoding="utf-8-sig") as file:
+        return parse_shopping_request_text(file.read())
 
 
 def _build_handoff_payload(plan: dict[str, Any]) -> dict[str, Any]:
@@ -239,4 +245,26 @@ def run_shopping_agent_from_file(path: str | Path) -> dict[str, Any]:
     request_data = read_shopping_request(path)
     response = run_shopping_agent(request_data)
     response["input_resolution"]["source"] = str(path)
+    response["input_resolution"]["input_type"] = "json"
     return response
+
+
+def run_shopping_agent_from_text(text: str) -> dict[str, Any]:
+    request_data = parse_shopping_request_text(text)
+    response = run_shopping_agent(request_data)
+    response["input_resolution"]["source"] = "natural_language_text"
+    response["input_resolution"]["input_type"] = "text"
+    return response
+
+
+def run_shopping_agent_from_any_file(path: str | Path) -> dict[str, Any]:
+    path_obj = Path(path)
+
+    if path_obj.suffix.lower() in {".txt", ".md"}:
+        request_data = read_shopping_request_text(path_obj)
+        response = run_shopping_agent(request_data)
+        response["input_resolution"]["source"] = str(path_obj)
+        response["input_resolution"]["input_type"] = "text"
+        return response
+
+    return run_shopping_agent_from_file(path_obj)

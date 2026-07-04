@@ -7,7 +7,13 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT_DIR))
 
 from app.shopping_agent import build_shopping_plan, find_supplier_matches, load_supplier_catalog
-from app.shopping_service import run_shopping_agent, run_shopping_agent_from_file
+from app.shopping_service import (
+    run_shopping_agent,
+    run_shopping_agent_from_any_file,
+    run_shopping_agent_from_file,
+    run_shopping_agent_from_text,
+)
+from app.shopping_text_parser import parse_shopping_request_text
 
 
 def test_supplier_matching():
@@ -155,6 +161,68 @@ def test_preferences_can_filter_all_matching_suppliers():
     assert response["missing_information"]
 
 
+def test_parse_natural_language_request():
+    text = """
+    Request ID: SHOP-TEXT-TEST
+    Customer: Test Customer
+    Destination: USA
+    Currency: USD
+
+    I need 50 TVs, 5 scooters, and 100 ceramic tiles.
+    Prefer suppliers from India.
+    Avoid China.
+    Maximum lead time 20 days.
+    Minimum quality score 8.
+    Budget 13000 USD.
+    """
+
+    parsed = parse_shopping_request_text(text)
+
+    assert parsed["request_id"] == "SHOP-TEXT-TEST"
+    assert parsed["customer"] == "Test Customer"
+    assert parsed["destination_country"] == "USA"
+    assert parsed["preferred_currency"] == "USD"
+    assert parsed["preferences"]["preferred_supplier_countries"] == ["India"]
+    assert parsed["preferences"]["excluded_supplier_countries"] == ["China"]
+    assert parsed["preferences"]["max_lead_time_days"] == 20
+    assert parsed["preferences"]["minimum_quality_score"] == 8.0
+    assert parsed["preferences"]["max_budget_usd"] == 13000.0
+    assert len(parsed["items"]) == 3
+
+
+def test_shopping_agent_from_text():
+    text = """
+    Request ID: SHOP-TEXT-TEST
+    Customer: Test Customer
+    Destination: USA
+
+    I need 50 TVs, 5 scooters, and 100 ceramic tiles.
+    Prefer suppliers from India.
+    Avoid China.
+    Maximum lead time 20 days.
+    Minimum quality score 8.
+    Budget 13000 USD.
+    """
+
+    response = run_shopping_agent_from_text(text)
+
+    assert response["agent_name"] == "shopping_agent"
+    assert response["status"] == "ready_for_review"
+    assert response["input_resolution"]["input_type"] == "text"
+    assert len(response["handoff_payload"]["selected_items"]) == 3
+
+
+def test_shopping_agent_from_any_text_file():
+    path = ROOT_DIR / "data" / "suppliers" / "sample_shopping_request_text.txt"
+
+    response = run_shopping_agent_from_any_file(path)
+
+    assert response["agent_name"] == "shopping_agent"
+    assert response["status"] == "ready_for_review"
+    assert response["input_resolution"]["input_type"] == "text"
+    assert len(response["handoff_payload"]["selected_items"]) == 3
+
+
 def main() -> None:
     test_supplier_matching()
     test_build_shopping_plan()
@@ -164,6 +232,9 @@ def main() -> None:
     test_preferences_select_india_and_exclude_china()
     test_budget_limit_triggers_review()
     test_preferences_can_filter_all_matching_suppliers()
+    test_parse_natural_language_request()
+    test_shopping_agent_from_text()
+    test_shopping_agent_from_any_text_file()
 
     print("All shopping agent tests passed.")
 
