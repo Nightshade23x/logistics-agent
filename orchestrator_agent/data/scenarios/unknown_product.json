@@ -1,0 +1,17 @@
+{
+  "name": "unknown_product",
+  "description": "Completely unrecognized product -- triggers unknown/manual review",
+  "query": "ship 50 quantum flux capacitors from Japan to Mexico",
+  "input": {
+    "product_description": "quantum flux capacitors",
+    "country_from": "Japan",
+    "country_to": "Mexico",
+    "target_market": "Mexico",
+    "quantity": 50,
+    "cargo_value": 25000,
+    "weight_kg": 300,
+    "volume_m3": 1.5,
+    "currency": "USD"
+  },
+  "expected_verdict_status": "review_required"
+}
