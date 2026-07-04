@@ -57,7 +57,20 @@ class OrchestratorService:
             "transport_mode": "sea",
             "insurance_required": True,
         }
+        
         finance_report = self._finance_client.get_report(finance_shipment)
+
+        # Finance's own duty calculation uses a flat internal rate. Trader
+        # has already computed a more specific rate via HS code/FTA lookup.
+        # Override Finance's duty with Trader's rate so the two agents don't
+        # silently disagree on the same shipment's cost.
+        trader_duty_rate = trader_report["handoff_payload"]["duty_rate_percent"]
+        if trader_duty_rate is not None:
+            recalculated_duty = round(shipment.cargo_value * (trader_duty_rate / 100), 2)
+            duty_difference = recalculated_duty - finance_report["import_duty"]
+            finance_report["import_duty"] = recalculated_duty
+            finance_report["landed_cost"] = round(finance_report["landed_cost"] + duty_difference, 2)
+            finance_report["total_cost"] = round(finance_report["total_cost"] + duty_difference, 2)
 
         synthesis = self._synthesis_service.synthesize(
             compliance_report, trader_report, finance_report, risk_report
