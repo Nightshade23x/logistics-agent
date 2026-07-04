@@ -2,7 +2,7 @@
 
 ## Current Version
 
-Shopping Agent V1.3 is complete.
+Shopping Agent V1.4 is complete.
 
 The Shopping Agent helps choose suppliers for requested products. It compares local supplier catalog data and recommends supplier options based on price, quality, rating, lead time, stock, MOQ, user preferences, budget constraints, and supplier risk.
 
@@ -43,6 +43,29 @@ It follows the shared multi-agent contract and prepares handoff data for Finance
   - risk level
   - risk notes
 - Adds overall procurement risk summary.
+- Generates draft purchase orders from selected suppliers.
+
+## Purchase Order Drafts
+
+Shopping Agent V1.4 creates draft purchase orders for selected suppliers.
+
+Each draft purchase order includes:
+
+- purchase order ID
+- draft status
+- buyer/customer
+- supplier details
+- destination country
+- line items
+- quantities
+- unit prices
+- total amount
+- risk level
+- risk score
+- risk notes
+- review notes for Finance and Compliance
+
+These are draft purchase orders only. They should not be sent directly to suppliers without review.
 
 ## Natural Language Example
 
@@ -61,6 +84,7 @@ Budget 13000 USD.
 - app/shopping_service.py: Agent contract response, report formatting, handoff payload, and handoff requests.
 - app/shopping_text_parser.py: Parses natural language shopping requests.
 - app/shopping_risk.py: Supplier and procurement risk scoring.
+- app/purchase_order.py: Draft purchase order generation.
 - scripts/run_shopping_agent.py: Runs the Shopping Agent from JSON or text request files.
 - scripts/test_shopping_agent.py: Tests Shopping Agent features.
 - data/suppliers/supplier_catalog.json: Local supplier catalog.
@@ -82,20 +106,6 @@ The Shopping Agent returns:
 - handoff_payload
 - handoff_requests
 
-## Status Values
-
-ready_for_review:
-The agent found eligible suppliers and the plan is usable.
-
-review_required:
-The agent found suppliers, but something important needs review, such as the plan exceeding the user budget.
-
-partial_plan_needs_more_information:
-Some requested items were planned, but others need clarification.
-
-needs_more_information:
-The agent could not create a usable shopping plan.
-
 ## Handoff Payload
 
 The handoff payload includes:
@@ -110,6 +120,7 @@ The handoff payload includes:
 - currency
 - budget_check
 - procurement_risk
+- purchase_order_drafts
 - supplier_countries
 - product_categories
 
@@ -118,13 +129,13 @@ The handoff payload includes:
 The Shopping Agent sends information to:
 
 Finance Agent:
-For landed cost, ROI, insurance, budget, procurement risk, and financial planning.
+For landed cost, ROI, insurance, budget, procurement risk, purchase order review, and financial planning.
 
 Trader Agent:
-For HS codes, Incoterms, duties, supplier countries, and trade strategy.
+For HS codes, Incoterms, duties, supplier countries, purchase order review, and trade strategy.
 
 Compliance Agent:
-For product restrictions, permits, certificates, supplier country checks, and risk review.
+For product restrictions, permits, certificates, supplier country checks, purchase order review, and risk review.
 
 User Agent:
 Only when clarification is needed.
@@ -159,15 +170,14 @@ python scripts\run_shopping_agent.py data\suppliers\sample_shopping_request_text
 - Does not search live supplier websites.
 - Does not verify real supplier identity.
 - Does not calculate landed cost, customs duty, tax, or profit.
-- Does not generate purchase orders yet.
 - Does not negotiate or contact suppliers.
+- Does not send purchase orders.
 - Does not calculate shipping requirements. That belongs to the Logistics Agent.
 
 ## Future Improvements
 
 Possible next upgrades:
 
-- Purchase order draft generation.
 - Supplier shortlist export.
 - Integration with Logistics Agent.
 - Integration with Finance, Trader, and Compliance agents.
