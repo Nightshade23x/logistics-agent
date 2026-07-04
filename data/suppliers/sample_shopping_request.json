@@ -1,0 +1,20 @@
+{
+  "request_id": "SHOP-REQ-001",
+  "customer": "Demo Customer",
+  "destination_country": "USA",
+  "preferred_currency": "USD",
+  "items": [
+    {
+      "name": "TVs",
+      "quantity": 50
+    },
+    {
+      "name": "Scooters",
+      "quantity": 5
+    },
+    {
+      "name": "Ceramic tiles",
+      "quantity": 100
+    }
+  ]
+}

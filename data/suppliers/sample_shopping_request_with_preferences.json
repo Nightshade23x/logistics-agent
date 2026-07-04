@@ -1,0 +1,31 @@
+{
+  "request_id": "SHOP-REQ-002",
+  "customer": "Demo Customer",
+  "destination_country": "USA",
+  "preferred_currency": "USD",
+  "preferences": {
+    "preferred_supplier_countries": [
+      "India"
+    ],
+    "excluded_supplier_countries": [
+      "China"
+    ],
+    "max_lead_time_days": 20,
+    "minimum_quality_score": 8.0,
+    "max_budget_usd": 13000
+  },
+  "items": [
+    {
+      "name": "TVs",
+      "quantity": 50
+    },
+    {
+      "name": "Scooters",
+      "quantity": 5
+    },
+    {
+      "name": "Ceramic tiles",
+      "quantity": 100
+    }
+  ]
+}
