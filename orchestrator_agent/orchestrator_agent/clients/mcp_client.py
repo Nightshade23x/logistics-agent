@@ -11,6 +11,9 @@ import asyncio
 import json
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
+import os
+from dotenv import load_dotenv
+
 
 
 class McpAgentClient:
@@ -34,13 +37,16 @@ class McpAgentClient:
 
 _GH_ROOT = r"C:\Users\avish\OneDrive\Desktop\GitHub Projects"
 
-_RISK_CWD = fr"{_GH_ROOT}\agent-risk\risk_agent"
-_COMPLIANCE_CWD = fr"{_GH_ROOT}\agent-compliance\compliance_agent"
-_TRADER_CWD = fr"{_GH_ROOT}\agent-trader\trader_agent"
 
-_RISK_PYTHON = fr"{_GH_ROOT}\agent-risk\.venv\Scripts\python.exe"
-_COMPLIANCE_PYTHON = fr"{_GH_ROOT}\agent-compliance\.venv\Scripts\python.exe"
-_TRADER_PYTHON = fr"{_GH_ROOT}\agent-trader\.venv\Scripts\python.exe"
+load_dotenv()
+
+_RISK_CWD = os.environ["RISK_AGENT_DIR"] + r"\risk_agent"
+_COMPLIANCE_CWD = os.environ["COMPLIANCE_AGENT_DIR"] + r"\compliance_agent"
+_TRADER_CWD = os.environ["TRADER_AGENT_DIR"] + r"\trader_agent"
+
+_RISK_PYTHON = os.environ["RISK_AGENT_DIR"] + r"\.venv\Scripts\python.exe"
+_COMPLIANCE_PYTHON = os.environ["COMPLIANCE_AGENT_DIR"] + r"\.venv\Scripts\python.exe"
+_TRADER_PYTHON = os.environ["TRADER_AGENT_DIR"] + r"\.venv\Scripts\python.exe"
 
 
 def build_risk_client() -> McpAgentClient:
