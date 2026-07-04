@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 from pathlib import Path
@@ -32,6 +32,7 @@ def _build_handoff_payload(plan: dict[str, Any]) -> dict[str, Any]:
         "estimated_total_procurement_cost_usd": summary["estimated_total_procurement_cost_usd"],
         "currency": summary["currency"],
         "budget_check": plan["budget_check"],
+        "procurement_risk": plan["procurement_risk"],
         "supplier_countries": sorted(
             {
                 item["country"]
@@ -53,30 +54,33 @@ def _build_handoff_requests(plan: dict[str, Any]) -> list[dict[str, Any]]:
     requests = [
         {
             "target_agent": "finance_agent",
-            "reason": "Use selected supplier options, budget check, and procurement costs for total landed cost, ROI, and budget planning.",
+            "reason": "Use selected supplier options, budget check, procurement risk, and procurement costs for total landed cost, ROI, and budget planning.",
             "inputs_needed": [
                 "selected_items",
                 "estimated_total_procurement_cost_usd",
                 "currency",
                 "budget_check",
+                "procurement_risk",
             ],
         },
         {
             "target_agent": "trader_agent",
-            "reason": "Use selected products and supplier countries for HS codes, Incoterms, duties, and trade strategy.",
+            "reason": "Use selected products, supplier countries, and procurement risk for HS codes, Incoterms, duties, and trade strategy.",
             "inputs_needed": [
                 "selected_items",
                 "supplier_countries",
                 "destination_country",
+                "procurement_risk",
             ],
         },
         {
             "target_agent": "compliance_agent",
-            "reason": "Check whether selected products or supplier countries have restrictions, permits, or certificates.",
+            "reason": "Check whether selected products, supplier countries, or procurement risks require restrictions, permits, or certificates.",
             "inputs_needed": [
                 "selected_items",
                 "supplier_countries",
                 "destination_country",
+                "procurement_risk",
             ],
         },
     ]
@@ -86,13 +90,14 @@ def _build_handoff_requests(plan: dict[str, Any]) -> list[dict[str, Any]]:
             0,
             {
                 "target_agent": "user_agent",
-                "reason": "Ask the user to clarify product requirements, budget, or supplier preferences.",
+                "reason": "Ask the user to clarify product requirements, budget, supplier preferences, or risk tolerance.",
                 "inputs_needed": [
                     "issues",
                     "corrected_product_names",
                     "corrected_quantities",
                     "revised_budget",
                     "revised_supplier_preferences",
+                    "risk_tolerance",
                 ],
             },
         )
@@ -109,10 +114,12 @@ def _preferences_are_present(preferences: dict[str, Any]) -> bool:
 
 def format_shopping_report(plan: dict[str, Any]) -> str:
     lines = []
+
     context = plan["request_context"]
     summary = plan["procurement_summary"]
     preferences = plan["preferences"]
     budget_check = plan["budget_check"]
+    procurement_risk = plan["procurement_risk"]
 
     lines.append("SHOPPING AGENT REPORT")
     lines.append("=" * 30)
@@ -145,6 +152,26 @@ def format_shopping_report(plan: dict[str, Any]) -> str:
 
     lines.append("")
 
+    lines.append("PROCUREMENT RISK")
+    lines.append("-" * 30)
+    lines.append(f"Overall risk level: {procurement_risk['overall_risk_level']}")
+    lines.append(f"Overall risk score: {procurement_risk['overall_risk_score']}/10")
+
+    if procurement_risk["highest_risk_items"]:
+        lines.append("Highest risk items:")
+        for item in procurement_risk["highest_risk_items"]:
+            lines.append(
+                f"- {item['product_name']} from {item['supplier_name']} "
+                f"({item['risk_level']}, {item['risk_score']}/10)"
+            )
+
+    if procurement_risk["risk_notes"]:
+        lines.append("Risk notes:")
+        for note in procurement_risk["risk_notes"]:
+            lines.append(f"- {note}")
+
+    lines.append("")
+
     lines.append("ITEM RESULTS")
     lines.append("-" * 30)
 
@@ -171,6 +198,8 @@ def format_shopping_report(plan: dict[str, Any]) -> str:
             lines.append(f"    Lead time: {balanced['lead_time_days']} days")
             lines.append(f"    Preferred country: {balanced['is_preferred_country']}")
             lines.append(f"    Overall score: {balanced['overall_score']}")
+            lines.append(f"    Risk level: {balanced['risk_level']}")
+            lines.append(f"    Risk score: {balanced['risk_score']}/10")
 
         if cheapest:
             lines.append(
@@ -227,7 +256,8 @@ def run_shopping_agent(request_data: dict[str, Any]) -> dict[str, Any]:
         "summary": (
             f"Shopping Agent status: {plan['status']}. "
             f"Selected {plan['procurement_summary']['selected_supplier_count']} supplier option(s). "
-            f"Estimated procurement cost: {plan['procurement_summary']['estimated_total_procurement_cost_usd']} USD."
+            f"Estimated procurement cost: {plan['procurement_summary']['estimated_total_procurement_cost_usd']} USD. "
+            f"Overall procurement risk: {plan['procurement_risk']['overall_risk_level']}."
         ),
         "plan": plan,
         "report": report,

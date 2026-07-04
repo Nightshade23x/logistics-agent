@@ -5,6 +5,8 @@ from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Any
 
+from app.shopping_risk import assess_supplier_option_risk, summarize_procurement_risk
+
 
 CATALOG_PATH = Path(__file__).resolve().parents[1] / "data" / "suppliers" / "supplier_catalog.json"
 
@@ -16,10 +18,8 @@ def _normalize(text: str) -> str:
 def _singularize(word: str) -> str:
     if word.endswith("ies") and len(word) > 3:
         return word[:-3] + "y"
-
     if word.endswith("s") and len(word) > 3:
         return word[:-1]
-
     return word
 
 
@@ -30,21 +30,18 @@ def _tokens(text: str) -> set[str]:
 def _optional_float(value: Any) -> float | None:
     if value is None or value == "":
         return None
-
     return float(value)
 
 
 def _optional_int(value: Any) -> int | None:
     if value is None or value == "":
         return None
-
     return int(value)
 
 
 def _normalize_country_list(values: Any) -> list[str]:
     if not values:
         return []
-
     return [str(value).strip() for value in values if str(value).strip()]
 
 
@@ -66,7 +63,6 @@ def get_shopping_preferences(request_data: dict[str, Any]) -> dict[str, Any]:
 
 def load_supplier_catalog(path: Path | None = None) -> list[dict[str, Any]]:
     catalog_path = path or CATALOG_PATH
-
     with catalog_path.open("r", encoding="utf-8-sig") as file:
         return json.load(file)
 
@@ -94,7 +90,6 @@ def _match_score(requested_name: str, product_name: str) -> float:
         )
 
     sequence_score = SequenceMatcher(None, requested, product).ratio()
-
     return max(token_overlap, sequence_score)
 
 
@@ -107,7 +102,6 @@ def find_supplier_matches(
 
     for supplier_item in catalog:
         score = _match_score(item_name, supplier_item["product_name"])
-
         if score >= threshold:
             match = dict(supplier_item)
             match["match_score"] = round(score, 2)
@@ -142,10 +136,8 @@ def find_alternatives(
 def _availability_status(quantity: int, supplier_item: dict[str, Any]) -> str:
     if quantity < int(supplier_item["minimum_order_quantity"]):
         return "below_minimum_order_quantity"
-
     if quantity > int(supplier_item["available_quantity"]):
         return "insufficient_stock"
-
     return "available"
 
 
@@ -235,10 +227,9 @@ def _build_supplier_option(
     total_cost = quantity * float(supplier_item["unit_price_usd"])
     availability = _availability_status(quantity, supplier_item)
     preference_issues = _preference_issues(supplier_item, preferences)
-
     is_eligible = availability == "available" and not preference_issues
 
-    return {
+    option = {
         "supplier_id": supplier_item["supplier_id"],
         "supplier_name": supplier_item["supplier_name"],
         "country": supplier_item["country"],
@@ -260,6 +251,10 @@ def _build_supplier_option(
         "overall_score": _score_supplier(quantity, supplier_item, preferences),
         "notes": supplier_item.get("notes", ""),
     }
+
+    option.update(assess_supplier_option_risk(option))
+
+    return option
 
 
 def _select_recommendations(options: list[dict[str, Any]]) -> dict[str, Any]:
@@ -359,7 +354,6 @@ def build_shopping_plan(request_data: dict[str, Any]) -> dict[str, Any]:
 
     for result in item_results:
         balanced = result["recommendations"].get("balanced")
-
         if balanced:
             selected_items.append(balanced)
             total_procurement_cost += balanced["estimated_total_cost_usd"]
@@ -387,18 +381,16 @@ def build_shopping_plan(request_data: dict[str, Any]) -> dict[str, Any]:
     if not requested_items:
         status = "needs_more_information"
         all_issues.append("No requested items were provided.")
-
     elif not selected_items:
         status = "needs_more_information"
-
     elif item_issues:
         status = "partial_plan_needs_more_information"
-
     elif budget_issues:
         status = "review_required"
-
     else:
         status = "ready_for_review"
+
+    procurement_risk = summarize_procurement_risk(selected_items)
 
     return {
         "request_context": {
@@ -420,6 +412,7 @@ def build_shopping_plan(request_data: dict[str, Any]) -> dict[str, Any]:
             "estimated_total_procurement_cost_usd": round(total_procurement_cost, 2),
             "within_budget": within_budget,
         },
+        "procurement_risk": procurement_risk,
         "issues": all_issues,
         "catalog_size": len(catalog),
         "status": status,

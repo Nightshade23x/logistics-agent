@@ -223,6 +223,39 @@ def test_shopping_agent_from_any_text_file():
     assert len(response["handoff_payload"]["selected_items"]) == 3
 
 
+
+def test_supplier_risk_fields_are_present():
+    request_data = {
+        "request_id": "TEST-SHOP-007",
+        "customer": "Test Customer",
+        "destination_country": "USA",
+        "items": [{"name": "Scooters", "quantity": 5}],
+    }
+
+    response = run_shopping_agent(request_data)
+    selected_item = response["handoff_payload"]["selected_items"][0]
+
+    assert "risk_score" in selected_item
+    assert "risk_level" in selected_item
+    assert "risk_notes" in selected_item
+    assert "procurement_risk" in response["handoff_payload"]
+    assert response["handoff_payload"]["procurement_risk"]["overall_risk_level"] in {
+        "low",
+        "medium",
+        "high",
+        "unknown",
+    }
+
+
+def test_procurement_risk_in_report():
+    path = ROOT_DIR / "data" / "suppliers" / "sample_shopping_request_text.txt"
+
+    response = run_shopping_agent_from_any_file(path)
+
+    assert "PROCUREMENT RISK" in response["report"]
+    assert "procurement_risk" in response["handoff_payload"]
+
+
 def main() -> None:
     test_supplier_matching()
     test_build_shopping_plan()
@@ -235,6 +268,8 @@ def main() -> None:
     test_parse_natural_language_request()
     test_shopping_agent_from_text()
     test_shopping_agent_from_any_text_file()
+    test_supplier_risk_fields_are_present()
+    test_procurement_risk_in_report()
 
     print("All shopping agent tests passed.")
 

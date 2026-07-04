@@ -23,7 +23,7 @@ def _clean_product_name(value: str) -> str:
     words = []
     for word in cleaned.split():
         if word.lower() in uppercase_words:
-            words.append(word.upper())
+            words.append("TVs" if word.lower() == "tvs" else ("TV" if word.lower() == "tv" else word.upper()))
         else:
             words.append(word.capitalize())
 
