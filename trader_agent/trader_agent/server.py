@@ -162,6 +162,33 @@ def assess_trade_plan(
     )
     return container.trade_assessment_service.assess(request)
 
+@mcp.tool()
+def assess_trade_plan_with_reasoning(
+    product_description: str, country_from: str, country_to: str, target_market: str
+) -> AgentResponse:
+    """Run the export-planning assessment plus an LLM-generated strategic judgment.
+
+    Same underlying workflow as assess_trade_plan, with an added
+    llm_judgment field in the report giving practical reasoning about
+    whether the suggested strategy fits the duty/FTA situation.
+
+    Args:
+        product_description: Free-text description of the product.
+        country_from: ISO country name/code of the exporting country.
+        country_to: ISO country name/code of the importing country.
+        target_market: The country or region being targeted for export.
+
+    Returns:
+        A standard AgentResponse with an added llm_judgment in the report.
+    """
+    request = ExportPlanRequest(
+        product_description=product_description,
+        country_from=country_from,
+        country_to=country_to,
+        target_market=target_market,
+    )
+    return container.trade_reasoning_service.assess_with_reasoning(request)
+
 
 if __name__ == "__main__":
     mcp.run()

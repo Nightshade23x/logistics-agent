@@ -18,6 +18,9 @@ from .services.fta_service import FtaService
 from .services.export_strategy_service import ExportStrategyService
 from .services.orchestrator_service import OrchestratorService
 from .services.trade_assessment_service import TradeAssessmentService
+from .shared_llm_client import build_llm_provider
+from .services.trade_reasoning_service import TradeReasoningService
+
 
 
 
@@ -52,6 +55,13 @@ class Container:
         self.trade_assessment_service: TradeAssessmentService = TradeAssessmentService(
             orchestrator_service=self.orchestrator_service,
         )
+
+        self.llm_provider = build_llm_provider()
+        self.trade_reasoning_service: TradeReasoningService = TradeReasoningService(
+            trade_assessment_service=self.trade_assessment_service,
+            llm=self.llm_provider,
+        )
+        
 
 
 
