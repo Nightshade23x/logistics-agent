@@ -1,0 +1,75 @@
+﻿{
+  "shipment_id": "SHIP-DEMO-001",
+  "customer": "Demo Customer",
+  "origin": "India",
+  "destination": "USA",
+  "notes": "Mixed cargo shipment for first logistics agent test.",
+  "items": [
+    {
+      "name": "Ceramic tiles",
+      "quantity": 100,
+      "length_m": 0.6,
+      "width_m": 0.6,
+      "height_m": 0.08,
+      "weight_kg": 12,
+      "fragile": true,
+      "stackable": true,
+      "unload_priority": 3
+    },
+    {
+      "name": "TV",
+      "quantity": 50,
+      "length_m": 1.2,
+      "width_m": 0.2,
+      "height_m": 0.8,
+      "weight_kg": 12,
+      "fragile": true,
+      "stackable": false,
+      "unload_priority": 2
+    },
+    {
+      "name": "Scooter",
+      "quantity": 5,
+      "length_m": 1.8,
+      "width_m": 0.7,
+      "height_m": 1.1,
+      "weight_kg": 90,
+      "fragile": false,
+      "stackable": false,
+      "unload_priority": 3
+    },
+    {
+      "name": "Pillows",
+      "quantity": 100,
+      "length_m": 0.5,
+      "width_m": 0.4,
+      "height_m": 0.2,
+      "weight_kg": 1,
+      "fragile": false,
+      "stackable": true,
+      "unload_priority": 1
+    },
+    {
+      "name": "Mattress",
+      "quantity": 5,
+      "length_m": 2.0,
+      "width_m": 1.5,
+      "height_m": 0.3,
+      "weight_kg": 25,
+      "fragile": false,
+      "stackable": false,
+      "unload_priority": 2
+    },
+    {
+      "name": "Glass bottles",
+      "quantity": 20,
+      "length_m": 0.3,
+      "width_m": 0.3,
+      "height_m": 0.4,
+      "weight_kg": 2,
+      "fragile": true,
+      "stackable": true,
+      "unload_priority": 1
+    }
+  ]
+}
