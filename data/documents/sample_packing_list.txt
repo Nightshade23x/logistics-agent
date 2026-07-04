@@ -1,0 +1,14 @@
+﻿PACKING LIST
+
+Packing List Number: PL-2026-001
+Supplier: Mumbai Export House
+Origin Country: India
+Destination Country: USA
+
+Packages:
+1. Ceramic tiles | Quantity: 100 | Length: 60 cm | Width: 60 cm | Height: 8 cm | Weight: 12 kg
+2. TVs | Quantity: 50 | Length: 120 cm | Width: 20 cm | Height: 80 cm | Weight: 12 kg
+3. Scooters | Quantity: 5 | Length: 180 cm | Width: 70 cm | Height: 110 cm | Weight: 90 kg
+
+Total Packages: 155
+Total Weight: 2250 kg

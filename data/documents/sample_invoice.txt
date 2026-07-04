@@ -1,0 +1,16 @@
+﻿INVOICE
+
+Invoice Number: INV-2026-001
+Supplier: Mumbai Export House
+Buyer: Global Retail LLC
+Origin Country: India
+Destination Country: USA
+
+Items:
+1. Ceramic tiles | Quantity: 100 | Unit Weight: 12 kg | Total Weight: 1200 kg
+2. TVs | Quantity: 50 | Unit Weight: 12 kg | Total Weight: 600 kg
+3. Scooters | Quantity: 5 | Unit Weight: 90 kg | Total Weight: 450 kg
+
+Total Weight: 2250 kg
+Currency: USD
+Total Value: 18500
