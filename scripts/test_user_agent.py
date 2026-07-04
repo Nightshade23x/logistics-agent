@@ -25,8 +25,9 @@ def test_user_agent_routes_shopping_text():
 
     assert response["agent_name"] == "user_agent"
     assert response["detected_intent"] == "shopping"
-    assert response["agents_called"] == ["shopping_agent"]
+    assert response["agents_called"] == ["shopping_agent", "logistics_agent"]
     assert response["specialist_response"]["agent_name"] == "shopping_agent"
+    assert response["specialist_responses"]["logistics_agent"]["agent_name"] == "logistics_agent"
 
 
 def test_user_agent_routes_document_files():
@@ -59,7 +60,8 @@ def test_user_agent_routes_shopping_json():
 
     assert response["agent_name"] == "user_agent"
     assert response["detected_intent"] == "shopping"
-    assert response["agents_called"] == ["shopping_agent"]
+    assert response["agents_called"] == ["shopping_agent", "logistics_agent"]
+    assert response["specialist_responses"]["logistics_agent"]["agent_name"] == "logistics_agent"
 
 
 def test_user_agent_routes_logistics_json():

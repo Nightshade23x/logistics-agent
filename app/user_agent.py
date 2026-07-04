@@ -56,20 +56,121 @@ def _build_user_agent_response(
     }
 
 
+def _shopping_handoff_to_logistics_input(
+    handoff_payload: dict[str, Any],
+) -> dict[str, Any]:
+    selected_items = handoff_payload.get("selected_items", [])
+    supplier_countries = handoff_payload.get("supplier_countries", [])
+
+    if len(supplier_countries) == 1:
+        origin = supplier_countries[0]
+    elif len(supplier_countries) > 1:
+        origin = "Multiple supplier countries"
+    else:
+        origin = None
+
+    items = []
+
+    for item in selected_items:
+        items.append(
+            {
+                "name": item.get("product_name"),
+                "quantity": item.get("requested_quantity", 1),
+            }
+        )
+
+    return {
+        "shipment_id": f"SHOP-{handoff_payload.get('request_id', 'GENERATED-SHIPMENT')}",
+        "customer": handoff_payload.get("customer"),
+        "origin": origin,
+        "destination": handoff_payload.get("destination_country"),
+        "notes": "Shipment data generated from Shopping Agent selected supplier items.",
+        "items": items,
+    }
+
+
+def _can_handoff_shopping_to_logistics(
+    shopping_response: dict[str, Any],
+) -> bool:
+    handoff_payload = shopping_response.get("handoff_payload", {})
+    selected_items = handoff_payload.get("selected_items", [])
+
+    return (
+        shopping_response.get("status") in {"ready_for_review", "review_required"}
+        and bool(selected_items)
+    )
+
+
+def _build_shopping_to_logistics_response(
+    shopping_response: dict[str, Any],
+    detected_intent: str,
+    summary: str,
+    route_reason: str,
+) -> dict[str, Any]:
+    if not _can_handoff_shopping_to_logistics(shopping_response):
+        return _build_user_agent_response(
+            status=shopping_response["status"],
+            summary=summary,
+            detected_intent=detected_intent,
+            agents_called=["shopping_agent"],
+            specialist_response=shopping_response,
+            missing_information=shopping_response.get("missing_information", []),
+            route_reason=route_reason,
+        )
+
+    logistics_input = _shopping_handoff_to_logistics_input(
+        shopping_response.get("handoff_payload", {})
+    )
+    logistics_response = run_logistics_agent(logistics_input)
+
+    combined_status = _combine_statuses(
+        [
+            shopping_response["status"],
+            logistics_response["status"],
+        ]
+    )
+
+    missing_information = [
+        *shopping_response.get("missing_information", []),
+        *logistics_response.get("missing_information", []),
+    ]
+
+    response = _build_user_agent_response(
+        status=combined_status,
+        summary="User Agent routed the request to Shopping Agent, then handed selected items to Logistics Agent.",
+        detected_intent=detected_intent,
+        agents_called=["shopping_agent", "logistics_agent"],
+        specialist_response=shopping_response,
+        missing_information=missing_information,
+        route_reason=route_reason,
+    )
+
+    response["specialist_responses"] = {
+        "shopping_agent": shopping_response,
+        "logistics_agent": logistics_response,
+    }
+    response["logistics_input"] = logistics_input
+    response["handoff_payload"] = logistics_response.get("handoff_payload", {})
+    response["handoff_requests"] = logistics_response.get("handoff_requests", [])
+    response["final_answer"] = (
+        f"{_build_final_answer(shopping_response)}\n\n"
+        f"{_build_final_answer(logistics_response)}"
+    )
+
+    return response
+
+
 def run_user_agent_from_text(text: str) -> dict[str, Any]:
     routing = detect_text_intent(text)
     detected_intent = routing["detected_intent"]
 
     if detected_intent == "shopping":
-        specialist_response = run_shopping_agent_from_text(text)
+        shopping_response = run_shopping_agent_from_text(text)
 
-        return _build_user_agent_response(
-            status=specialist_response["status"],
-            summary="User Agent routed the request to the Shopping Agent.",
+        return _build_shopping_to_logistics_response(
+            shopping_response=shopping_response,
             detected_intent=detected_intent,
-            agents_called=["shopping_agent"],
-            specialist_response=specialist_response,
-            missing_information=specialist_response.get("missing_information", []),
+            summary="User Agent routed the request to the Shopping Agent.",
             route_reason="The request contains supplier, purchasing, budget, or product sourcing language.",
         )
 
@@ -252,15 +353,12 @@ def run_user_agent_from_json(data: dict[str, Any]) -> dict[str, Any]:
     detected_intent = routing["detected_intent"]
 
     if detected_intent == "shopping":
-        specialist_response = run_shopping_agent(data)
+        shopping_response = run_shopping_agent(data)
 
-        return _build_user_agent_response(
-            status=specialist_response["status"],
-            summary="User Agent routed the JSON request to the Shopping Agent.",
+        return _build_shopping_to_logistics_response(
+            shopping_response=shopping_response,
             detected_intent=detected_intent,
-            agents_called=["shopping_agent"],
-            specialist_response=specialist_response,
-            missing_information=specialist_response.get("missing_information", []),
+            summary="User Agent routed the JSON request to the Shopping Agent.",
             route_reason="The JSON request contains shopping/procurement fields.",
         )
 
