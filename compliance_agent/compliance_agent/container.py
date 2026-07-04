@@ -10,7 +10,7 @@ from .repositories.hazard_class_repository import HazardClassRepository
 from .services.compliance_service import ComplianceService
 from .services.hazard_class_service import HazardClassService
 from .repositories.country_restrictions_repository import CountryRestrictionsRepository
-
+from .services.compliance_assessment_service import ComplianceAssessmentService
 
 
 class Container:
@@ -27,6 +27,10 @@ class Container:
             hazard_class_repository=hazard_class_repository,
             country_restrictions_repository=country_restrictions_repository,
         )
+        self.compliance_assessment_service: ComplianceAssessmentService = ComplianceAssessmentService(
+            compliance_service=self.compliance_service,
+        )
+
         
         self.hazard_class_service: HazardClassService = HazardClassService(
             hazard_class_repository=hazard_class_repository,

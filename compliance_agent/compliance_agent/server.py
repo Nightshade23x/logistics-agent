@@ -15,6 +15,7 @@ from .schemas.compliance import (
     BatchComplianceCheckResponse,
 )
 from .schemas.hazard_class import HazardClassInfoRequest, HazardClassInfoResponse
+from .schemas.agent_response import AgentResponse
 
 mcp = FastMCP("Compliance Agent")
 container = build_container()
@@ -99,6 +100,23 @@ def batch_check_compliance(
     )
     return container.compliance_service.check_batch(request)
 
+@mcp.tool()
+def assess_compliance(
+    product_description: str, destination_country: str | None = None
+) -> AgentResponse:
+    """Run a full compliance assessment in the standard agent contract format.
+
+    Same underlying checks as check_product_compliance, wrapped in the
+    standard response contract for orchestration by the User Agent.
+
+    Args:
+        product_description: Free-text description of the product.
+        destination_country: Optional destination country for the shipment.
+
+    Returns:
+        A standard AgentResponse with summary, report, and handoff data.
+    """
+    return container.compliance_assessment_service.assess(product_description, destination_country)
 
 if __name__ == "__main__":
     mcp.run()
