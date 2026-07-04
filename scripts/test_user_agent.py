@@ -39,9 +39,11 @@ def test_user_agent_routes_document_files():
 
     assert response["agent_name"] == "user_agent"
     assert response["detected_intent"] == "document"
-    assert response["agents_called"] == ["document_ai_agent"]
+    assert response["agents_called"] == ["document_ai_agent", "logistics_agent"]
     assert response["specialist_response"]["agent_name"] == "document_ai_agent"
-
+    assert response["specialist_responses"]["logistics_agent"]["agent_name"] == "logistics_agent"
+    assert response["logistics_input"]["origin"] == "India"
+    assert response["logistics_input"]["destination"] == "USA"
 
 def test_user_agent_routes_shopping_json():
     data = {

@@ -106,21 +106,135 @@ def run_user_agent_from_text(text: str) -> dict[str, Any]:
     )
 
 
+def _combine_statuses(statuses: list[str]) -> str:
+    priority = {
+        "error": 6,
+        "blocked": 6,
+        "critical_review_required": 5,
+        "needs_more_information": 4,
+        "partial_plan_needs_more_information": 4,
+        "review_required": 3,
+        "ready_for_review": 1,
+    }
+
+    return max(statuses, key=lambda status: priority.get(status, 0))
+
+
+def _document_handoff_to_logistics_input(
+    handoff_payload: dict[str, Any],
+) -> dict[str, Any]:
+    invoice_fields = handoff_payload.get("invoice_fields", {})
+    packing_list_fields = handoff_payload.get("packing_list_fields", {})
+
+    shipment_id = (
+        invoice_fields.get("invoice_number")
+        or packing_list_fields.get("packing_list_number")
+        or "DOC-GENERATED-SHIPMENT"
+    )
+
+    items = []
+
+    for item in handoff_payload.get("items", []):
+        dimension_unit = str(item.get("dimension_unit", "cm")).lower()
+        weight_unit = str(item.get("weight_unit", "kg")).lower()
+
+        logistics_item = {
+            "name": item.get("name"),
+            "quantity": item.get("quantity", 1),
+        }
+
+        if dimension_unit in {"cm", "centimeter", "centimeters"}:
+            logistics_item["length_cm"] = item.get("length")
+            logistics_item["width_cm"] = item.get("width")
+            logistics_item["height_cm"] = item.get("height")
+        else:
+            logistics_item["length"] = item.get("length")
+            logistics_item["width"] = item.get("width")
+            logistics_item["height"] = item.get("height")
+            logistics_item["dimension_unit"] = dimension_unit
+
+        if weight_unit in {"kg", "kilogram", "kilograms"}:
+            logistics_item["weight_kg"] = item.get("weight")
+        else:
+            logistics_item["weight"] = item.get("weight")
+            logistics_item["weight_unit"] = weight_unit
+
+        items.append(logistics_item)
+
+    return {
+        "shipment_id": f"DOC-{shipment_id}",
+        "customer": invoice_fields.get("buyer"),
+        "origin": handoff_payload.get("origin_country"),
+        "destination": handoff_payload.get("destination_country"),
+        "notes": "Shipment data generated from Document AI validated invoice and packing list.",
+        "items": items,
+    }
+
+
 def run_user_agent_from_files(paths: list[str | Path]) -> dict[str, Any]:
     routing = detect_file_intent(paths)
     detected_intent = routing["detected_intent"]
 
     if detected_intent == "document":
-        specialist_response = run_document_ai_agent(paths)
+        document_response = run_document_ai_agent(paths)
+        document_handoff = document_response.get("handoff_payload", {})
+        mismatch_count = document_handoff.get("mismatch_count", 0)
+        document_items = document_handoff.get("items", [])
+
+        can_handoff_to_logistics = (
+            document_response.get("status") in {"ready_for_review", "review_required"}
+            and mismatch_count == 0
+            and bool(document_items)
+        )
+
+        if can_handoff_to_logistics:
+            logistics_input = _document_handoff_to_logistics_input(document_handoff)
+            logistics_response = run_logistics_agent(logistics_input)
+
+            combined_status = _combine_statuses(
+                [
+                    document_response["status"],
+                    logistics_response["status"],
+                ]
+            )
+
+            missing_information = [
+                *document_response.get("missing_information", []),
+                *logistics_response.get("missing_information", []),
+            ]
+
+            response = _build_user_agent_response(
+                status=combined_status,
+                summary="User Agent routed the documents to Document AI, then handed the validated cargo data to the Logistics Agent.",
+                detected_intent=detected_intent,
+                agents_called=["document_ai_agent", "logistics_agent"],
+                specialist_response=document_response,
+                missing_information=missing_information,
+                route_reason="The files were valid trade documents with consistent invoice and packing list cargo data.",
+            )
+
+            response["specialist_responses"] = {
+                "document_ai_agent": document_response,
+                "logistics_agent": logistics_response,
+            }
+            response["logistics_input"] = logistics_input
+            response["handoff_payload"] = logistics_response.get("handoff_payload", {})
+            response["handoff_requests"] = logistics_response.get("handoff_requests", [])
+            response["final_answer"] = (
+                f"{_build_final_answer(document_response)}\n\n"
+                f"{_build_final_answer(logistics_response)}"
+            )
+
+            return response
 
         return _build_user_agent_response(
-            status=specialist_response["status"],
+            status=document_response["status"],
             summary="User Agent routed the uploaded file(s) to the Document AI Agent.",
             detected_intent=detected_intent,
             agents_called=["document_ai_agent"],
-            specialist_response=specialist_response,
-            missing_information=specialist_response.get("missing_information", []),
-            route_reason="The provided files look like trade or shipping documents.",
+            specialist_response=document_response,
+            missing_information=document_response.get("missing_information", []),
+            route_reason="The provided files look like trade or shipping documents, but they were not ready for Logistics Agent handoff.",
         )
 
     return _build_user_agent_response(
@@ -132,7 +246,6 @@ def run_user_agent_from_files(paths: list[str | Path]) -> dict[str, Any]:
         missing_information=["supported_document_files"],
         route_reason="File intent was not recognized.",
     )
-
 
 def run_user_agent_from_json(data: dict[str, Any]) -> dict[str, Any]:
     routing = detect_json_intent(data)
