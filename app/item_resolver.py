@@ -111,6 +111,25 @@ def _has_direct_cbm(raw_item: dict[str, Any]) -> bool:
     return raw_item.get("total_cbm") not in {None, ""} or raw_item.get("cbm") not in {None, ""}
 
 
+def _normalize_basic_units(raw_item: dict[str, Any]) -> dict[str, Any]:
+    item = dict(raw_item)
+
+    for field in ["length", "width", "height"]:
+        meter_key = f"{field}_m"
+        cm_key = f"{field}_cm"
+
+        if item.get(meter_key) in {None, ""} and item.get(cm_key) not in {None, ""}:
+            item[meter_key] = float(item[cm_key]) / 100
+
+    if item.get("weight_kg") in {None, ""} and item.get("weight") not in {None, ""}:
+        weight_unit = str(item.get("weight_unit", "kg")).lower()
+
+        if weight_unit in {"kg", "kilogram", "kilograms"}:
+            item["weight_kg"] = float(item["weight"])
+
+    return item
+
+
 def _merge_with_catalog(raw_item: dict[str, Any], catalog_item: dict[str, Any]) -> dict[str, Any]:
     return {
         "name": raw_item.get("name", catalog_item["canonical_name"]),
@@ -172,6 +191,7 @@ def resolve_items(raw_items: list[dict[str, Any]]) -> dict[str, Any]:
     issues: list[str] = []
 
     for raw_item in raw_items:
+        raw_item = _normalize_basic_units(raw_item)
         item_name = raw_item.get("name", "Unknown item")
 
         catalog_match, matched_name, score = _find_catalog_match_with_score(item_name, catalog)
@@ -195,7 +215,10 @@ def resolve_items(raw_items: list[dict[str, Any]]) -> dict[str, Any]:
             continue
 
         if _has_dimensions(raw_item):
-            resolved_items.append(raw_item)
+            if catalog_match:
+                resolved_items.append(_merge_with_catalog(raw_item, catalog_match))
+            else:
+                resolved_items.append(raw_item)
             continue
 
         if catalog_match is None:
