@@ -32,3 +32,8 @@ def orchestrate(request: QueryRequest) -> OrchestratedResponse:
         synthesized, prioritized human-readable answer.
     """
     return container.orchestrator_service.run(request.query)
+
+@app.get("/health")
+def health():
+    """Simple liveness check for this orchestrator."""
+    return {"status": "ok", "agent": "orchestrator_agent"}
