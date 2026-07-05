@@ -14,6 +14,7 @@ class Verdict(BaseModel):
     next_steps: list[str] = Field(default_factory=list, description="Concrete recommended actions.")
 
 class OrchestratedResponse(BaseModel):
+    request_id: str = Field(..., description="Unique ID for this orchestration run, for tracing.")
     parsed_shipment: dict[str, Any]
     compliance_report: dict[str, Any]
     trader_report: dict[str, Any]
