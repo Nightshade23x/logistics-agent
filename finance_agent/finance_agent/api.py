@@ -69,3 +69,8 @@ def roi(
     return {
         "roi_percent": router.get_roi(report, selling_price)
     }
+
+@app.get("/health")
+def health():
+    """Simple liveness check for orchestration and monitoring."""
+    return {"status": "ok", "agent": "finance_agent"}
