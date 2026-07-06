@@ -5,6 +5,7 @@ from typing import Any
 
 from app.clarification_questions import build_clarification_questions
 from app.document_quality_review import build_document_quality_review
+from app.final_answer_builder import build_final_answer
 from app.frontend_payload import build_frontend_payload
 from app.logistics_quality_review import build_logistics_quality_review
 from app.response_contract_validator import validate_user_agent_response
@@ -60,6 +61,7 @@ def _build_backend_payload(
     payload["logistics_quality_review"] = build_logistics_quality_review(raw_response)
     payload["document_quality_review"] = build_document_quality_review(raw_response)
     payload["clarification_questions"] = build_clarification_questions(raw_response)
+    payload["final_answer"] = build_final_answer(payload)
     payload = _attach_request_metadata(
         payload=payload,
         request_type=request_type,
@@ -129,6 +131,15 @@ def _build_error_payload(
             "recommendations": [],
         },
         "clarification_questions": [],
+        "final_answer": {
+            "status": "blocked",
+            "headline": "Request failed before the agent workflow could complete.",
+            "answer_text": "The backend service could not process this request.",
+            "ready_items": [],
+            "blockers": [],
+            "warnings": [],
+            "next_actions": ["Review the backend error message and retry the request."],
+        },
         "backend_validation": {
             "response_contract_valid": False,
             "response_contract_errors": [error_message],
