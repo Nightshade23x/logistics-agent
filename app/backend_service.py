@@ -5,6 +5,7 @@ from typing import Any
 
 from app.clarification_questions import build_clarification_questions
 from app.frontend_payload import build_frontend_payload
+from app.logistics_quality_review import build_logistics_quality_review
 from app.response_contract_validator import validate_user_agent_response
 from app.shopping_quality_review import build_shopping_quality_review
 from app.user_agent import (
@@ -55,6 +56,7 @@ def _build_backend_payload(
 
     payload = _attach_backend_validation(payload, raw_response)
     payload["shopping_quality_review"] = build_shopping_quality_review(raw_response)
+    payload["logistics_quality_review"] = build_logistics_quality_review(raw_response)
     payload["clarification_questions"] = build_clarification_questions(raw_response)
     payload = _attach_request_metadata(
         payload=payload,
@@ -104,6 +106,14 @@ def _build_error_payload(
             "status": "not_applicable",
             "summary": "Shopping quality review is not available because the backend request failed.",
             "selected_items_count": 0,
+            "warnings": [],
+            "blockers": [],
+            "recommendations": [],
+        },
+        "logistics_quality_review": {
+            "applicable": False,
+            "status": "not_applicable",
+            "summary": "Logistics quality review is not available because the backend request failed.",
             "warnings": [],
             "blockers": [],
             "recommendations": [],
