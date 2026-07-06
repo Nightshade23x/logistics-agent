@@ -6,6 +6,7 @@ from app.partner_config import get_partner_integration_config
 
 
 CORE_COMPONENTS = [
+    "backend_service_facade",
     "user_agent",
     "shopping_agent",
     "document_ai_agent",
@@ -13,6 +14,9 @@ CORE_COMPONENTS = [
     "partner_review_service",
     "final_verdict",
     "frontend_payload_builder",
+    "response_contract_validator",
+    "partner_review_payload_validator",
+    "partner_request_builder",
 ]
 
 
@@ -57,8 +61,10 @@ def build_backend_status() -> dict[str, Any]:
         "recommended_demo_commands": [
             "python scripts/run_all_tests.py",
             "python scripts/system_health_check.py",
+            "python scripts/show_backend_status.py",
             "python scripts/demo_user_agent_summary.py",
             "python scripts/run_frontend_payload.py json data/suppliers/sample_shopping_request.json",
+            "python scripts/export_backend_demo_bundle.py",
         ],
         "next_backend_steps": [
             "Connect Risk MCP server",

@@ -32,10 +32,20 @@ def test_backend_status_without_partner_connections():
     assert status["local_demo_ready"] is True
     assert status["live_partner_ready"] is False
     assert status["overall_status"] == "local_demo_ready_partner_connections_missing"
-    assert len(status["core_components"]) >= 7
+    core_component_names = [
+        component["name"]
+        for component in status["core_components"]
+    ]
+
+    assert "backend_service_facade" in core_component_names
+    assert "response_contract_validator" in core_component_names
+    assert "partner_review_payload_validator" in core_component_names
+    assert "partner_request_builder" in core_component_names
+    assert len(status["core_components"]) >= 11
     assert len(status["partner_components"]) == 4
     assert "risk_mcp_server" in status["missing_partner_connections"]
     assert "finance_rest_api" in status["missing_partner_connections"]
+    assert "python scripts/export_backend_demo_bundle.py" in status["recommended_demo_commands"]
 
 
 def test_backend_status_with_partner_connections():
