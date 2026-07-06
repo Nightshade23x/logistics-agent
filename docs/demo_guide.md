@@ -1,0 +1,151 @@
+﻿# Demo Guide
+
+## 1. Current Progress
+
+This project currently has an integrated multi-agent workflow for trade, shopping, document validation, logistics planning, partner review preparation, and final verdict generation.
+
+Completed agents on our side:
+
+- User Agent: routes user requests and coordinates specialist agents.
+- Shopping Agent: selects suppliers, estimates procurement cost and procurement risk, and creates draft purchase orders.
+- Document AI Agent: extracts and validates trade documents such as invoices and packing lists.
+- Logistics Agent: calculates CBM, weight, container recommendation, packaging plan, loading sequence, route handling, and readiness status.
+
+Partner integration skeletons are also included:
+
+- Risk Agent adapter
+- Compliance Agent adapter
+- Trader Agent adapter
+- Finance Agent adapter
+- Partner Review Service
+
+These partner adapters currently return not_configured until the live MCP and REST connection details are available.
+
+## 2. Main Demo Commands
+
+Run these from the project root:
+
+    python scripts\system_health_check.py
+    python scripts\demo_user_agent_summary.py
+
+The first command checks that the system is healthy.
+The second command shows a concise mentor-friendly demo.
+
+## 3. Full Test Command
+
+Run this before showing the project:
+
+    python scripts\test_partner_adapters.py
+    python scripts\test_partner_review_service.py
+    python scripts\test_final_verdict.py
+    python scripts\test_user_agent.py
+    python scripts\test_shopping_agent.py
+    python scripts\test_document_agent.py
+    python scripts\test_logistics_agent.py
+    python scripts\system_health_check.py
+
+## 4. Demo 1: Shopping JSON Flow
+
+Command:
+
+    python scripts\run_user_agent.py json data\suppliers\sample_shopping_request.json
+
+Expected flow:
+
+    Shopping JSON request
+    -> User Agent
+    -> Shopping Agent
+    -> Logistics Agent
+    -> Partner Review Service
+    -> Final Verdict
+
+Important output to point out:
+
+- Detected intent: shopping
+- Agents called: shopping_agent, logistics_agent, partner_review_service
+- Shopping Agent selects suppliers and estimates procurement cost.
+- Logistics Agent calculates CBM, total weight, container recommendation, packaging, loading, and readiness.
+- Partner Review returns partner_review_not_configured until live partner services are connected.
+- Final verdict is review_required because partner checks are not live yet.
+
+## 5. Demo 2: Document AI to Logistics Flow
+
+Command:
+
+    python scripts\run_user_agent.py files data\documents\sample_invoice.txt data\documents\sample_packing_list.txt
+
+Expected flow:
+
+    Invoice and packing list
+    -> User Agent
+    -> Document AI Agent
+    -> Logistics Agent
+    -> Partner Review Service
+    -> Final Verdict
+
+Important output to point out:
+
+- Detected intent: document
+- Agents called: document_ai_agent, logistics_agent, partner_review_service
+- Document AI validates invoice and packing list consistency.
+- Logistics Agent uses validated document item data for shipment planning.
+- Final verdict is review_required because logistics risk and partner checks still require review.
+
+## 6. Demo 3: Plain English Shopping Request
+
+Command:
+
+    python scripts\run_user_agent.py text "I need 50 TVs, 5 scooters, and 100 ceramic tiles. Prefer suppliers from India. Avoid China. Budget 13000 USD."
+
+Expected flow:
+
+    Plain-English request
+    -> User Agent
+    -> Shopping Agent
+    -> Logistics Agent
+    -> Partner Review Service
+    -> Final Verdict
+
+Important note:
+
+This demo does not include a destination country, so the partner review layer correctly asks for more information instead of guessing.
+
+## 7. Clean Summary Demo
+
+For mentor demos, use this command because it prints a shorter summary:
+
+    python scripts\demo_user_agent_summary.py
+
+This shows:
+
+- Shopping JSON flow
+- Document AI to Logistics flow
+- Plain-English shopping flow
+- Agents called
+- Key logistics metrics
+- Partner review status
+- Final verdict
+
+## 8. Health Check
+
+Use this command to quickly prove the system is working:
+
+    python scripts\system_health_check.py
+
+The health check verifies:
+
+- Shopping JSON flow
+- Document to Logistics flow
+- Logistics JSON flow
+- Partner adapter skeletons
+- Final verdict presence
+
+## 9. Remaining Work
+
+Next steps:
+
+1. Connect partner MCP servers for Risk, Compliance, and Trader.
+2. Connect partner Finance REST API.
+3. Replace placeholder partner review responses with live results.
+4. Add final combined logistics-manager summary once live partner responses are available.
+5. Build or connect the frontend or AI interface after backend orchestration is stable.
