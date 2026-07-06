@@ -464,16 +464,30 @@ def run_user_agent_from_json(data: dict[str, Any]) -> dict[str, Any]:
         )
 
     if detected_intent == "logistics":
-        specialist_response = run_logistics_agent(data)
+        logistics_response = run_logistics_agent(data)
 
-        return _build_user_agent_response(
-            status=specialist_response["status"],
+        response = _build_user_agent_response(
+            status=logistics_response["status"],
             summary="User Agent routed the JSON request to the Logistics Agent.",
             detected_intent=detected_intent,
             agents_called=["logistics_agent"],
-            specialist_response=specialist_response,
-            missing_information=specialist_response.get("missing_information", []),
+            specialist_response=logistics_response,
+            missing_information=logistics_response.get("missing_information", []),
             route_reason="The JSON request contains origin, destination, and cargo item fields.",
+        )
+
+        response["specialist_responses"] = {
+            "logistics_agent": logistics_response,
+        }
+        response["logistics_input"] = data
+        response["handoff_payload"] = logistics_response.get("handoff_payload", {})
+        response["handoff_requests"] = logistics_response.get("handoff_requests", [])
+
+        return _attach_partner_review(
+            response=response,
+            logistics_input=data,
+            logistics_handoff=logistics_response.get("handoff_payload", {}),
+            source_handoff=data,
         )
 
     return _build_user_agent_response(

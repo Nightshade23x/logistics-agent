@@ -86,8 +86,11 @@ def test_user_agent_routes_logistics_json():
 
     assert response["agent_name"] == "user_agent"
     assert response["detected_intent"] == "logistics"
-    assert response["agents_called"] == ["logistics_agent"]
+    assert response["agents_called"] == ["logistics_agent", "partner_review_service"]
     assert response["specialist_response"]["agent_name"] == "logistics_agent"
+    assert response["specialist_responses"]["logistics_agent"]["agent_name"] == "logistics_agent"
+    assert response["specialist_responses"]["partner_review_service"]["agent_name"] == "partner_review_service"
+    assert "final_verdict" in response
 
 
 def test_user_agent_unknown_text():
