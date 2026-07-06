@@ -24,8 +24,26 @@ def _attach_backend_validation(payload: dict[str, Any], raw_response: dict[str, 
     return payload
 
 
+def _attach_request_metadata(
+    payload: dict[str, Any],
+    request_type: str,
+    input_source: Any,
+    include_raw_response: bool,
+) -> dict[str, Any]:
+    payload["request_metadata"] = {
+        "request_type": request_type,
+        "input_source": input_source,
+        "include_raw_response": include_raw_response,
+        "served_by": "backend_service",
+    }
+
+    return payload
+
+
 def _build_backend_payload(
     raw_response: dict[str, Any],
+    request_type: str,
+    input_source: Any,
     include_raw_response: bool = False,
 ) -> dict[str, Any]:
     payload = build_frontend_payload(
@@ -33,11 +51,20 @@ def _build_backend_payload(
         include_raw_response=include_raw_response,
     )
 
-    return _attach_backend_validation(payload, raw_response)
+    payload = _attach_backend_validation(payload, raw_response)
+    payload = _attach_request_metadata(
+        payload=payload,
+        request_type=request_type,
+        input_source=input_source,
+        include_raw_response=include_raw_response,
+    )
+
+    return payload
 
 
 def _build_error_payload(
     request_type: str,
+    input_source: Any,
     error: Exception,
     include_raw_response: bool = False,
 ) -> dict[str, Any]:
@@ -73,6 +100,12 @@ def _build_error_payload(
             "response_contract_errors": [error_message],
             "response_contract_warnings": [],
         },
+        "request_metadata": {
+            "request_type": request_type,
+            "input_source": input_source,
+            "include_raw_response": include_raw_response,
+            "served_by": "backend_service",
+        },
         "error": {
             "type": error_type,
             "message": error_message,
@@ -92,10 +125,16 @@ def process_text_request(
 ) -> dict[str, Any]:
     try:
         raw_response = run_user_agent_from_text(user_text)
-        return _build_backend_payload(raw_response, include_raw_response=include_raw_response)
+        return _build_backend_payload(
+            raw_response=raw_response,
+            request_type="text",
+            input_source=user_text,
+            include_raw_response=include_raw_response,
+        )
     except Exception as error:
         return _build_error_payload(
             request_type="text",
+            input_source=user_text,
             error=error,
             include_raw_response=include_raw_response,
         )
@@ -105,12 +144,20 @@ def process_json_file_request(
     json_path: str | Path,
     include_raw_response: bool = False,
 ) -> dict[str, Any]:
+    path = Path(json_path)
+
     try:
-        raw_response = run_user_agent_from_json_file(Path(json_path))
-        return _build_backend_payload(raw_response, include_raw_response=include_raw_response)
+        raw_response = run_user_agent_from_json_file(path)
+        return _build_backend_payload(
+            raw_response=raw_response,
+            request_type="json_file",
+            input_source=str(path),
+            include_raw_response=include_raw_response,
+        )
     except Exception as error:
         return _build_error_payload(
             request_type="json_file",
+            input_source=str(path),
             error=error,
             include_raw_response=include_raw_response,
         )
@@ -120,13 +167,20 @@ def process_document_files_request(
     file_paths: list[str | Path],
     include_raw_response: bool = False,
 ) -> dict[str, Any]:
+    paths = [Path(file_path) for file_path in file_paths]
+
     try:
-        paths = [Path(file_path) for file_path in file_paths]
         raw_response = run_user_agent_from_files(paths)
-        return _build_backend_payload(raw_response, include_raw_response=include_raw_response)
+        return _build_backend_payload(
+            raw_response=raw_response,
+            request_type="document_files",
+            input_source=[str(path) for path in paths],
+            include_raw_response=include_raw_response,
+        )
     except Exception as error:
         return _build_error_payload(
             request_type="document_files",
+            input_source=[str(path) for path in paths],
             error=error,
             include_raw_response=include_raw_response,
         )

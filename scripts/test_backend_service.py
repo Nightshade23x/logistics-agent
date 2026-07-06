@@ -25,6 +25,10 @@ def test_backend_service_json_request():
     assert "logistics_agent" in payload["agents_called"]
     assert "partner_review_service" in payload["agents_called"]
     assert payload["backend_validation"]["response_contract_valid"] is True
+    assert payload["request_metadata"]["request_type"] == "json_file"
+    assert payload["request_metadata"]["served_by"] == "backend_service"
+    assert payload["request_metadata"]["include_raw_response"] is False
+    assert "sample_shopping_request.json" in payload["request_metadata"]["input_source"]
     assert "raw_response" not in payload
 
 
@@ -35,6 +39,7 @@ def test_backend_service_json_request_with_raw_response():
     )
 
     assert payload["backend_validation"]["response_contract_valid"] is True
+    assert payload["request_metadata"]["include_raw_response"] is True
     assert payload["raw_response"]["agent_name"] == "user_agent"
 
 
@@ -52,17 +57,24 @@ def test_backend_service_document_request():
     assert "logistics_agent" in payload["agents_called"]
     assert "partner_review_service" in payload["agents_called"]
     assert payload["backend_validation"]["response_contract_valid"] is True
+    assert payload["request_metadata"]["request_type"] == "document_files"
+    assert len(payload["request_metadata"]["input_source"]) == 2
 
 
 def test_backend_service_text_request():
-    payload = process_text_request(
-        "I need 50 TVs, 5 scooters, and 100 ceramic tiles. Prefer suppliers from India. Avoid China. Budget 13000 USD."
+    request_text = (
+        "I need 50 TVs, 5 scooters, and 100 ceramic tiles. "
+        "Prefer suppliers from India. Avoid China. Budget 13000 USD."
     )
+
+    payload = process_text_request(request_text)
 
     assert payload["agent_name"] == "user_agent"
     assert payload["detected_intent"] == "shopping"
     assert "shopping_agent" in payload["agents_called"]
     assert payload["backend_validation"]["response_contract_valid"] is True
+    assert payload["request_metadata"]["request_type"] == "text"
+    assert payload["request_metadata"]["input_source"] == request_text
 
 
 def test_backend_service_returns_error_payload_for_missing_json_file():
@@ -74,6 +86,8 @@ def test_backend_service_returns_error_payload_for_missing_json_file():
     assert payload["status"] == "error"
     assert payload["decision"] == "blocked"
     assert payload["backend_validation"]["response_contract_valid"] is False
+    assert payload["request_metadata"]["request_type"] == "json_file"
+    assert payload["request_metadata"]["served_by"] == "backend_service"
     assert payload["error"]["request_type"] == "json_file"
 
 
