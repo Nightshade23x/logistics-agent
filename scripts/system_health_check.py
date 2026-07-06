@@ -1,5 +1,6 @@
 ﻿from __future__ import annotations
 
+import json
 from pathlib import Path
 import sys
 
@@ -10,41 +11,76 @@ from app.partner_adapters.compliance_client import check_product_compliance
 from app.partner_adapters.finance_client import calculate_landed_cost
 from app.partner_adapters.risk_client import check_country_risk
 from app.partner_adapters.trader_client import classify_trade_product
+from app.response_contract_validator import (
+    validate_agent_response,
+    validate_user_agent_response,
+)
 from app.user_agent import (
     run_user_agent_from_files,
-    run_user_agent_from_json,
     run_user_agent_from_json_file,
 )
 
 
-def _status_line(name: str, passed: bool, detail: str = "") -> None:
-    marker = "PASS" if passed else "FAIL"
-    suffix = f" - {detail}" if detail else ""
-    print(f"[{marker}] {name}{suffix}")
+def _print_result(name: str, passed: bool, detail: str) -> None:
+    status = "PASS" if passed else "FAIL"
+    print(f"[{status}] {name} - {detail}")
 
 
-def _check_shopping_json_flow() -> bool:
+def _check_user_agent_response(
+    check_name: str,
+    response: dict,
+    expected_agents: list[str],
+) -> bool:
+    errors: list[str] = []
+
+    contract_result = validate_user_agent_response(response)
+
+    if not contract_result["is_valid"]:
+        errors.extend(contract_result["errors"])
+
+    agents_called = response.get("agents_called", [])
+
+    for agent_name in expected_agents:
+        if agent_name not in agents_called:
+            errors.append(f"missing expected agent: {agent_name}")
+
+    final_verdict = response.get("final_verdict", {})
+    verdict = final_verdict.get("verdict")
+
+    if not verdict:
+        errors.append("missing final verdict")
+
+    passed = len(errors) == 0
+
+    if passed:
+        _print_result(
+            check_name,
+            True,
+            f"status={response.get('status')}, verdict={verdict}, contract=valid",
+        )
+    else:
+        _print_result(check_name, False, "; ".join(errors))
+
+    return passed
+
+
+def _run_shopping_json_flow() -> bool:
     response = run_user_agent_from_json_file(
         ROOT_DIR / "data" / "suppliers" / "sample_shopping_request.json"
     )
 
-    passed = (
-        response.get("detected_intent") == "shopping"
-        and "shopping_agent" in response.get("agents_called", [])
-        and "logistics_agent" in response.get("agents_called", [])
-        and "partner_review_service" in response.get("agents_called", [])
-        and "final_verdict" in response
+    return _check_user_agent_response(
+        check_name="Shopping JSON flow",
+        response=response,
+        expected_agents=[
+            "shopping_agent",
+            "logistics_agent",
+            "partner_review_service",
+        ],
     )
 
-    _status_line(
-        "Shopping JSON flow",
-        passed,
-        f"status={response.get('status')}, verdict={response.get('final_verdict', {}).get('verdict')}",
-    )
-    return passed
 
-
-def _check_document_flow() -> bool:
+def _run_document_to_logistics_flow() -> bool:
     response = run_user_agent_from_files(
         [
             ROOT_DIR / "data" / "documents" / "sample_invoice.txt",
@@ -52,91 +88,120 @@ def _check_document_flow() -> bool:
         ]
     )
 
-    passed = (
-        response.get("detected_intent") == "document"
-        and "document_ai_agent" in response.get("agents_called", [])
-        and "logistics_agent" in response.get("agents_called", [])
-        and "partner_review_service" in response.get("agents_called", [])
-        and "final_verdict" in response
+    return _check_user_agent_response(
+        check_name="Document to Logistics flow",
+        response=response,
+        expected_agents=[
+            "document_ai_agent",
+            "logistics_agent",
+            "partner_review_service",
+        ],
     )
 
-    _status_line(
-        "Document to Logistics flow",
-        passed,
-        f"status={response.get('status')}, verdict={response.get('final_verdict', {}).get('verdict')}",
-    )
-    return passed
 
+def _run_logistics_json_flow() -> bool:
+    temporary_request_path = ROOT_DIR / "data" / "tmp_health_logistics_request.json"
 
-def _check_logistics_json_flow() -> bool:
-    response = run_user_agent_from_json(
-        {
-            "shipment_id": "HEALTH-LOG-001",
-            "customer": "Health Check",
-            "origin": "India",
-            "destination": "USA",
-            "declared_value_usd": 18500.0,
-            "items": [
-                {
-                    "name": "TVs",
-                    "quantity": 10,
-                    "length_cm": 120,
-                    "width_cm": 20,
-                    "height_cm": 80,
-                    "weight_kg": 12,
-                }
+    logistics_request = {
+        "shipment_id": "HEALTH-LOG-001",
+        "customer": "Health Check Customer",
+        "origin": "India",
+        "destination": "USA",
+        "items": [
+            {
+                "name": "TVs",
+                "quantity": 10,
+                "length": 120,
+                "width": 20,
+                "height": 80,
+                "dimension_unit": "cm",
+                "weight": 12,
+                "weight_unit": "kg",
+                "fragile": True,
+                "stackable": False,
+            },
+            {
+                "name": "Ceramic tiles",
+                "quantity": 50,
+                "length": 60,
+                "width": 60,
+                "height": 8,
+                "dimension_unit": "cm",
+                "weight": 12,
+                "weight_unit": "kg",
+                "fragile": True,
+                "stackable": True,
+            },
+        ],
+    }
+
+    try:
+        temporary_request_path.write_text(
+            json.dumps(logistics_request, indent=2),
+            encoding="utf-8",
+        )
+
+        response = run_user_agent_from_json_file(temporary_request_path)
+
+        return _check_user_agent_response(
+            check_name="Logistics JSON flow",
+            response=response,
+            expected_agents=[
+                "logistics_agent",
+                "partner_review_service",
             ],
-        }
-    )
+        )
 
-    passed = (
-        response.get("detected_intent") == "logistics"
-        and "logistics_agent" in response.get("agents_called", [])
-        and "partner_review_service" in response.get("agents_called", [])
-        and "final_verdict" in response
-    )
-
-    _status_line(
-        "Logistics JSON flow",
-        passed,
-        f"status={response.get('status')}, verdict={response.get('final_verdict', {}).get('verdict')}",
-    )
-    return passed
+    finally:
+        if temporary_request_path.exists():
+            temporary_request_path.unlink()
 
 
-def _check_partner_adapters() -> bool:
-    responses = [
-        check_country_risk("USA"),
-        check_product_compliance(
+def _check_partner_adapter_response(name: str, response: dict) -> tuple[bool, str]:
+    contract_result = validate_agent_response(response, context=name)
+
+    if not contract_result["is_valid"]:
+        return False, "; ".join(contract_result["errors"])
+
+    if response.get("status") != "not_configured":
+        return False, f"expected not_configured, got {response.get('status')}"
+
+    return True, "contract=valid, status=not_configured"
+
+
+def _run_partner_adapter_checks() -> bool:
+    checks = {
+        "Risk adapter": check_country_risk(destination_country="USA"),
+        "Compliance adapter": check_product_compliance(
             product_name="TVs",
-            product_category="electronics",
-            origin_country="India",
             destination_country="USA",
+            origin_country="India",
+            product_category="electronics",
         ),
-        classify_trade_product(
+        "Trader adapter": classify_trade_product(
             product_name="TVs",
+            origin_country="India",
+            destination_country="USA",
             product_category="electronics",
+            declared_value_usd=1000,
+        ),
+        "Finance adapter": calculate_landed_cost(
             origin_country="India",
             destination_country="USA",
-            declared_value_usd=10000.0,
+            total_cbm=10,
+            total_weight_kg=1000,
+            declared_value_usd=1000,
         ),
-        calculate_landed_cost(
-            origin_country="India",
-            destination_country="USA",
-            total_cbm=5.0,
-            total_weight_kg=500.0,
-            declared_value_usd=10000.0,
-        ),
-    ]
+    }
 
-    passed = all(response.get("status") == "not_configured" for response in responses)
+    all_passed = True
 
-    _status_line(
-        "Partner adapter skeletons",
-        passed,
-        "expected not_configured until live MCP/REST details are available",
-    )
-    return passed
+    for check_name, response in checks.items():
+        passed, detail = _check_partner_adapter_response(check_name, response)
+        _print_result(check_name, passed, detail)
+        all_passed = all_passed and passed
+
+    return all_passed
 
 
 def main() -> None:
@@ -144,16 +209,17 @@ def main() -> None:
     print("=" * 30)
 
     checks = [
-        _check_shopping_json_flow(),
-        _check_document_flow(),
-        _check_logistics_json_flow(),
-        _check_partner_adapters(),
+        _run_shopping_json_flow(),
+        _run_document_to_logistics_flow(),
+        _run_logistics_json_flow(),
+        _run_partner_adapter_checks(),
     ]
 
-    print("")
+    print()
+
     if all(checks):
         print("System health check passed.")
-        raise SystemExit(0)
+        return
 
     print("System health check failed.")
     raise SystemExit(1)
