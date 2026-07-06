@@ -16,6 +16,7 @@ REQUIRED_BACKEND_PAYLOAD_FIELDS = [
     "missing_information_count",
     "assumptions_count",
     "agent_summaries",
+    "clarification_questions",
     "backend_validation",
     "request_metadata",
 ]
@@ -62,6 +63,9 @@ def validate_backend_service_payload(payload: dict[str, Any]) -> dict[str, Any]:
 
     if "agent_summaries" in payload and not isinstance(payload["agent_summaries"], list):
         errors.append("agent_summaries must be a list.")
+
+    if "clarification_questions" in payload and not isinstance(payload["clarification_questions"], list):
+        errors.append("clarification_questions must be a list.")
 
     backend_validation = payload.get("backend_validation", {})
 

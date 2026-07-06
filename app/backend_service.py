@@ -3,6 +3,7 @@
 from pathlib import Path
 from typing import Any
 
+from app.clarification_questions import build_clarification_questions
 from app.frontend_payload import build_frontend_payload
 from app.response_contract_validator import validate_user_agent_response
 from app.user_agent import (
@@ -52,6 +53,7 @@ def _build_backend_payload(
     )
 
     payload = _attach_backend_validation(payload, raw_response)
+    payload["clarification_questions"] = build_clarification_questions(raw_response)
     payload = _attach_request_metadata(
         payload=payload,
         request_type=request_type,
@@ -95,6 +97,7 @@ def _build_error_payload(
         "assumptions_count": 0,
         "assumptions_preview": [],
         "agent_summaries": [],
+        "clarification_questions": [],
         "backend_validation": {
             "response_contract_valid": False,
             "response_contract_errors": [error_message],
