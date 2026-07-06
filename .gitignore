@@ -26,3 +26,6 @@ Thumbs.db
 # Temporary files
 *.tmp
 outputs/
+
+# Generated demo/export outputs
+demo_outputs/
