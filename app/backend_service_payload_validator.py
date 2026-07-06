@@ -18,6 +18,7 @@ REQUIRED_BACKEND_PAYLOAD_FIELDS = [
     "agent_summaries",
     "shopping_quality_review",
     "logistics_quality_review",
+    "document_quality_review",
     "clarification_questions",
     "backend_validation",
     "request_metadata",
@@ -74,6 +75,9 @@ def validate_backend_service_payload(payload: dict[str, Any]) -> dict[str, Any]:
 
     if "logistics_quality_review" in payload and not isinstance(payload["logistics_quality_review"], dict):
         errors.append("logistics_quality_review must be a dictionary.")
+
+    if "document_quality_review" in payload and not isinstance(payload["document_quality_review"], dict):
+        errors.append("document_quality_review must be a dictionary.")
 
     backend_validation = payload.get("backend_validation", {})
 
