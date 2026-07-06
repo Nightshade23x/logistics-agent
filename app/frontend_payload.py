@@ -14,6 +14,9 @@ def _clean_text(text: str | None) -> str:
         "supplieroption": "supplier option",
         "Risk,Compliance": "Risk, Compliance",
         "andFinance": "and Finance",
+        "catalog item'": "catalog item '",
+        "catalogitem": "catalog item",
+        "item'": "item '",
     }
 
     for old_value, new_value in replacements.items():
@@ -76,6 +79,34 @@ def _build_short_answer(
     return _clean_text(" ".join(parts))
 
 
+def _split_missing_information(missing_information: list[Any]) -> tuple[list[str], list[str]]:
+    real_missing = []
+    assumptions = []
+
+    for item in missing_information:
+        cleaned_item = _clean_text(str(item))
+
+        if _is_assumption_or_estimate(cleaned_item):
+            assumptions.append(cleaned_item)
+        else:
+            real_missing.append(cleaned_item)
+
+    return real_missing, assumptions
+
+
+def _frontend_final_verdict(
+    final_verdict: dict[str, Any],
+    real_missing: list[str],
+    assumptions: list[str],
+) -> dict[str, Any]:
+    frontend_verdict = dict(final_verdict)
+    frontend_verdict["missing_information_count"] = len(real_missing)
+    frontend_verdict["assumptions_count"] = len(assumptions)
+    return frontend_verdict
+
+
+
+
 def _extract_logistics_metrics(response: dict[str, Any]) -> dict[str, Any]:
     logistics_response = response.get("specialist_responses", {}).get("logistics_agent", {})
 
@@ -118,6 +149,7 @@ def build_frontend_payload(response: dict[str, Any], include_raw_response: bool 
     final_verdict = response.get("final_verdict", {})
     partner_review = response.get("partner_review", {})
     missing_information = response.get("missing_information", [])
+    real_missing, assumptions = _split_missing_information(missing_information)
 
     payload = {
         "agent_name": response.get("agent_name"),
@@ -131,35 +163,19 @@ def build_frontend_payload(response: dict[str, Any], include_raw_response: bool 
             logistics_metrics=_extract_logistics_metrics(response),
             partner_review=partner_review,
         ),
-        "final_verdict": final_verdict,
+        "final_verdict": _frontend_final_verdict(
+            final_verdict=final_verdict,
+            real_missing=real_missing,
+            assumptions=assumptions,
+        ),
         "decision": final_verdict.get("verdict"),
         "logistics_metrics": _extract_logistics_metrics(response),
         "partner_review_status": partner_review.get("status"),
         "partner_review_summary": partner_review.get("summary"),
-        "missing_information_count": len(
-            [
-                item
-                for item in missing_information
-                if not _is_assumption_or_estimate(str(item))
-            ]
-        ),
-        "missing_information_preview": [
-            item
-            for item in missing_information
-            if not _is_assumption_or_estimate(str(item))
-        ][:5],
-        "assumptions_count": len(
-            [
-                item
-                for item in missing_information
-                if _is_assumption_or_estimate(str(item))
-            ]
-        ),
-        "assumptions_preview": [
-            item
-            for item in missing_information
-            if _is_assumption_or_estimate(str(item))
-        ][:5],
+        "missing_information_count": len(real_missing),
+        "missing_information_preview": real_missing[:5],
+        "assumptions_count": len(assumptions),
+        "assumptions_preview": assumptions[:5],
         "agent_summaries": _extract_agent_summaries(response),
     }
 
