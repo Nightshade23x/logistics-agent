@@ -5,6 +5,7 @@ from typing import Any
 from app.partner_adapters.compliance_client import check_product_compliance
 from app.partner_adapters.finance_client import calculate_landed_cost
 from app.partner_config import get_partner_integration_config
+from app.partner_review_payload_validator import validate_partner_review_payload
 from app.partner_adapters.risk_client import check_country_risk
 from app.partner_adapters.trader_client import classify_trade_product
 
@@ -78,6 +79,21 @@ def run_partner_review(
     destination_country = payload.get("destination_country") or payload.get("destination")
     declared_value_usd = _extract_declared_value(payload)
     items = _extract_items(payload)
+    payload_validation = validate_partner_review_payload(payload)
+
+    if not payload_validation["is_valid"]:
+        return {
+            "agent_name": "partner_review_service",
+            "status": "needs_more_information",
+            "summary": "Partner review payload is missing required information.",
+            "origin_country": origin_country,
+            "destination_country": destination_country,
+            "items_checked": len(items),
+            "payload_validation": payload_validation,
+            "agent_responses": {},
+            "missing_required_fields": payload_validation["errors"],
+        }
+
 
     missing_required_fields = []
 
@@ -95,6 +111,7 @@ def run_partner_review(
             "origin_country": origin_country,
             "destination_country": destination_country,
             "items_checked": len(items),
+            "payload_validation": payload_validation,
             "agent_responses": {},
             "missing_required_fields": missing_required_fields,
         }
