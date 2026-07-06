@@ -18,6 +18,7 @@ TEST_COMMANDS = [
     [sys.executable, "scripts/test_final_verdict.py"],
     [sys.executable, "scripts/test_frontend_payload.py"],
     [sys.executable, "scripts/test_backend_service.py"],
+    [sys.executable, "scripts/test_backend_service_payload_validator.py"],
     [sys.executable, "scripts/test_user_agent.py"],
     [sys.executable, "scripts/test_shopping_agent.py"],
     [sys.executable, "scripts/test_document_agent.py"],
