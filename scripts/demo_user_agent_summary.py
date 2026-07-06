@@ -13,15 +13,35 @@ from app.user_agent import (
 )
 
 
-def _short(text: str | None, limit: int = 180) -> str:
+def _clean_display_text(text: str | None) -> str:
     if not text:
         return ""
 
     cleaned = " ".join(str(text).split())
+
+    replacements = {
+        "LogisticsAgent": "Logistics Agent",
+        "supplieroption": "supplier option",
+        "CBM": " CBM",
+        "Risk,Compliance": "Risk, Compliance",
+        "andFinance": "and Finance",
+        "or is": "or is",
+    }
+
+    for old_value, new_value in replacements.items():
+        cleaned = cleaned.replace(old_value, new_value)
+
+    cleaned = cleaned.replace("  ", " ")
+    return cleaned.strip()
+
+
+def _short(text: str | None, limit: int = 180) -> str:
+    cleaned = _clean_display_text(text)
+
     if len(cleaned) <= limit:
         return cleaned
 
-    return cleaned[:limit] + "..."
+    return cleaned[:limit].rstrip() + "..."
 
 
 def _print_specialist_summaries(response: dict) -> None:
