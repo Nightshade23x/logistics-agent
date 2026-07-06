@@ -10,6 +10,7 @@ from app.agent_router import (
     read_json_file,
 )
 from app.document_ai_router import run_document_ai_agent
+from app.final_verdict import derive_final_verdict, format_final_verdict
 from app.logistics_service import run_logistics_agent
 from app.partner_review_service import run_partner_review
 from app.shopping_service import run_shopping_agent, run_shopping_agent_from_text
@@ -55,6 +56,20 @@ def _build_user_agent_response(
         "handoff_payload": handoff_payload,
         "handoff_requests": handoff_requests,
     }
+
+
+def _attach_final_verdict(response: dict[str, Any]) -> dict[str, Any]:
+    final_verdict = derive_final_verdict(response)
+    response["final_verdict"] = final_verdict
+
+    if "FINAL VERDICT" not in response["final_answer"]:
+        response["final_answer"] = (
+            response["final_answer"]
+            + "\n\n"
+            + format_final_verdict(final_verdict)
+        )
+
+    return response
 
 
 def _build_partner_review_payload(
@@ -129,7 +144,7 @@ def _attach_partner_review(
         + f"{partner_review.get('summary')}"
     )
 
-    return response
+    return _attach_final_verdict(response)
 
 
 def _shopping_handoff_to_logistics_input(
