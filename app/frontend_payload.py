@@ -11,6 +11,7 @@ def _clean_text(text: str | None) -> str:
 
     replacements = {
         "kg.Recommended": "kg. Recommended",
+        "kg.Recommended container": "kg. Recommended container",
         "supplieroption": "supplier option",
         "Risk,Compliance": "Risk, Compliance",
         "andFinance": "and Finance",
