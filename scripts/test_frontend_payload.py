@@ -28,7 +28,10 @@ def test_frontend_payload_for_shopping_json_flow():
     assert payload["partner_review_status"] == "partner_review_not_configured"
     assert payload["missing_information_count"] >= 0
     assert payload["agent_summaries"]
-    assert payload["raw_response"]["agent_name"] == "user_agent"
+    assert "raw_response" not in payload
+
+    raw_payload = build_frontend_payload(response, include_raw_response=True)
+    assert raw_payload["raw_response"]["agent_name"] == "user_agent"
 
 
 def main() -> None:
