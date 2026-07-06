@@ -7,10 +7,9 @@ import sys
 ROOT_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT_DIR))
 
+from app.backend_service import process_json_file_request
 from app.backend_status import build_backend_status
-from app.frontend_payload import build_frontend_payload
 from app.partner_request_builder import build_partner_agent_requests
-from app.user_agent import run_user_agent_from_json_file
 
 
 def _write_json(path: Path, data: dict) -> None:
@@ -24,12 +23,17 @@ def main() -> None:
     output_dir = ROOT_DIR / "demo_outputs"
     output_dir.mkdir(exist_ok=True)
 
-    shopping_response = run_user_agent_from_json_file(
-        ROOT_DIR / "data" / "suppliers" / "sample_shopping_request.json"
+    frontend_payload_with_raw = process_json_file_request(
+        ROOT_DIR / "data" / "suppliers" / "sample_shopping_request.json",
+        include_raw_response=True,
     )
 
-    frontend_payload = build_frontend_payload(shopping_response)
-    partner_review_payload = shopping_response.get("partner_review_payload", {})
+    raw_response = frontend_payload_with_raw.get("raw_response", {})
+
+    frontend_payload = dict(frontend_payload_with_raw)
+    frontend_payload.pop("raw_response", None)
+
+    partner_review_payload = raw_response.get("partner_review_payload", {})
     partner_agent_requests = build_partner_agent_requests(partner_review_payload)
     backend_status = build_backend_status()
 
@@ -53,6 +57,7 @@ def main() -> None:
     print("Summary:")
     print(f"- backend_status: {backend_status.get('overall_status')}")
     print(f"- frontend_decision: {frontend_payload.get('decision')}")
+    print(f"- backend_contract_valid: {frontend_payload.get('backend_validation', {}).get('response_contract_valid')}")
     print(f"- agents_called: {', '.join(frontend_payload.get('agents_called', []))}")
     print(f"- partner_payload_items: {len(partner_review_payload.get('selected_items', []))}")
     print(f"- partner_requests_ready: {partner_agent_requests.get('is_ready_for_partner_calls')}")

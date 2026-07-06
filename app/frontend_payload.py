@@ -1,5 +1,6 @@
 ﻿from __future__ import annotations
 
+import re
 from typing import Any
 
 
@@ -22,6 +23,10 @@ def _clean_text(text: str | None) -> str:
 
     for old_value, new_value in replacements.items():
         cleaned = cleaned.replace(old_value, new_value)
+
+    cleaned = re.sub(r"(\d+(?:\.\d+)?)kg\b", r"\1 kg", cleaned)
+    cleaned = cleaned.replace("kg.Recommended", "kg. Recommended")
+    cleaned = cleaned.replace("kg. Recommended container", "kg. Recommended container")
 
     return cleaned.strip()
 
