@@ -283,3 +283,90 @@ For frontend-style JSON output:
 5. Replace placeholder adapter responses with real partner service calls.
 6. Add integration tests using configured partner test endpoints when available.
 7. Add final combined logistics-manager answer after live partner responses are available.
+
+## 10. Backend Service Facade
+
+The backend now includes a service facade:
+
+    app/backend_service.py
+
+This is the main entry point for future frontend or AI-interface calls.
+
+Instead of the frontend importing internal agent modules directly, it should call:
+
+- process_text_request(...)
+- process_json_file_request(...)
+- process_document_files_request(...)
+
+The backend service facade handles:
+
+- calling the User Agent
+- building the compact frontend payload
+- attaching backend validation
+- attaching request metadata
+- handling errors safely
+- optionally including the raw backend response for debugging
+
+This keeps the frontend simple and protects it from internal backend structure changes.
+
+## 11. Partner Request Builder
+
+The backend now includes a partner request builder:
+
+    app/partner_request_builder.py
+
+This converts the combined partner review payload into separate request objects for:
+
+- Risk Agent
+- Compliance Agent
+- Trader Agent
+- Finance Agent
+
+This makes partner integration cleaner because each external partner agent receives a clear and specific request payload.
+
+Related export command:
+
+    python scripts/export_partner_agent_requests.py
+
+## 12. Backend Demo Bundle Export
+
+The backend now includes a single export command:
+
+    python scripts/export_backend_demo_bundle.py
+
+This generates demo and partner-review artifacts in:
+
+    demo_outputs/
+
+Generated files:
+
+- backend_status.json
+- frontend_payload_shopping.json
+- partner_review_payload.json
+- partner_agent_requests.json
+
+The demo_outputs folder is ignored by Git because these files are generated outputs.
+
+## 13. Current Recommended Backend Entry Points
+
+For frontend-style usage:
+
+    python scripts/run_frontend_payload.py json data/suppliers/sample_shopping_request.json
+
+For service-level Python usage:
+
+    from app.backend_service import process_json_file_request
+
+    payload = process_json_file_request("data/suppliers/sample_shopping_request.json")
+
+For full backend validation:
+
+    python scripts/run_all_tests.py
+
+For backend readiness/status:
+
+    python scripts/show_backend_status.py
+
+For demo bundle export:
+
+    python scripts/export_backend_demo_bundle.py

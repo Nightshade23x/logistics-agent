@@ -305,3 +305,94 @@ Live partner integration:
 Production/live use:
 
     NOT READY YET
+
+## 13. New Backend Service Layer Readiness
+
+Status: READY
+
+Completed:
+
+- [x] Backend service facade exists.
+- [x] Frontend-style requests go through backend_service.
+- [x] Text requests supported through backend_service.
+- [x] JSON file requests supported through backend_service.
+- [x] Document file requests supported through backend_service.
+- [x] Backend validation is attached to service responses.
+- [x] Request metadata is attached to service responses.
+- [x] Safe error payloads are returned for backend service failures.
+- [x] Raw response is excluded by default.
+- [x] Raw response can still be included for debugging.
+
+Main backend service file:
+
+    app/backend_service.py
+
+Frontend-facing command:
+
+    python scripts/run_frontend_payload.py json data/suppliers/sample_shopping_request.json
+
+## 14. Partner Request Builder Readiness
+
+Status: READY
+
+Completed:
+
+- [x] Combined partner review payload validator exists.
+- [x] Partner request builder exists.
+- [x] Risk Agent request object is generated.
+- [x] Compliance Agent request objects are generated.
+- [x] Trader Agent request objects are generated.
+- [x] Finance Agent request object is generated.
+- [x] Partner Review Service uses the request builder.
+- [x] Partner request builder tests are included in the full test runner.
+- [x] Partner request export script exists.
+
+Main files:
+
+    app/partner_review_payload_validator.py
+    app/partner_request_builder.py
+    app/partner_review_service.py
+
+Export command:
+
+    python scripts/export_partner_agent_requests.py
+
+## 15. Demo Bundle Export Readiness
+
+Status: READY
+
+Completed:
+
+- [x] Backend status export included.
+- [x] Frontend payload export included.
+- [x] Partner review payload export included.
+- [x] Individual partner agent request export included.
+- [x] Generated outputs are written to demo_outputs.
+- [x] demo_outputs is ignored by Git.
+
+Command:
+
+    python scripts/export_backend_demo_bundle.py
+
+Expected generated files:
+
+    demo_outputs/backend_status.json
+    demo_outputs/frontend_payload_shopping.json
+    demo_outputs/partner_review_payload.json
+    demo_outputs/partner_agent_requests.json
+
+## 16. Updated Standard Backend Check
+
+Before showing the backend, run:
+
+    python scripts/run_all_tests.py
+    python scripts/show_backend_status.py
+    python scripts/demo_user_agent_summary.py
+    python scripts/export_backend_demo_bundle.py
+
+Expected result:
+
+- all tests pass
+- backend status says local_demo_ready_partner_connections_missing
+- demo summary runs successfully
+- demo bundle exports successfully

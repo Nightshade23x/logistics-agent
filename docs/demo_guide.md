@@ -189,3 +189,78 @@ By default, raw full reports are excluded so the frontend payload stays readable
 For debugging, include the full raw response:
 
     python scripts\run_frontend_payload.py json data\suppliers\sample_shopping_request.json --raw
+
+## 12. Backend Service Facade
+
+The frontend-style runner now goes through the backend service facade.
+
+Command:
+
+    python scripts/run_frontend_payload.py json data\suppliers\sample_shopping_request.json
+
+This internally uses:
+
+    app/backend_service.py
+
+The backend service adds:
+
+- compact frontend payload
+- backend validation
+- request metadata
+- safe error handling
+- optional raw response support
+
+Normal frontend output excludes raw_response.
+
+Debug mode:
+
+    python scripts/run_frontend_payload.py json data\suppliers\sample_shopping_request.json --raw
+
+## 13. Backend Demo Bundle
+
+Use this command to export a complete backend demo bundle:
+
+    python scripts/export_backend_demo_bundle.py
+
+It generates:
+
+- backend_status.json
+- frontend_payload_shopping.json
+- partner_review_payload.json
+- partner_agent_requests.json
+
+Output folder:
+
+    demo_outputs/
+
+This folder is ignored by Git because the files are generated.
+
+## 14. Partner Handoff Export Commands
+
+Combined partner review payload:
+
+    python scripts/export_partner_review_payload.py
+
+Individual partner-agent request objects:
+
+    python scripts/export_partner_agent_requests.py
+
+These are useful for showing the partner exactly what data will be sent to Risk, Compliance, Trader, and Finance agents.
+
+## 15. Updated Recommended Demo Sequence
+
+Run this sequence before a mentor or partner demo:
+
+    python scripts/run_all_tests.py
+    python scripts/show_backend_status.py
+    python scripts/demo_user_agent_summary.py
+    python scripts/run_frontend_payload.py json data\suppliers\sample_shopping_request.json
+    python scripts/export_backend_demo_bundle.py
+
+Main points to explain:
+
+- backend is ready for local demo
+- partner adapters are ready but not connected to live services yet
+- final verdict stays review_required until partner services are live
+- frontend-style payload is available through backend_service
+- partner handoff payloads can be exported clearly
