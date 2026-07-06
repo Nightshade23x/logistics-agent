@@ -70,6 +70,26 @@ def run_partner_review(
     declared_value_usd = _extract_declared_value(payload)
     items = _extract_items(payload)
 
+    missing_required_fields = []
+
+    if not destination_country:
+        missing_required_fields.append("destination_country")
+
+    if not items:
+        missing_required_fields.append("items")
+
+    if missing_required_fields:
+        return {
+            "agent_name": "partner_review_service",
+            "status": "needs_more_information",
+            "summary": "Partner review needs destination country and item data before it can run.",
+            "origin_country": origin_country,
+            "destination_country": destination_country,
+            "items_checked": len(items),
+            "agent_responses": {},
+            "missing_required_fields": missing_required_fields,
+        }
+
     agent_responses: dict[str, Any] = {}
 
     if destination_country:

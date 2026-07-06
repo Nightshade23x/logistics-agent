@@ -11,6 +11,7 @@ from app.agent_router import (
 )
 from app.document_ai_router import run_document_ai_agent
 from app.logistics_service import run_logistics_agent
+from app.partner_review_service import run_partner_review
 from app.shopping_service import run_shopping_agent, run_shopping_agent_from_text
 
 
@@ -54,6 +55,81 @@ def _build_user_agent_response(
         "handoff_payload": handoff_payload,
         "handoff_requests": handoff_requests,
     }
+
+
+def _build_partner_review_payload(
+    logistics_input: dict[str, Any],
+    logistics_handoff: dict[str, Any],
+    source_handoff: dict[str, Any],
+) -> dict[str, Any]:
+    payload = {
+        "request_id": (
+            source_handoff.get("request_id")
+            or logistics_input.get("shipment_id")
+            or logistics_handoff.get("shipment_id")
+        ),
+        "origin": (
+            source_handoff.get("origin_country")
+            or logistics_input.get("origin")
+            or logistics_handoff.get("origin")
+        ),
+        "destination": (
+            source_handoff.get("destination_country")
+            or logistics_input.get("destination")
+            or logistics_handoff.get("destination")
+        ),
+        "total_cbm": logistics_handoff.get("total_cbm"),
+        "total_weight_kg": logistics_handoff.get("total_weight_kg"),
+        "declared_value_usd": (
+            source_handoff.get("total_value")
+            or source_handoff.get("estimated_total_procurement_cost_usd")
+            or logistics_handoff.get("declared_value_usd")
+        ),
+    }
+
+    if source_handoff.get("selected_items"):
+        payload["selected_items"] = source_handoff["selected_items"]
+    else:
+        payload["items"] = logistics_input.get("items", source_handoff.get("items", []))
+
+    return payload
+
+
+def _attach_partner_review(
+    response: dict[str, Any],
+    logistics_input: dict[str, Any],
+    logistics_handoff: dict[str, Any],
+    source_handoff: dict[str, Any],
+) -> dict[str, Any]:
+    partner_payload = _build_partner_review_payload(
+        logistics_input=logistics_input,
+        logistics_handoff=logistics_handoff,
+        source_handoff=source_handoff,
+    )
+
+    partner_review = run_partner_review(
+        partner_payload,
+        request_id=partner_payload.get("request_id"),
+    )
+
+    if "partner_review_service" not in response["agents_called"]:
+        response["agents_called"].append("partner_review_service")
+
+    response.setdefault("specialist_responses", {})
+    response["specialist_responses"]["partner_review_service"] = partner_review
+    response["partner_review"] = partner_review
+    response["partner_review_payload"] = partner_payload
+    response["partner_review_status"] = partner_review.get("status")
+
+    response["final_answer"] = (
+        response["final_answer"]
+        + "\n\nPARTNER REVIEW PLACEHOLDER\n"
+        + "------------------------------\n"
+        + f"Status: {partner_review.get('status')}\n"
+        + f"{partner_review.get('summary')}"
+    )
+
+    return response
 
 
 def _shopping_handoff_to_logistics_input(
@@ -157,7 +233,12 @@ def _build_shopping_to_logistics_response(
         f"{_build_final_answer(logistics_response)}"
     )
 
-    return response
+    return _attach_partner_review(
+        response=response,
+        logistics_input=logistics_input,
+        logistics_handoff=logistics_response.get("handoff_payload", {}),
+        source_handoff=shopping_response.get("handoff_payload", {}),
+    )
 
 
 def run_user_agent_from_text(text: str) -> dict[str, Any]:
@@ -326,7 +407,12 @@ def run_user_agent_from_files(paths: list[str | Path]) -> dict[str, Any]:
                 f"{_build_final_answer(logistics_response)}"
             )
 
-            return response
+            return _attach_partner_review(
+                response=response,
+                logistics_input=logistics_input,
+                logistics_handoff=logistics_response.get("handoff_payload", {}),
+                source_handoff=document_handoff,
+            )
 
         return _build_user_agent_response(
             status=document_response["status"],
