@@ -149,3 +149,43 @@ Next steps:
 3. Replace placeholder partner review responses with live results.
 4. Add final combined logistics-manager summary once live partner responses are available.
 5. Build or connect the frontend or AI interface after backend orchestration is stable.
+
+## 10. One-Command Full Test Runner
+
+Instead of running every test manually, use:
+
+    python scripts\run_all_tests.py
+
+This runs:
+
+- partner adapter tests
+- partner review service tests
+- final verdict tests
+- frontend payload tests
+- user agent tests
+- shopping agent tests
+- document agent tests
+- logistics agent tests
+- system health check
+
+## 11. Frontend Payload Runner
+
+Use this command to see the clean JSON payload that a frontend or AI interface can consume:
+
+    python scripts\run_frontend_payload.py json data\suppliers\sample_shopping_request.json
+
+This returns a compact payload with:
+
+- decision
+- agents_called
+- logistics_metrics
+- partner_review_status
+- missing_information
+- assumptions
+- agent_summaries
+
+By default, raw full reports are excluded so the frontend payload stays readable.
+
+For debugging, include the full raw response:
+
+    python scripts\run_frontend_payload.py json data\suppliers\sample_shopping_request.json --raw
