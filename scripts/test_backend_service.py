@@ -65,11 +65,24 @@ def test_backend_service_text_request():
     assert payload["backend_validation"]["response_contract_valid"] is True
 
 
+def test_backend_service_returns_error_payload_for_missing_json_file():
+    payload = process_json_file_request(
+        ROOT_DIR / "data" / "suppliers" / "missing_file.json"
+    )
+
+    assert payload["agent_name"] == "backend_service"
+    assert payload["status"] == "error"
+    assert payload["decision"] == "blocked"
+    assert payload["backend_validation"]["response_contract_valid"] is False
+    assert payload["error"]["request_type"] == "json_file"
+
+
 def main() -> None:
     test_backend_service_json_request()
     test_backend_service_json_request_with_raw_response()
     test_backend_service_document_request()
     test_backend_service_text_request()
+    test_backend_service_returns_error_payload_for_missing_json_file()
 
     print("All backend service tests passed.")
 
