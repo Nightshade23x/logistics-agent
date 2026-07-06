@@ -4,6 +4,7 @@ from typing import Any
 
 from app.partner_adapters.compliance_client import check_product_compliance
 from app.partner_adapters.finance_client import calculate_landed_cost
+from app.partner_config import get_partner_integration_config
 from app.partner_adapters.risk_client import check_country_risk
 from app.partner_adapters.trader_client import classify_trade_product
 
@@ -63,6 +64,14 @@ def run_partner_review(
     mcp_server_names: dict[str, str] | None = None,
     finance_rest_base_url: str | None = None,
 ) -> dict[str, Any]:
+    config = get_partner_integration_config()
+
+    if mcp_server_names is None:
+        mcp_server_names = config.mcp_server_names
+
+    if finance_rest_base_url is None:
+        finance_rest_base_url = config.finance_rest_base_url
+
     mcp_server_names = mcp_server_names or {}
 
     origin_country = payload.get("origin_country") or payload.get("origin")
