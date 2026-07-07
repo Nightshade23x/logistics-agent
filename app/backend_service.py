@@ -6,6 +6,7 @@ from typing import Any
 from app.action_plan_builder import build_action_plan
 from app.clarification_questions import build_clarification_questions
 from app.document_quality_review import build_document_quality_review
+from app.document_requirements_advisor import build_document_requirements_advice
 from app.final_answer_builder import build_final_answer
 from app.frontend_payload import build_frontend_payload
 from app.insurance_advisor import build_insurance_advice
@@ -71,6 +72,15 @@ def _build_backend_payload(
         {
             **raw_response,
             "trade_terms_advice": payload.get("trade_terms_advice"),
+        }
+    )
+    payload["document_requirements_advice"] = build_document_requirements_advice(
+        {
+            **raw_response,
+            "trade_terms_advice": payload.get("trade_terms_advice"),
+            "insurance_advice": payload.get("insurance_advice"),
+            "logistics_quality_review": payload.get("logistics_quality_review"),
+            "document_quality_review": payload.get("document_quality_review"),
         }
     )
     payload["clarification_questions"] = build_clarification_questions(raw_response)
@@ -185,6 +195,17 @@ def _build_error_payload(
             "warnings": [],
             "blockers": [],
             "recommendations": [],
+        },
+        "document_requirements_advice": {
+            "applicable": False,
+            "status": "not_applicable",
+            "summary": "Document requirements advice is not available because the backend request failed.",
+            "required_documents": [],
+            "conditional_documents": [],
+            "missing_or_unconfirmed_documents": [],
+            "warnings": [],
+            "recommendations": [],
+            "user_questions": [],
         },
         "clarification_questions": [],
         "final_answer": {

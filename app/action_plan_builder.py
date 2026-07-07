@@ -80,6 +80,7 @@ def build_action_plan(payload: dict[str, Any]) -> dict[str, Any]:
     document_review = _get_review(payload, "document_quality_review")
     trade_terms_advice = _get_review(payload, "trade_terms_advice")
     insurance_advice = _get_review(payload, "insurance_advice")
+    document_requirements_advice = _get_review(payload, "document_requirements_advice")
     final_answer = _get_review(payload, "final_answer")
 
     immediate_actions: list[str] = []
@@ -108,6 +109,18 @@ def build_action_plan(payload: dict[str, Any]) -> dict[str, Any]:
 
     for blocker in _as_list(insurance_advice.get("blockers")):
         immediate_actions.append(blocker)
+
+    for missing_document in _as_list(document_requirements_advice.get("missing_or_unconfirmed_documents")):
+        before_booking.append(f"Confirm document: {missing_document}")
+
+    for warning in _as_list(document_requirements_advice.get("warnings")):
+        before_booking.append(warning)
+
+    for recommendation in _as_list(document_requirements_advice.get("recommendations")):
+        before_booking.append(recommendation)
+
+    for question in _as_list(document_requirements_advice.get("user_questions")):
+        user_questions.append(question)
 
     for item in _as_list(final_answer.get("blockers")):
         immediate_actions.append(item)
