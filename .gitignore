@@ -36,3 +36,8 @@ samar_full_backend_handoff_pack.zip
 samar_full_backend_handoff_pack/
 samar_backend_integration_pack/
 *.zip
+
+# Local partner handoff files
+partner_handoff_avishi/
+
+orchestrator_handoff_pack/

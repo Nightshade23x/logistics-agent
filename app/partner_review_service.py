@@ -1,4 +1,5 @@
-﻿from __future__ import annotations
+from __future__ import annotations
+import os
 
 from typing import Any
 
@@ -86,6 +87,11 @@ def run_partner_review(
     mcp_server_names: dict[str, str] | None = None,
     finance_rest_base_url: str | None = None,
 ) -> dict[str, Any]:
+    trade_orchestrator_base_url = os.getenv("TRADE_ORCHESTRATOR_BASE_URL", "").strip()
+    if trade_orchestrator_base_url:
+        from app.partner_adapters.trade_orchestrator_client import run_trade_orchestrator_review
+        return run_trade_orchestrator_review(payload, base_url=trade_orchestrator_base_url)
+
     config = get_partner_integration_config()
 
     if mcp_server_names is None:
