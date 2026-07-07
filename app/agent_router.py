@@ -1,5 +1,7 @@
 ﻿from __future__ import annotations
 
+from app.text_request_intent import classify_text_request_intent
+
 import json
 from pathlib import Path
 from typing import Any
@@ -142,3 +144,24 @@ def detect_json_intent(data: dict[str, Any]) -> dict[str, Any]:
 def read_json_file(path: str | Path) -> dict[str, Any]:
     with Path(path).open("r", encoding="utf-8-sig") as file:
         return json.load(file)
+
+
+# Text fallback added for procurement/logistics-style natural language requests.
+# It preserves the original router result unless the original router returns unknown.
+try:
+    _original_detect_intent_for_text_fallback = detect_intent
+
+    def detect_intent(user_text):
+        detected_intent = _original_detect_intent_for_text_fallback(user_text)
+
+        if detected_intent in {None, "", "unknown"}:
+            fallback_intent = classify_text_request_intent(str(user_text))
+
+            if fallback_intent != "unknown":
+                return fallback_intent
+
+        return detected_intent
+
+except NameError:
+    pass
+

@@ -67,6 +67,29 @@ def _build_backend_payload(
         request_text=str(input_source) if request_type == "text" else None,
     )
     payload["clarification_questions"] = build_clarification_questions(raw_response)
+
+    trade_terms_advice = payload.get("trade_terms_advice", {})
+    if isinstance(trade_terms_advice, dict):
+        origin_confirmed = bool(trade_terms_advice.get("origin_country"))
+        destination_confirmed = bool(trade_terms_advice.get("destination_country"))
+
+        filtered_questions = []
+        for question in payload["clarification_questions"]:
+            question_text = str(question).lower()
+
+            if destination_confirmed and "destination country" in question_text:
+                continue
+
+            if origin_confirmed and (
+                "origin country" in question_text
+                or "supplier country" in question_text
+            ):
+                continue
+
+            filtered_questions.append(question)
+
+        payload["clarification_questions"] = filtered_questions
+
     payload["final_answer"] = build_final_answer(payload)
     payload["action_plan"] = build_action_plan(payload)
     payload = _attach_request_metadata(

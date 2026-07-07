@@ -1,5 +1,8 @@
 ﻿from __future__ import annotations
 
+from app.text_request_intent import classify_text_request_intent
+from app.shopping_service import run_shopping_agent_from_text
+
 from pathlib import Path
 from typing import Any
 
@@ -506,3 +509,62 @@ def run_user_agent_from_json_file(path: str | Path) -> dict[str, Any]:
     response = run_user_agent_from_json(data)
     response["input_source"] = str(path)
     return response
+
+# Text intent fallback wrapper for procurement/logistics-style natural language requests.
+# Keeps the original behavior unless the original text route returns unknown.
+try:
+    _original_run_user_agent_from_text_for_intent_fallback = run_user_agent_from_text
+
+    def run_user_agent_from_text(user_text: str):
+        response = _original_run_user_agent_from_text_for_intent_fallback(user_text)
+
+        if not isinstance(response, dict):
+            return response
+
+        detected_intent = response.get("detected_intent")
+
+        if detected_intent not in {None, "", "unknown"}:
+            return response
+
+        fallback_intent = classify_text_request_intent(user_text)
+
+        if fallback_intent != "shopping":
+            return response
+
+        shopping_response = run_shopping_agent_from_text(user_text)
+
+        if not isinstance(shopping_response, dict):
+            shopping_response = {
+                "agent_name": "shopping_agent",
+                "status": "error",
+                "summary": "Shopping Agent did not return a dictionary response.",
+            }
+
+        return {
+            "agent_name": "user_agent",
+            "status": shopping_response.get("status", "review_required"),
+            "detected_intent": "shopping",
+            "agents_called": ["shopping_agent"],
+            "summary": "User Agent routed the text request to Shopping Agent using text intent fallback.",
+            "specialist_responses": {
+                "shopping_agent": shopping_response,
+            },
+            "missing_information": shopping_response.get("missing_information", []),
+            "handoff_payload": shopping_response.get("handoff_payload", {}),
+            "handoff_requests": shopping_response.get("handoff_requests", []),
+            "final_verdict": {
+                "verdict": "review_required",
+                "agent_statuses": [shopping_response.get("status", "review_required")],
+                "blockers": [],
+                "warnings": [
+                    "Text fallback routed this request to Shopping Agent only. Logistics and partner review may need to run after structured shipment data is confirmed."
+                ],
+                "missing_information_count": len(shopping_response.get("missing_information", [])),
+                "partner_review_status": None,
+                "assumptions_count": 0,
+            },
+        }
+
+except NameError:
+    pass
+
