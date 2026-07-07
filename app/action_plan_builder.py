@@ -79,6 +79,7 @@ def build_action_plan(payload: dict[str, Any]) -> dict[str, Any]:
     logistics_review = _get_review(payload, "logistics_quality_review")
     document_review = _get_review(payload, "document_quality_review")
     trade_terms_advice = _get_review(payload, "trade_terms_advice")
+    insurance_advice = _get_review(payload, "insurance_advice")
     final_answer = _get_review(payload, "final_answer")
 
     immediate_actions: list[str] = []
@@ -98,6 +99,15 @@ def build_action_plan(payload: dict[str, Any]) -> dict[str, Any]:
 
     for recommendation in _as_list(trade_terms_advice.get("recommendations")):
         before_booking.append(recommendation)
+
+    for warning in _as_list(insurance_advice.get("warnings")):
+        before_booking.append(warning)
+
+    for recommendation in _as_list(insurance_advice.get("recommendations")):
+        before_booking.append(recommendation)
+
+    for blocker in _as_list(insurance_advice.get("blockers")):
+        immediate_actions.append(blocker)
 
     for item in _as_list(final_answer.get("blockers")):
         immediate_actions.append(item)

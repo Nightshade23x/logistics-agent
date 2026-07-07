@@ -8,6 +8,7 @@ from app.clarification_questions import build_clarification_questions
 from app.document_quality_review import build_document_quality_review
 from app.final_answer_builder import build_final_answer
 from app.frontend_payload import build_frontend_payload
+from app.insurance_advisor import build_insurance_advice
 from app.logistics_quality_review import build_logistics_quality_review
 from app.response_contract_validator import validate_user_agent_response
 from app.shopping_quality_review import build_shopping_quality_review
@@ -65,6 +66,12 @@ def _build_backend_payload(
     payload["trade_terms_advice"] = build_trade_terms_advice(
         raw_response,
         request_text=str(input_source) if request_type == "text" else None,
+    )
+    payload["insurance_advice"] = build_insurance_advice(
+        {
+            **raw_response,
+            "trade_terms_advice": payload.get("trade_terms_advice"),
+        }
     )
     payload["clarification_questions"] = build_clarification_questions(raw_response)
 
@@ -169,6 +176,15 @@ def _build_error_payload(
             "blockers": [],
             "recommendations": [],
             "user_questions": [],
+        },
+        "insurance_advice": {
+            "applicable": False,
+            "status": "not_applicable",
+            "summary": "Insurance advice is not available because the backend request failed.",
+            "insurance_recommendation": None,
+            "warnings": [],
+            "blockers": [],
+            "recommendations": [],
         },
         "clarification_questions": [],
         "final_answer": {

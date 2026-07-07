@@ -25,6 +25,7 @@ TEST_COMMANDS = [
     [sys.executable, "scripts/test_cargo_special_handling.py"],
     [sys.executable, "scripts/test_freight_mode_advisor.py"],
     [sys.executable, "scripts/test_trade_terms_advisor.py"],
+    [sys.executable, "scripts/test_insurance_advisor.py"],
     [sys.executable, "scripts/test_document_quality_review.py"],
     [sys.executable, "scripts/test_final_answer_builder.py"],
     [sys.executable, "scripts/test_action_plan_builder.py"],
