@@ -3,6 +3,7 @@
 from typing import Any
 
 from app.cargo_special_handling import build_cargo_special_handling_review
+from app.freight_mode_advisor import build_freight_mode_advice
 
 
 def _get_logistics_response(user_agent_response: dict[str, Any]) -> dict[str, Any]:
@@ -163,6 +164,13 @@ def build_logistics_quality_review(user_agent_response: dict[str, Any]) -> dict[
         warnings.extend(special_handling.get("warnings", []))
         recommendations.extend(special_handling.get("recommendations", []))
 
+    freight_mode_advice = build_freight_mode_advice(user_agent_response)
+
+    if freight_mode_advice.get("applicable"):
+        blockers.extend(freight_mode_advice.get("blockers", []))
+        warnings.extend(freight_mode_advice.get("warnings", []))
+        recommendations.extend(freight_mode_advice.get("recommendations", []))
+
     if recommended_load_type:
         recommended_load_type_text = str(recommended_load_type).lower()
         if "fcl" in recommended_load_type_text:
@@ -191,6 +199,7 @@ def build_logistics_quality_review(user_agent_response: dict[str, Any]) -> dict[
         "readiness_status": readiness_status or None,
         "cargo_categories": sorted(cargo_categories),
         "special_handling": special_handling,
+        "freight_mode_advice": freight_mode_advice,
         "blockers": _clean_unique_list(blockers),
         "warnings": _clean_unique_list(warnings),
         "recommendations": _clean_unique_list(recommendations),
