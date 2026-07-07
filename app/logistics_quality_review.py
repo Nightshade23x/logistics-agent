@@ -2,6 +2,8 @@
 
 from typing import Any
 
+from app.cargo_special_handling import build_cargo_special_handling_review
+
 
 def _get_logistics_response(user_agent_response: dict[str, Any]) -> dict[str, Any]:
     specialist_responses = user_agent_response.get("specialist_responses", {})
@@ -48,6 +50,8 @@ def _clean_text(value: Any) -> str:
         "wereestimated": "were estimated",
         "propertieswere": "properties were",
         "abovenon-stackable": "above non-stackable",
+        "cushioning,strong": "cushioning, strong",
+        "cargo abovenon": "cargo above non",
         "forfirst-pass": "for first-pass",
         "standardcontainer": "standard container",
         "andfragile": "and fragile",
@@ -57,6 +61,18 @@ def _clean_text(value: Any) -> str:
         text = text.replace(old, new)
 
     return " ".join(text.split())
+
+
+def _clean_unique_list(values: list[str]) -> list[str]:
+    cleaned_values: list[str] = []
+
+    for value in values:
+        cleaned_value = _clean_text(value)
+
+        if cleaned_value:
+            cleaned_values.append(cleaned_value)
+
+    return list(dict.fromkeys(cleaned_values))
 
 
 def build_logistics_quality_review(user_agent_response: dict[str, Any]) -> dict[str, Any]:
@@ -140,6 +156,13 @@ def build_logistics_quality_review(user_agent_response: dict[str, Any]) -> dict[
             elif item_text.strip():
                 warnings.append(_clean_text(item_text))
 
+    special_handling = build_cargo_special_handling_review(user_agent_response)
+
+    if special_handling.get("applicable"):
+        blockers.extend(special_handling.get("blockers", []))
+        warnings.extend(special_handling.get("warnings", []))
+        recommendations.extend(special_handling.get("recommendations", []))
+
     if recommended_load_type:
         recommended_load_type_text = str(recommended_load_type).lower()
         if "fcl" in recommended_load_type_text:
@@ -167,7 +190,8 @@ def build_logistics_quality_review(user_agent_response: dict[str, Any]) -> dict[
         "risk_score": risk_score,
         "readiness_status": readiness_status or None,
         "cargo_categories": sorted(cargo_categories),
-        "blockers": blockers,
-        "warnings": warnings,
-        "recommendations": recommendations,
+        "special_handling": special_handling,
+        "blockers": _clean_unique_list(blockers),
+        "warnings": _clean_unique_list(warnings),
+        "recommendations": _clean_unique_list(recommendations),
     }
