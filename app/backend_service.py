@@ -10,6 +10,7 @@ from app.document_requirements_advisor import build_document_requirements_advice
 from app.final_answer_builder import build_final_answer
 from app.frontend_payload import build_frontend_payload
 from app.insurance_advisor import build_insurance_advice
+from app.landed_cost_advisor import build_landed_cost_advice
 from app.logistics_quality_review import build_logistics_quality_review
 from app.response_contract_validator import validate_user_agent_response
 from app.shopping_quality_review import build_shopping_quality_review
@@ -81,6 +82,13 @@ def _build_backend_payload(
             "insurance_advice": payload.get("insurance_advice"),
             "logistics_quality_review": payload.get("logistics_quality_review"),
             "document_quality_review": payload.get("document_quality_review"),
+        }
+    )
+    payload["landed_cost_advice"] = build_landed_cost_advice(
+        {
+            **raw_response,
+            "trade_terms_advice": payload.get("trade_terms_advice"),
+            "logistics_quality_review": payload.get("logistics_quality_review"),
         }
     )
     payload["clarification_questions"] = build_clarification_questions(raw_response)
@@ -206,6 +214,16 @@ def _build_error_payload(
             "warnings": [],
             "recommendations": [],
             "user_questions": [],
+        },
+        "landed_cost_advice": {
+            "applicable": False,
+            "status": "not_applicable",
+            "summary": "Landed cost advice is not available because the backend request failed.",
+            "known_inputs": {},
+            "missing_cost_inputs": [],
+            "blockers": [],
+            "warnings": [],
+            "recommendations": [],
         },
         "clarification_questions": [],
         "final_answer": {
