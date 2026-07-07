@@ -12,6 +12,7 @@ from app.final_answer_builder import build_final_answer
 from app.frontend_payload import build_frontend_payload
 from app.insurance_advisor import build_insurance_advice
 from app.landed_cost_advisor import build_landed_cost_advice
+from app.procurement_advisor import build_procurement_advice
 from app.logistics_quality_review import build_logistics_quality_review
 from app.response_contract_validator import validate_user_agent_response
 from app.shopping_quality_review import build_shopping_quality_review
@@ -64,6 +65,7 @@ def _build_backend_payload(
 
     payload = _attach_backend_validation(payload, raw_response)
     payload["shopping_quality_review"] = build_shopping_quality_review(raw_response)
+    payload["procurement_advice"] = build_procurement_advice(raw_response)
     payload["logistics_quality_review"] = build_logistics_quality_review(raw_response)
     payload["document_quality_review"] = build_document_quality_review(raw_response)
     payload["trade_terms_advice"] = build_trade_terms_advice(
@@ -170,6 +172,17 @@ def _build_error_payload(
             "warnings": [],
             "blockers": [],
             "recommendations": [],
+        },
+        "procurement_advice": {
+            "applicable": False,
+            "status": "not_applicable",
+            "summary": "Procurement advice is not available because the backend request failed.",
+            "selected_items_count": 0,
+            "supplier_options_count": 0,
+            "warnings": [],
+            "recommendations": [],
+            "negotiation_points": [],
+            "user_questions": [],
         },
         "logistics_quality_review": {
             "applicable": False,

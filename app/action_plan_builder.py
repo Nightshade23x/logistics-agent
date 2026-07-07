@@ -76,6 +76,7 @@ def build_action_plan(payload: dict[str, Any]) -> dict[str, Any]:
     partner_review_status = payload.get("partner_review_status")
 
     shopping_review = _get_review(payload, "shopping_quality_review")
+    procurement_advice = _get_review(payload, "procurement_advice")
     logistics_review = _get_review(payload, "logistics_quality_review")
     document_review = _get_review(payload, "document_quality_review")
     trade_terms_advice = _get_review(payload, "trade_terms_advice")
@@ -92,6 +93,18 @@ def build_action_plan(payload: dict[str, Any]) -> dict[str, Any]:
     ready_to_continue: list[str] = []
 
     for question in _as_list(payload.get("clarification_questions")):
+        user_questions.append(question)
+
+    for warning in _as_list(procurement_advice.get("warnings")):
+        before_booking.append(warning)
+
+    for recommendation in _as_list(procurement_advice.get("recommendations")):
+        before_booking.append(recommendation)
+
+    for negotiation_point in _as_list(procurement_advice.get("negotiation_points")):
+        before_booking.append(negotiation_point)
+
+    for question in _as_list(procurement_advice.get("user_questions")):
         user_questions.append(question)
 
     for question in _as_list(trade_terms_advice.get("user_questions")):
