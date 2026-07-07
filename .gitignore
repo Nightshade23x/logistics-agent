@@ -29,3 +29,10 @@ outputs/
 
 # Generated demo/export outputs
 demo_outputs/
+
+# Local handoff / integration zip packs
+samar_backend_integration_pack.zip
+samar_full_backend_handoff_pack.zip
+samar_full_backend_handoff_pack/
+samar_backend_integration_pack/
+*.zip
