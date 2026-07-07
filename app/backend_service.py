@@ -11,6 +11,7 @@ from app.frontend_payload import build_frontend_payload
 from app.logistics_quality_review import build_logistics_quality_review
 from app.response_contract_validator import validate_user_agent_response
 from app.shopping_quality_review import build_shopping_quality_review
+from app.trade_terms_advisor import build_trade_terms_advice
 from app.user_agent import (
     run_user_agent_from_files,
     run_user_agent_from_json_file,
@@ -61,6 +62,10 @@ def _build_backend_payload(
     payload["shopping_quality_review"] = build_shopping_quality_review(raw_response)
     payload["logistics_quality_review"] = build_logistics_quality_review(raw_response)
     payload["document_quality_review"] = build_document_quality_review(raw_response)
+    payload["trade_terms_advice"] = build_trade_terms_advice(
+        raw_response,
+        request_text=str(input_source) if request_type == "text" else None,
+    )
     payload["clarification_questions"] = build_clarification_questions(raw_response)
     payload["final_answer"] = build_final_answer(payload)
     payload["action_plan"] = build_action_plan(payload)
@@ -131,6 +136,16 @@ def _build_error_payload(
             "warnings": [],
             "blockers": [],
             "recommendations": [],
+        },
+        "trade_terms_advice": {
+            "applicable": False,
+            "status": "not_applicable",
+            "summary": "Trade terms advice is not available because the backend request failed.",
+            "incoterm": None,
+            "warnings": [],
+            "blockers": [],
+            "recommendations": [],
+            "user_questions": [],
         },
         "clarification_questions": [],
         "final_answer": {
