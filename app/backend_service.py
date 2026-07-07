@@ -7,6 +7,7 @@ from app.action_plan_builder import build_action_plan
 from app.booking_readiness_advisor import build_booking_readiness
 from app.executive_summary_builder import build_executive_summary
 from app.output_text_cleaner import clean_output_payload
+from app.ui_sections_builder import build_ui_sections
 from app.clarification_questions import build_clarification_questions
 from app.document_quality_review import build_document_quality_review
 from app.document_requirements_advisor import build_document_requirements_advice
@@ -134,6 +135,7 @@ def _build_backend_payload(
     payload["final_answer"] = build_final_answer(payload)
     payload["action_plan"] = build_action_plan(payload)
     payload["executive_summary"] = build_executive_summary(payload)
+    payload["ui_sections"] = build_ui_sections(payload)
     payload = clean_output_payload(payload)
     payload = _attach_request_metadata(
         payload=payload,
@@ -314,6 +316,7 @@ def _build_error_payload(
             "top_missing_items": [],
             "top_next_actions": ["Review the backend error message and retry the request."],
         },
+        "ui_sections": [],
         "backend_validation": {
             "response_contract_valid": False,
             "response_contract_errors": [error_message],
