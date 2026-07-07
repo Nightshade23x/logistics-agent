@@ -67,6 +67,7 @@ def build_booking_readiness(payload: dict[str, Any]) -> dict[str, Any]:
         "insurance": _get_review(payload, "insurance_advice"),
         "document_requirements": _get_review(payload, "document_requirements_advice"),
         "landed_cost": _get_review(payload, "landed_cost_advice"),
+        "trade_compliance": _get_review(payload, "trade_compliance_readiness"),
     }
 
     partner_review_status = payload.get("partner_review_status")
@@ -182,6 +183,11 @@ def build_booking_readiness(payload: dict[str, Any]) -> dict[str, Any]:
         ready_for_first_pass = True
         next_gate = "booking_review"
         summary = "Shipment has enough first-pass information for booking review."
+
+    if ready_for_booking:
+        score = max(score, 80)
+    elif ready_for_first_pass and not unique_blockers:
+        score = max(score, 40)
 
     return {
         "applicable": True,

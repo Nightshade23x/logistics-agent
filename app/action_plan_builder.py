@@ -83,6 +83,7 @@ def build_action_plan(payload: dict[str, Any]) -> dict[str, Any]:
     insurance_advice = _get_review(payload, "insurance_advice")
     document_requirements_advice = _get_review(payload, "document_requirements_advice")
     landed_cost_advice = _get_review(payload, "landed_cost_advice")
+    trade_compliance_readiness = _get_review(payload, "trade_compliance_readiness")
     booking_readiness = _get_review(payload, "booking_readiness")
     final_answer = _get_review(payload, "final_answer")
 
@@ -147,6 +148,21 @@ def build_action_plan(payload: dict[str, Any]) -> dict[str, Any]:
         before_booking.append(warning)
 
     for recommendation in _as_list(landed_cost_advice.get("recommendations")):
+        before_booking.append(recommendation)
+
+    for blocker in _as_list(trade_compliance_readiness.get("blockers")):
+        immediate_actions.append(blocker)
+
+    for missing_item in _as_list(trade_compliance_readiness.get("missing_information")):
+        before_booking.append(f"Confirm trade compliance input: {missing_item}")
+
+    for warning in _as_list(trade_compliance_readiness.get("warnings")):
+        before_booking.append(warning)
+
+    for flag in _as_list(trade_compliance_readiness.get("compliance_flags")):
+        before_booking.append(flag)
+
+    for recommendation in _as_list(trade_compliance_readiness.get("recommendations")):
         before_booking.append(recommendation)
 
     for item in _as_list(final_answer.get("blockers")):

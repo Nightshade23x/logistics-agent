@@ -13,6 +13,7 @@ from app.frontend_payload import build_frontend_payload
 from app.insurance_advisor import build_insurance_advice
 from app.landed_cost_advisor import build_landed_cost_advice
 from app.procurement_advisor import build_procurement_advice
+from app.trade_compliance_readiness_advisor import build_trade_compliance_readiness
 from app.logistics_quality_review import build_logistics_quality_review
 from app.response_contract_validator import validate_user_agent_response
 from app.shopping_quality_review import build_shopping_quality_review
@@ -92,6 +93,15 @@ def _build_backend_payload(
             **raw_response,
             "trade_terms_advice": payload.get("trade_terms_advice"),
             "logistics_quality_review": payload.get("logistics_quality_review"),
+        }
+    )
+    payload["trade_compliance_readiness"] = build_trade_compliance_readiness(
+        {
+            **raw_response,
+            "trade_terms_advice": payload.get("trade_terms_advice"),
+            "logistics_quality_review": payload.get("logistics_quality_review"),
+            "document_requirements_advice": payload.get("document_requirements_advice"),
+            "partner_review_status": payload.get("partner_review_status"),
         }
     )
     payload["clarification_questions"] = build_clarification_questions(raw_response)
@@ -239,6 +249,18 @@ def _build_error_payload(
             "blockers": [],
             "warnings": [],
             "recommendations": [],
+        },
+        "trade_compliance_readiness": {
+            "applicable": False,
+            "status": "not_applicable",
+            "summary": "Trade compliance readiness is not available because the backend request failed.",
+            "ready_for_partner_review": False,
+            "blockers": [],
+            "missing_information": [],
+            "warnings": [],
+            "compliance_flags": [],
+            "recommendations": [],
+            "ready_items": [],
         },
         "clarification_questions": [],
         "final_answer": {
