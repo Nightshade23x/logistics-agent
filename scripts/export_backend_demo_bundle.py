@@ -7,6 +7,7 @@ import sys
 ROOT_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT_DIR))
 
+from app.compact_frontend_payload import build_compact_frontend_payload
 from app.backend_service import process_json_file_request
 from app.backend_status import build_backend_status
 from app.partner_request_builder import build_partner_agent_requests
@@ -61,6 +62,36 @@ def main() -> None:
     print(f"- agents_called: {', '.join(frontend_payload.get('agents_called', []))}")
     print(f"- partner_payload_items: {len(partner_review_payload.get('selected_items', []))}")
     print(f"- partner_requests_ready: {partner_agent_requests.get('is_ready_for_partner_calls')}")
+
+
+
+
+def _export_compact_frontend_payload_after_bundle() -> None:
+    output_dir = Path("demo_outputs")
+    frontend_payload_path = output_dir / "frontend_payload_shopping.json"
+    compact_payload_path = output_dir / "frontend_payload_compact.json"
+
+    if not frontend_payload_path.exists():
+        print("Compact frontend payload skipped: frontend_payload_shopping.json was not found.")
+        return
+
+    full_payload = json.loads(frontend_payload_path.read_text(encoding="utf-8"))
+    compact_payload = build_compact_frontend_payload(full_payload)
+
+    compact_payload_path.write_text(
+        json.dumps(compact_payload, indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+    print("- frontend_payload_compact.json")
+
+
+_original_main_for_compact_export = main
+
+
+def main() -> None:
+    _original_main_for_compact_export()
+    _export_compact_frontend_payload_after_bundle()
 
 
 if __name__ == "__main__":

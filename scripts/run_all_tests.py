@@ -35,6 +35,7 @@ TEST_COMMANDS = [
     [sys.executable, "scripts/test_output_text_cleaner.py"],
     [sys.executable, "scripts/test_executive_summary_builder.py"],
     [sys.executable, "scripts/test_ui_sections_builder.py"],
+    [sys.executable, "scripts/test_compact_frontend_payload.py"],
     [sys.executable, "scripts/test_final_answer_builder.py"],
     [sys.executable, "scripts/test_action_plan_builder.py"],
     [sys.executable, "scripts/test_text_request_intent.py"],
