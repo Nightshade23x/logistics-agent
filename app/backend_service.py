@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any
 
 from app.action_plan_builder import build_action_plan
+from app.booking_readiness_advisor import build_booking_readiness
 from app.clarification_questions import build_clarification_questions
 from app.document_quality_review import build_document_quality_review
 from app.document_requirements_advisor import build_document_requirements_advice
@@ -92,6 +93,7 @@ def _build_backend_payload(
         }
     )
     payload["clarification_questions"] = build_clarification_questions(raw_response)
+    payload["booking_readiness"] = build_booking_readiness(payload)
 
     trade_terms_advice = payload.get("trade_terms_advice", {})
     if isinstance(trade_terms_advice, dict):
@@ -243,6 +245,20 @@ def _build_error_payload(
             "partner_steps": [],
             "user_questions": [],
             "ready_to_continue": [],
+        },
+        "booking_readiness": {
+            "applicable": False,
+            "status": "blocked",
+            "summary": "Booking readiness is not available because the backend request failed.",
+            "score": 0,
+            "ready_for_first_pass": False,
+            "ready_for_booking": False,
+            "next_gate": "backend_error",
+            "blockers": ["Backend request failed."],
+            "missing_information": [],
+            "review_items": [],
+            "ready_items": [],
+            "next_steps": ["Review the backend error message and retry the request."],
         },
         "backend_validation": {
             "response_contract_valid": False,

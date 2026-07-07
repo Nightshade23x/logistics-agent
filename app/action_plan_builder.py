@@ -17,10 +17,10 @@ def _clean_text(value: Any) -> str:
     text = str(value)
 
     replacements = {
-        "wereestimated": "were estimated",
-        "propertieswere": "properties were",
-        "abovenon-stackable": "above non-stackable",
-        "cushioning,strong": "cushioning, strong",
+        "were estimated": "were estimated",
+        "properties were": "properties were",
+        "above non-stackable": "above non-stackable",
+        "cushioning, strong": "cushioning, strong",
         "'with": "' with",
         "item '": "item '",
     }
@@ -82,6 +82,7 @@ def build_action_plan(payload: dict[str, Any]) -> dict[str, Any]:
     insurance_advice = _get_review(payload, "insurance_advice")
     document_requirements_advice = _get_review(payload, "document_requirements_advice")
     landed_cost_advice = _get_review(payload, "landed_cost_advice")
+    booking_readiness = _get_review(payload, "booking_readiness")
     final_answer = _get_review(payload, "final_answer")
 
     immediate_actions: list[str] = []
@@ -193,6 +194,18 @@ def build_action_plan(payload: dict[str, Any]) -> dict[str, Any]:
 
     elif partner_review_status in {"ready_for_review", "clear"}:
         ready_to_continue.append("Partner review is available for checking.")
+
+    for blocker in _as_list(booking_readiness.get("blockers")):
+        immediate_actions.append(blocker)
+
+    for missing_item in _as_list(booking_readiness.get("missing_information")):
+        before_booking.append(f"Confirm missing booking-readiness item: {missing_item}")
+
+    for review_item in _as_list(booking_readiness.get("review_items")):
+        before_booking.append(review_item)
+
+    for next_step in _as_list(booking_readiness.get("next_steps")):
+        before_booking.append(next_step)
 
     if decision == "blocked":
         priority = "resolve_blockers"

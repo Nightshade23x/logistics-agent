@@ -48,10 +48,10 @@ def _clean_text(value: Any) -> str:
     text = str(value)
 
     replacements = {
-        "wereestimated": "were estimated",
-        "propertieswere": "properties were",
-        "abovenon-stackable": "above non-stackable",
-        "cushioning,strong": "cushioning, strong",
+        "were estimated": "were estimated",
+        "properties were": "properties were",
+        "above non-stackable": "above non-stackable",
+        "cushioning, strong": "cushioning, strong",
         "cargo abovenon": "cargo above non",
         "forfirst-pass": "for first-pass",
         "standardcontainer": "standard container",
