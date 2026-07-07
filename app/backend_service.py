@@ -5,6 +5,8 @@ from typing import Any
 
 from app.action_plan_builder import build_action_plan
 from app.booking_readiness_advisor import build_booking_readiness
+from app.executive_summary_builder import build_executive_summary
+from app.output_text_cleaner import clean_output_payload
 from app.clarification_questions import build_clarification_questions
 from app.document_quality_review import build_document_quality_review
 from app.document_requirements_advisor import build_document_requirements_advice
@@ -131,6 +133,8 @@ def _build_backend_payload(
 
     payload["final_answer"] = build_final_answer(payload)
     payload["action_plan"] = build_action_plan(payload)
+    payload["executive_summary"] = build_executive_summary(payload)
+    payload = clean_output_payload(payload)
     payload = _attach_request_metadata(
         payload=payload,
         request_type=request_type,
@@ -294,6 +298,21 @@ def _build_error_payload(
             "review_items": [],
             "ready_items": [],
             "next_steps": ["Review the backend error message and retry the request."],
+        },
+        "executive_summary": {
+            "applicable": False,
+            "status": "blocked",
+            "headline": "Backend request failed.",
+            "decision": "blocked",
+            "ready_for_first_pass": False,
+            "ready_for_booking": False,
+            "booking_score": 0,
+            "next_gate": "backend_error",
+            "shipment_snapshot": {},
+            "top_strengths": [],
+            "top_risks": ["Backend request failed."],
+            "top_missing_items": [],
+            "top_next_actions": ["Review the backend error message and retry the request."],
         },
         "backend_validation": {
             "response_contract_valid": False,

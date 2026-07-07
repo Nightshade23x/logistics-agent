@@ -29,6 +29,7 @@ REQUIRED_BACKEND_PAYLOAD_FIELDS = [
     "final_answer",
     "action_plan",
     "booking_readiness",
+    "executive_summary",
     "backend_validation",
     "request_metadata",
 ]
@@ -114,6 +115,9 @@ def validate_backend_service_payload(payload: dict[str, Any]) -> dict[str, Any]:
 
     if "booking_readiness" in payload and not isinstance(payload["booking_readiness"], dict):
         errors.append("booking_readiness must be a dictionary.")
+
+    if "executive_summary" in payload and not isinstance(payload["executive_summary"], dict):
+        errors.append("executive_summary must be a dictionary.")
 
     backend_validation = payload.get("backend_validation", {})
 

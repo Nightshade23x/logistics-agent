@@ -32,6 +32,8 @@ TEST_COMMANDS = [
     [sys.executable, "scripts/test_booking_readiness_advisor.py"],
     [sys.executable, "scripts/test_document_quality_review.py"],
     [sys.executable, "scripts/test_document_requirements_advisor.py"],
+    [sys.executable, "scripts/test_output_text_cleaner.py"],
+    [sys.executable, "scripts/test_executive_summary_builder.py"],
     [sys.executable, "scripts/test_final_answer_builder.py"],
     [sys.executable, "scripts/test_action_plan_builder.py"],
     [sys.executable, "scripts/test_text_request_intent.py"],
