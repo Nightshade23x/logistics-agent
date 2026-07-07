@@ -14,7 +14,20 @@ def _as_list(value: Any) -> list[Any]:
 
 
 def _clean_text(value: Any) -> str:
-    return " ".join(str(value).split())
+    text = str(value)
+
+    replacements = {
+        "wereestimated": "were estimated",
+        "propertieswere": "properties were",
+        "abovenon-stackable": "above non-stackable",
+        "cushioning,strong": "cushioning, strong",
+        "'with": "' with",
+    }
+
+    for old, new in replacements.items():
+        text = text.replace(old, new)
+
+    return " ".join(text.split())
 
 
 def _collect_review_items(review: dict[str, Any], key: str) -> list[str]:

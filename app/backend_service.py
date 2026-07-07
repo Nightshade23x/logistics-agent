@@ -3,6 +3,7 @@
 from pathlib import Path
 from typing import Any
 
+from app.action_plan_builder import build_action_plan
 from app.clarification_questions import build_clarification_questions
 from app.document_quality_review import build_document_quality_review
 from app.final_answer_builder import build_final_answer
@@ -62,6 +63,7 @@ def _build_backend_payload(
     payload["document_quality_review"] = build_document_quality_review(raw_response)
     payload["clarification_questions"] = build_clarification_questions(raw_response)
     payload["final_answer"] = build_final_answer(payload)
+    payload["action_plan"] = build_action_plan(payload)
     payload = _attach_request_metadata(
         payload=payload,
         request_type=request_type,
@@ -139,6 +141,15 @@ def _build_error_payload(
             "blockers": [],
             "warnings": [],
             "next_actions": ["Review the backend error message and retry the request."],
+        },
+        "action_plan": {
+            "status": "resolve_blockers",
+            "summary": "Resolve backend error before continuing.",
+            "immediate_actions": ["Review the backend error message and retry the request."],
+            "before_booking": [],
+            "partner_steps": [],
+            "user_questions": [],
+            "ready_to_continue": [],
         },
         "backend_validation": {
             "response_contract_valid": False,
