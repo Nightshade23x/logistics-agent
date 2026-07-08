@@ -36,12 +36,12 @@ def test_query_builder_from_structured_payload():
 
     query = build_trade_orchestrator_query(payload)
 
-    assert "Ship 50 TVs and 20 scooters" in query
+    assert "ship 50 TVs and 20 scooters" in query
     assert "from India to USA" in query
-    assert "Incoterm FOB" in query
-    assert "12730 USD" in query
-    assert "2250 kg" in query
-    assert "19.41 m3" in query
+    assert "incoterm is FOB" in query
+    assert "cargo value is 12730 USD" in query
+    assert "weight is 2250 kg" in query
+    assert "volume is 19.41 m3" in query
 
 
 def test_run_trade_orchestrator_review_with_fake_http():
@@ -112,7 +112,7 @@ def test_run_trade_orchestrator_review_with_fake_http():
     )
 
     assert captured["url"] == "http://localhost:8010/orchestrate"
-    assert captured["payload"]["query"].startswith("Ship 800 cotton t-shirts from India to Japan")
+    assert captured["payload"]["query"].startswith("ship 800 cotton t-shirts from India to Japan")
     assert result["agent_name"] == "partner_trade_orchestrator"
     assert result["status"] == "ready_for_review"
     assert result["summary"] == "Shipment looks clear."

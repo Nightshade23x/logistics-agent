@@ -1,23 +1,10 @@
 """
 Client adapter for Avishi's Trade Orchestrator.
 
-The orchestrator is treated as one specialist partner service:
-Trade Review / Compliance / Finance / Risk.
-
-Transport:
-    REST / FastAPI
-
-Expected endpoint:
-    POST {TRADE_ORCHESTRATOR_BASE_URL}/orchestrate
-
-Expected input:
-    {"query": "free-text shipment description"}
-
-Output:
-    Raw orchestrator response is normalized into Samar's partner-review
-    response shape so the rest of the backend can keep using its existing
-    final verdict, booking readiness, executive summary, and frontend payload
-    builders.
+This treats Avishi's orchestrator as one specialist Trade Review service.
+Samar's backend sends one free-text shipment query, then normalizes the
+orchestrator response into the partner review shape used by the rest of the
+backend.
 """
 
 from __future__ import annotations
@@ -31,7 +18,6 @@ from typing import Any, Callable, Dict, Iterable, List, Optional
 
 ORCHESTRATOR_ENV_VAR = "TRADE_ORCHESTRATOR_BASE_URL"
 
-
 STATUS_MAP = {
     "clear": "ready_for_review",
     "review_required": "review_required",
@@ -41,14 +27,13 @@ STATUS_MAP = {
 
 
 def map_orchestrator_status(status: Optional[str]) -> str:
-    """Map Avishi's orchestrator verdict status into Samar's status vocabulary."""
     if not status:
         return "review_required"
     return STATUS_MAP.get(str(status).strip().lower(), "review_required")
 
 
 def _recursive_find_first(data: Any, keys: Iterable[str]) -> Any:
-    wanted = {k.lower() for k in keys}
+    wanted = {str(k).lower() for k in keys}
 
     if isinstance(data, dict):
         for key, value in data.items():
@@ -112,6 +97,7 @@ def _item_name(item: Dict[str, Any]) -> str:
 def _item_quantity(item: Dict[str, Any]) -> Any:
     return (
         item.get("quantity")
+        or item.get("requested_quantity")
         or item.get("qty")
         or item.get("units")
         or item.get("count")
@@ -143,12 +129,16 @@ def _summarize_items(items: List[Dict[str, Any]]) -> str:
 
 def build_trade_orchestrator_query(partner_payload: Dict[str, Any]) -> str:
     """
-    Convert Samar's structured partner-review/logistics payload into the
-    free-text query currently expected by Avishi's orchestrator.
+    Convert Samar's structured payload into the free-text query expected by
+    Avishi's orchestrator.
+
+    The wording is intentionally repetitive because Avishi's side currently
+    parses this text with Gemini, not a structured JSON schema.
     """
     origin = _recursive_find_first(
         partner_payload,
         [
+            "origin",
             "origin_country",
             "country_from",
             "export_country",
@@ -156,9 +146,11 @@ def build_trade_orchestrator_query(partner_payload: Dict[str, Any]) -> str:
             "source_country",
         ],
     )
+
     destination = _recursive_find_first(
         partner_payload,
         [
+            "destination",
             "destination_country",
             "country_to",
             "import_country",
@@ -166,59 +158,66 @@ def build_trade_orchestrator_query(partner_payload: Dict[str, Any]) -> str:
             "buyer_country",
         ],
     )
+
     incoterm = _recursive_find_first(
         partner_payload,
         ["incoterm", "trade_term", "shipping_terms", "terms"],
     )
+
     value = _recursive_find_first(
         partner_payload,
         [
-            "procurement_value_usd",
             "declared_value_usd",
+            "procurement_value_usd",
             "cargo_value",
             "cargo_value_usd",
             "estimated_total_usd",
             "total_value_usd",
         ],
     )
+
     weight = _recursive_find_first(
         partner_payload,
         ["total_weight_kg", "weight_kg", "gross_weight_kg"],
     )
+
     cbm = _recursive_find_first(
         partner_payload,
         ["total_cbm", "volume_m3", "total_volume_m3", "cbm"],
     )
-    currency = (
-        _recursive_find_first(partner_payload, ["currency"])
-        or "USD"
-    )
 
+    currency = _recursive_find_first(partner_payload, ["currency"]) or "USD"
     items = _recursive_find_items(partner_payload)
     item_summary = _summarize_items(items)
 
-    sentence_parts = [f"Ship {item_summary}"]
+    query_parts = [f"ship {item_summary}"]
 
-    if origin and destination:
-        sentence_parts.append(f"from {origin} to {destination}")
-    elif origin:
-        sentence_parts.append(f"from {origin}")
-    elif destination:
-        sentence_parts.append(f"to {destination}")
+    if origin:
+        query_parts.append(f"from {origin}")
+    if destination:
+        query_parts.append(f"to {destination}")
 
-    details = []
+    query = " ".join(query_parts).strip()
+
+    explicit_details = []
+    if origin:
+        explicit_details.append(f"origin country is {origin}")
+        explicit_details.append(f"country_from is {origin}")
+    if destination:
+        explicit_details.append(f"destination country is {destination}")
+        explicit_details.append(f"country_to is {destination}")
+        explicit_details.append(f"target market is {destination}")
     if incoterm:
-        details.append(f"Incoterm {incoterm}")
+        explicit_details.append(f"incoterm is {incoterm}")
     if value:
-        details.append(f"Estimated cargo/procurement value {value} {currency}")
+        explicit_details.append(f"cargo value is {value} {currency}")
     if weight:
-        details.append(f"Total weight {weight} kg")
+        explicit_details.append(f"weight is {weight} kg")
     if cbm:
-        details.append(f"Total volume {cbm} m3")
+        explicit_details.append(f"volume is {cbm} m3")
 
-    query = " ".join(sentence_parts).strip()
-    if details:
-        query += ". " + ". ".join(details) + "."
+    if explicit_details:
+        query += ". " + ". ".join(explicit_details) + "."
 
     return query
 
@@ -244,12 +243,6 @@ def call_trade_orchestrator(
     timeout_seconds: int = 30,
     http_post: Optional[Callable[[str, Dict[str, Any], int], Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
-    """
-    Call Avishi's orchestrator and return its raw response.
-
-    http_post is injectable for tests so we can validate mapping without
-    needing the live server running.
-    """
     resolved_base_url = (base_url or os.getenv(ORCHESTRATOR_ENV_VAR, "")).strip()
 
     if not resolved_base_url:
@@ -260,7 +253,13 @@ def call_trade_orchestrator(
     request_payload = {"query": query}
 
     poster = http_post or _post_json
-    return poster(endpoint, request_payload, timeout_seconds)
+    raw_response = poster(endpoint, request_payload, timeout_seconds)
+
+    if isinstance(raw_response, dict):
+        raw_response["_samar_request_payload"] = request_payload
+        raw_response["_samar_orchestrator_endpoint"] = endpoint
+
+    return raw_response
 
 
 def _collect_missing_information(raw: Dict[str, Any]) -> List[str]:
@@ -280,8 +279,8 @@ def _collect_missing_information(raw: Dict[str, Any]) -> List[str]:
             if isinstance(values, list):
                 missing.extend(str(item) for item in values)
 
-    seen = set()
     deduped = []
+    seen = set()
     for item in missing:
         if item not in seen:
             deduped.append(item)
@@ -291,9 +290,6 @@ def _collect_missing_information(raw: Dict[str, Any]) -> List[str]:
 
 
 def normalize_trade_orchestrator_response(raw: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Normalize Avishi's orchestrator output into Samar's partner-review style.
-    """
     verdict = raw.get("verdict") if isinstance(raw.get("verdict"), dict) else {}
     original_status = verdict.get("status")
     mapped_status = map_orchestrator_status(original_status)
@@ -330,6 +326,8 @@ def normalize_trade_orchestrator_response(raw: Dict[str, Any]) -> Dict[str, Any]
             "trader_report": raw.get("trader_report", {}),
             "finance_report": raw.get("finance_report", {}),
             "agent_errors": raw.get("agent_errors", {}),
+            "samar_request_payload": raw.get("_samar_request_payload", {}),
+            "samar_orchestrator_endpoint": raw.get("_samar_orchestrator_endpoint"),
         },
         "input_resolution": raw.get("parsed_shipment", {}),
         "missing_information": _collect_missing_information(raw),
@@ -366,9 +364,6 @@ def run_trade_orchestrator_review(
     timeout_seconds: int = 30,
     http_post: Optional[Callable[[str, Dict[str, Any], int], Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
-    """
-    High-level adapter function used by partner_review_service.py.
-    """
     resolved_base_url = (base_url or os.getenv(ORCHESTRATOR_ENV_VAR, "")).strip()
 
     if not resolved_base_url:
@@ -379,7 +374,9 @@ def run_trade_orchestrator_review(
             "plan": [],
             "report": {},
             "input_resolution": {},
-            "missing_information": [f"Set {ORCHESTRATOR_ENV_VAR}=http://localhost:8010 to call Avishi's orchestrator."],
+            "missing_information": [
+                f"Set {ORCHESTRATOR_ENV_VAR}=http://localhost:8010 to call Avishi's orchestrator."
+            ],
             "handoff_payload": {
                 "partner_service": "trade_orchestrator",
                 "configured": False,
@@ -407,7 +404,9 @@ def run_trade_orchestrator_review(
             "plan": ["Attempted to call Avishi's Trade Orchestrator."],
             "report": {"error": str(exc)},
             "input_resolution": {},
-            "missing_information": ["Check that Avishi's orchestrator is running and TRADE_ORCHESTRATOR_BASE_URL is correct."],
+            "missing_information": [
+                "Check that Avishi's orchestrator is running and TRADE_ORCHESTRATOR_BASE_URL is correct."
+            ],
             "handoff_payload": {
                 "partner_service": "trade_orchestrator",
                 "configured": True,
