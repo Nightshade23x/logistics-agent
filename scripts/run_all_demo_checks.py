@@ -42,6 +42,10 @@ CHECKS = [
         [sys.executable, "scripts/test_payload_text_quality.py"],
     ),
     (
+        "Logistics report text quality test",
+        [sys.executable, "scripts/test_logistics_report_text_quality.py"],
+    ),
+    (
         "Standalone demo check",
         [sys.executable, "scripts/run_demo_standalone_check.py"],
     ),
