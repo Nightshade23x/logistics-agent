@@ -42,6 +42,10 @@ CHECKS = [
         [sys.executable, "scripts/test_payload_text_quality.py"],
     ),
     (
+        "End-to-end user agent demo test",
+        [sys.executable, "scripts/test_user_agent_end_to_end_demo.py"],
+    ),
+    (
         "Shopping demo regression test",
         [sys.executable, "scripts/test_shopping_demo_regression.py"],
     ),
