@@ -1,4 +1,4 @@
-﻿from pathlib import Path
+from pathlib import Path
 import json
 import subprocess
 import sys
@@ -76,10 +76,10 @@ def main():
         payload.get("partner_review_status") == "partner_review_not_configured"
         and validation.get("response_contract_valid") is True
     ):
-        print("\nRESULT: PASS ✅")
+        print("\nRESULT: PASS ")
         print("Standalone backend demo works without live partner services.")
     else:
-        print("\nRESULT: CHECK NEEDED ⚠️")
+        print("\nRESULT: CHECK NEEDED ")
 
 if __name__ == "__main__":
     main()
