@@ -26,6 +26,7 @@ def build_compact_frontend_payload(full_payload: dict[str, Any]) -> dict[str, An
     final_answer = _get_dict(full_payload.get("final_answer"))
     action_plan = _get_dict(full_payload.get("action_plan"))
     logistics_metrics = _get_dict(full_payload.get("logistics_metrics"))
+    logistics_visualizer = _get_dict(full_payload.get("logistics_visualizer"))
     backend_validation = _get_dict(full_payload.get("backend_validation"))
     request_metadata = _get_dict(full_payload.get("request_metadata"))
 
@@ -43,6 +44,7 @@ def build_compact_frontend_payload(full_payload: dict[str, Any]) -> dict[str, An
         "final_answer": final_answer,
         "action_plan": action_plan,
         "logistics_metrics": logistics_metrics,
+        "logistics_visualizer": logistics_visualizer,
         "partner_review_status": full_payload.get("partner_review_status"),
         "partner_review_summary": full_payload.get("partner_review_summary"),
         "backend_validation": backend_validation,
@@ -53,5 +55,6 @@ def build_compact_frontend_payload(full_payload: dict[str, Any]) -> dict[str, An
             "assumptions_count": full_payload.get("assumptions_count"),
             "booking_missing_count": len(_as_list(booking_readiness.get("missing_information"))),
             "booking_review_items_count": len(_as_list(booking_readiness.get("review_items"))),
+            "visualizer_available": bool(logistics_visualizer),
         },
     }
