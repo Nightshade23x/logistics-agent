@@ -42,6 +42,10 @@ CHECKS = [
         [sys.executable, "scripts/test_payload_text_quality.py"],
     ),
     (
+        "Document demo regression test",
+        [sys.executable, "scripts/test_document_demo_regression.py"],
+    ),
+    (
         "Logistics scenario regression test",
         [sys.executable, "scripts/test_logistics_scenario_regression.py"],
     ),
