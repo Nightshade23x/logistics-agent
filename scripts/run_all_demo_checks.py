@@ -46,6 +46,10 @@ CHECKS = [
         [sys.executable, "scripts/test_repo_hygiene.py"],
     ),
     (
+        "Static frontend demo export test",
+        [sys.executable, "scripts/test_static_frontend_demo_export.py"],
+    ),
+    (
         "End-to-end user agent demo test",
         [sys.executable, "scripts/test_user_agent_end_to_end_demo.py"],
     ),

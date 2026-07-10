@@ -26,6 +26,47 @@ def esc(value: Any) -> str:
     return html.escape(str(value))
 
 
+def display_value(value: Any) -> str:
+    if value is None:
+        return ""
+
+    if isinstance(value, bool):
+        return "Yes" if value else "No"
+
+    if isinstance(value, (int, float)):
+        return str(value)
+
+    text = str(value).strip()
+
+    replacements = {
+        "cbm": "CBM",
+        "kg": "kg",
+        "fcl": "FCL",
+        "lcl": "LCL",
+        "usa": "USA",
+        "usd": "USD",
+        "ai": "AI",
+        "id": "ID",
+    }
+
+    text = text.replace("_", " ").replace("-", " ")
+    words = []
+
+    for word in text.split():
+        lowered = word.lower()
+        words.append(replacements.get(lowered, word.capitalize()))
+
+    return " ".join(words)
+
+
+def display_key(value: Any) -> str:
+    return display_value(value)
+
+
+def esc_display(value: Any) -> str:
+    return esc(display_value(value))
+
+
 def status_class(status: Any) -> str:
     text = str(status or "").lower()
 
@@ -45,7 +86,7 @@ def status_class(status: Any) -> str:
 
 
 def render_badge(label: Any) -> str:
-    return f'<span class="badge {status_class(label)}">{esc(label)}</span>'
+    return f'<span class="badge {status_class(label)}">{esc_display(label)}</span>'
 
 
 def render_metric_grid(metrics: dict[str, Any]) -> str:
@@ -61,8 +102,8 @@ def render_metric_grid(metrics: dict[str, Any]) -> str:
         cards.append(
             f"""
             <div class="metric">
-                <div class="metric-label">{esc(key.replace("_", " ").title())}</div>
-                <div class="metric-value">{esc(value)}</div>
+                <div class="metric-label">{esc(display_key(key))}</div>
+                <div class="metric-value">{esc_display(value)}</div>
             </div>
             """
         )
@@ -77,7 +118,7 @@ def render_list(items: list[Any], class_name: str = "list") -> str:
     rows = []
 
     for item in items:
-        rows.append(f"<li>{esc(item)}</li>")
+        rows.append(f"<li>{esc_display(item)}</li>")
 
     return f'<ul class="{class_name}">{"".join(rows)}</ul>'
 
@@ -99,7 +140,7 @@ def render_ui_sections(sections: list[dict[str, Any]]) -> str:
                     <h2>{esc(section.get("title"))}</h2>
                     {render_badge(section.get("status"))}
                 </div>
-                <p class="summary">{esc(section.get("summary"))}</p>
+                <p class="summary">{esc_display(section.get("summary"))}</p>
                 {render_metric_grid(section.get("metrics", {}))}
                 {render_list(section.get("bullets", []), "bullets")}
                 {render_list(section.get("actions", []), "actions")}
@@ -134,15 +175,15 @@ def render_container_visualizer(visualizer: dict[str, Any]) -> str:
             continue
 
         tags = item.get("category_tags", [])
-        tag_html = " ".join(f'<span class="tag">{esc(tag)}</span>' for tag in tags)
+        tag_html = " ".join(f'<span class="tag">{esc_display(tag)}</span>' for tag in tags)
 
         cargo_rows.append(
             f"""
             <tr>
-                <td>{esc(item.get("item_name"))}</td>
-                <td>{esc(item.get("quantity"))}</td>
-                <td>{esc(item.get("total_cbm"))}</td>
-                <td>{esc(item.get("total_weight_kg"))}</td>
+                <td>{esc_display(item.get("item_name"))}</td>
+                <td>{esc_display(item.get("quantity"))}</td>
+                <td>{esc_display(item.get("total_cbm"))}</td>
+                <td>{esc_display(item.get("total_weight_kg"))}</td>
                 <td>{tag_html}</td>
             </tr>
             """
@@ -163,9 +204,9 @@ def render_container_visualizer(visualizer: dict[str, Any]) -> str:
             item_chips.append(
                 f"""
                 <div class="zone-item">
-                    <strong>{esc(item.get("item_name"))}</strong>
-                    <span>x {esc(item.get("quantity"))}</span>
-                    <small>Step {esc(item.get("sequence_number"))}</small>
+                    <strong>{esc_display(item.get("item_name"))}</strong>
+                    <span>x {esc_display(item.get("quantity"))}</span>
+                    <small>Step {esc_display(item.get("sequence_number"))}</small>
                 </div>
                 """
             )
@@ -173,8 +214,8 @@ def render_container_visualizer(visualizer: dict[str, Any]) -> str:
         zone_cards.append(
             f"""
             <div class="zone-card">
-                <h3>{esc(zone.get("zone_name"))}</h3>
-                <p>{esc(zone.get("description"))}</p>
+                <h3>{esc_display(zone.get("zone_name"))}</h3>
+                <p>{esc_display(zone.get("description"))}</p>
                 <div class="zone-items">
                     {"".join(item_chips)}
                 </div>
@@ -191,11 +232,11 @@ def render_container_visualizer(visualizer: dict[str, Any]) -> str:
         sequence_rows.append(
             f"""
             <li>
-                <strong>Step {esc(step.get("sequence_number"))}: {esc(step.get("item_name"))} x {esc(step.get("quantity"))}</strong>
+                <strong>Step {esc_display(step.get("sequence_number"))}: {esc_display(step.get("item_name"))} x {esc_display(step.get("quantity"))}</strong>
                 <br>
-                <span>{esc(step.get("suggested_zone"))}</span>
+                <span>{esc_display(step.get("suggested_zone"))}</span>
                 <br>
-                <small>{esc(step.get("reason"))}</small>
+                <small>{esc_display(step.get("reason"))}</small>
             </li>
             """
         )
@@ -218,7 +259,7 @@ def render_container_visualizer(visualizer: dict[str, Any]) -> str:
                 <div class="progress">
                     <div class="progress-fill" style="width: {utilization_float}%"></div>
                 </div>
-                <p class="summary">{esc(utilization)}% of safe/selected planning capacity used.</p>
+                <p class="summary">{esc_display(utilization)}% of safe/selected planning capacity used.</p>
 
                 <h3>Fit Check</h3>
                 {render_badge(fit_check.get("status"))}
@@ -538,13 +579,13 @@ def render_html(payload: dict[str, Any]) -> str:
 <body>
     <main class="page">
         <section class="hero">
-            <h1>{esc(title)}</h1>
-            <p>{esc(final_answer.get("answer_text") or payload.get("short_answer"))}</p>
+            <h1>{esc_display(title)}</h1>
+            <p>{esc_display(final_answer.get("answer_text") or payload.get("short_answer"))}</p>
             <div class="top-badges">
-                {render_badge("Decision: " + str(payload.get("decision")))}
-                {render_badge("Intent: " + str(payload.get("detected_intent")))}
-                {render_badge("Partner: " + str(payload.get("partner_review_status")))}
-                {render_badge("Contract valid: " + str(payload.get("backend_validation", {}).get("response_contract_valid")))}
+                {render_badge("Decision: " + display_value(payload.get("decision")))}
+                {render_badge("Intent: " + display_value(payload.get("detected_intent")))}
+                {render_badge("Partner: " + display_value(payload.get("partner_review_status")))}
+                {render_badge("Contract Valid: " + display_value(payload.get("backend_validation", {}).get("response_contract_valid")))}
             </div>
         </section>
 
