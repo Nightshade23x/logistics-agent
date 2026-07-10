@@ -24,34 +24,59 @@ def main() -> None:
     assert module.humanize(True) == "Yes"
     assert module.humanize(False) == "No"
 
+    question = "I need 20 laptops and 10 tablets from India under 12000 USD. Avoid China."
+
+    extracted_items = module.extract_requested_items(question)
+
+    assert {"quantity": "20", "item": "laptops"} in extracted_items
+    assert {"quantity": "10", "item": "tablets"} in extracted_items
+    assert not any(item["item"].lower() == "usd" for item in extracted_items)
+
+    budget = module.extract_budget(question)
+
+    assert budget["amount"] == 12000.0
+    assert budget["currency"] == "USD"
+
+    report = """
+Shopping Agent status: needs_more_information. Selected 0 supplier option(s). Estimated procurement cost: 0.0 USD.
+SHOPPING AGENT REPORT
+Request ID: SHOP-TEXT-REQUEST Customer: Unknown Customer Destination country: None Status: needs_more_information
+Selected suppliers: 0 Estimated total procurement cost: 0.0 USD Budget limit: 12000.0 USD Within budget: True
+Overall risk level: unknown Overall risk score: 0/10
+Excluded supplier countries: ['China']
+"""
+
+    parsed = module.parse_raw_shopping_report(report)
+
+    assert parsed["status"] == "needs_more_information"
+    assert parsed["selected_suppliers"] == 0
+    assert parsed["budget_limit_usd"] == 12000.0
+    assert parsed["excluded_supplier_countries"] == ["China"]
+
     fake_payload = {
         "decision": "needs_more_information",
         "detected_intent": "shopping",
-        "_question": "I need 20 laptops and 10 tablets from India under 12000 USD.",
-        "_extracted_items": [
-            {"quantity": "20", "item": "laptops"},
-            {"quantity": "10", "item": "tablets"},
-        ],
+        "_question": question,
+        "_extracted_items": extracted_items,
+        "_budget": budget,
+        "_excluded_supplier_countries": ["China"],
+        "_parsed_report": parsed,
         "agents_called": ["shopping_agent"],
     }
 
-    fallback_answer = module.build_fallback_answer(fake_payload)
+    fallback_answer = module.build_frontend_answer(fake_payload)
 
     assert "shopping/procurement request" in fallback_answer
     assert "20 laptops" in fallback_answer
     assert "10 tablets" in fallback_answer
-
-    extracted_items = module.extract_requested_items(
-        "I need 20 laptops and 10 tablets from India under 12000 USD."
-    )
-
-    assert extracted_items
-    assert extracted_items[0]["quantity"] == "20"
+    assert "12000 USD" in fallback_answer
+    assert "No suppliers were shortlisted" in fallback_answer
 
     assert hasattr(module, "render_payload")
     assert hasattr(module, "render_agent_answer")
+    assert hasattr(module, "render_procurement_summary")
     assert hasattr(module, "get_clean_headline")
-    assert hasattr(module, "extract_answer_text")
+    assert hasattr(module, "build_frontend_answer")
     assert hasattr(module, "main")
 
     print("PASS: Streamlit frontend smoke test passed")
