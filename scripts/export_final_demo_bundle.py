@@ -153,6 +153,21 @@ def main() -> None:
         copy_if_exists(DEMO_OUTPUTS / filename, FINAL_BUNDLE / "shopping_demo" / filename)
         generated_files.append(f"shopping_demo/{filename}")
 
+    static_frontend_code, static_frontend_output = run_command(
+        [sys.executable, "scripts/export_static_frontend_demo.py"]
+    )
+    write_text(
+        FINAL_BUNDLE / "checks" / "static_frontend_demo_output.txt",
+        static_frontend_output,
+    )
+    generated_files.append("checks/static_frontend_demo_output.txt")
+
+    copy_if_exists(
+        DEMO_OUTPUTS / "frontend_demo.html",
+        FINAL_BUNDLE / "frontend" / "frontend_demo.html",
+    )
+    generated_files.append("frontend/frontend_demo.html")
+
     logistics_scenarios_code, logistics_scenarios_output = run_command(
         [sys.executable, "scripts/run_logistics_scenarios.py"]
     )
