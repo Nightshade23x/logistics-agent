@@ -46,6 +46,10 @@ CHECKS = [
         [sys.executable, "scripts/test_repo_hygiene.py"],
     ),
     (
+        "Streamlit frontend launcher test",
+        [sys.executable, "scripts/test_open_streamlit_frontend.py"],
+    ),
+    (
         "Streamlit frontend smoke test",
         [sys.executable, "scripts/test_streamlit_frontend.py"],
     ),
