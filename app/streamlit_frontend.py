@@ -21,6 +21,11 @@ SAMPLE_SHOPPING_REQUEST = ROOT_DIR / "data" / "suppliers" / "sample_shopping_req
 SAMPLE_INVOICE = ROOT_DIR / "data" / "documents" / "sample_invoice.txt"
 SAMPLE_PACKING_LIST = ROOT_DIR / "data" / "documents" / "sample_packing_list.txt"
 
+DEFAULT_TEXT_REQUEST = (
+    "I need 50 TVs, 5 scooters, and 100 ceramic tiles. "
+    "Prefer suppliers from India. Avoid China. Budget 13000 USD."
+)
+
 
 def humanize(value: Any) -> str:
     if value is None:
@@ -311,44 +316,79 @@ def render_payload(payload: dict[str, Any]) -> None:
 
     st.divider()
 
-    st.subheader("Logistics Metrics")
-    render_metric_cards(payload.get("logistics_metrics", {}), columns=4)
+    overview_tab, logistics_tab, review_tab, raw_tab = st.tabs(
+        [
+            "Overview",
+            "Logistics Visualizer",
+            "Review Sections",
+            "Raw Payload",
+        ]
+    )
 
-    st.divider()
+    with overview_tab:
+        st.subheader("Logistics Metrics")
+        render_metric_cards(payload.get("logistics_metrics", {}), columns=4)
 
-    render_logistics_visualizer(payload.get("logistics_visualizer", {}))
+        st.divider()
 
-    st.divider()
+        render_booking_and_actions(payload)
 
-    render_booking_and_actions(payload)
+        st.divider()
 
-    st.divider()
+        st.subheader("Backend Validation")
+        render_metric_cards(payload.get("backend_validation", {}), columns=3)
 
-    render_ui_sections(payload)
+    with logistics_tab:
+        render_logistics_visualizer(payload.get("logistics_visualizer", {}))
 
-    st.divider()
+    with review_tab:
+        render_ui_sections(payload)
 
-    st.subheader("Backend Validation")
-    render_metric_cards(payload.get("backend_validation", {}), columns=3)
-
-    with st.expander("Raw Compact Payload", expanded=False):
+    with raw_tab:
+        st.subheader("Raw Compact Payload")
+        st.caption("Useful for debugging frontend/backend contract issues.")
         st.json(payload)
 
 
 def main() -> None:
     st.set_page_config(
         page_title="Logistics Agent Frontend",
-        page_icon="🚢",
+        page_icon="??",
         layout="wide",
     )
 
     st.title("Logistics Agent Frontend")
-    st.caption("Interactive demo frontend using the backend compact frontend payload.")
+    st.caption("Interactive frontend using the backend compact frontend payload.")
 
-    st.sidebar.header("Demo Input")
+    if "active_payload" not in st.session_state:
+        with st.spinner("Loading sample shopping request..."):
+            st.session_state.active_payload = get_sample_shopping_payload()
+            st.session_state.active_source = "Sample shopping request"
+            st.session_state.active_question = ""
+
+    st.markdown("### Ask a Custom Question")
+
+    with st.form("custom_question_form", clear_on_submit=False):
+        custom_question = st.text_input(
+            "Search or ask a procurement/logistics question",
+            placeholder="Example: I need 20 laptops from India under 12000 USD. What suppliers and shipping plan should I use?",
+        )
+
+        submitted = st.form_submit_button("Run Custom Question", type="primary")
+
+    if submitted:
+        if not custom_question.strip():
+            st.warning("Type a question first.")
+        else:
+            with st.spinner("Running backend user agent..."):
+                st.session_state.active_payload = get_text_payload(custom_question.strip())
+                st.session_state.active_source = "Custom question"
+                st.session_state.active_question = custom_question.strip()
+
+    st.sidebar.header("Demo Controls")
 
     mode = st.sidebar.radio(
-        "Choose input flow",
+        "Load a demo flow",
         [
             "Sample shopping request",
             "Plain English request",
@@ -356,25 +396,32 @@ def main() -> None:
         ],
     )
 
-    if mode == "Sample shopping request":
-        st.sidebar.info("Uses data/suppliers/sample_shopping_request.json")
-        payload = get_sample_shopping_payload()
+    if st.sidebar.button("Load Selected Demo"):
+        with st.spinner(f"Loading {mode}..."):
+            if mode == "Sample shopping request":
+                st.session_state.active_payload = get_sample_shopping_payload()
+                st.session_state.active_source = "Sample shopping request"
+                st.session_state.active_question = ""
 
-    elif mode == "Plain English request":
-        default_text = (
-            "I need 50 TVs, 5 scooters, and 100 ceramic tiles. "
-            "Prefer suppliers from India. Avoid China. Budget 13000 USD."
-        )
-        text_request = st.sidebar.text_area("Request", value=default_text, height=170)
+            elif mode == "Plain English request":
+                st.session_state.active_payload = get_text_payload(DEFAULT_TEXT_REQUEST)
+                st.session_state.active_source = "Plain English request"
+                st.session_state.active_question = DEFAULT_TEXT_REQUEST
 
-        if st.sidebar.button("Run text request") or "text_payload" not in st.session_state:
-            st.session_state.text_payload = get_text_payload(text_request)
+            else:
+                st.session_state.active_payload = get_document_payload()
+                st.session_state.active_source = "Sample documents"
+                st.session_state.active_question = ""
 
-        payload = st.session_state.text_payload
+    st.sidebar.divider()
+    st.sidebar.markdown("### Active Run")
+    st.sidebar.markdown(f"Source: **{st.session_state.active_source}**")
 
-    else:
-        st.sidebar.info("Uses sample invoice and packing list.")
-        payload = get_document_payload()
+    if st.session_state.active_question:
+        st.sidebar.markdown("Question:")
+        st.sidebar.info(st.session_state.active_question)
+
+    payload = st.session_state.active_payload
 
     st.sidebar.divider()
     st.sidebar.markdown("### Payload Status")
@@ -382,8 +429,11 @@ def main() -> None:
     st.sidebar.markdown(f"Intent: **{humanize(payload.get('detected_intent'))}**")
     st.sidebar.markdown(f"Partner: **{humanize(payload.get('partner_review_status'))}**")
 
+    st.divider()
+
     render_payload(payload)
 
 
 if __name__ == "__main__":
     main()
+

@@ -23,6 +23,9 @@ def main() -> None:
     assert module.humanize("fcl_preferred") == "FCL Preferred"
     assert module.humanize(True) == "Yes"
     assert module.humanize(False) == "No"
+    assert module.DEFAULT_TEXT_REQUEST
+    assert hasattr(module, "render_payload")
+    assert hasattr(module, "main")
 
     print("PASS: Streamlit frontend smoke test passed")
 
