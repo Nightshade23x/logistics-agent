@@ -34,6 +34,8 @@ def main() -> None:
     assert "streamlit" in output
     assert "app\\streamlit_frontend.py" in output or "app/streamlit_frontend.py" in output
     assert "--server.port 8505" in output
+    assert "--server.headless true" in output
+    assert "--browser.gatherUsageStats false" in output
 
     print("PASS: Streamlit frontend launcher command is valid")
 

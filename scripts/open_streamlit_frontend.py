@@ -43,7 +43,9 @@ def open_browser(url: str) -> None:
 
 
 def build_command(port: int, open_browser_tab: bool) -> list[str]:
-    command = [
+    # Always run Streamlit in headless mode so Streamlit itself does not open
+    # a browser tab. This launcher opens Brave manually exactly once.
+    return [
         sys.executable,
         "-m",
         "streamlit",
@@ -51,12 +53,11 @@ def build_command(port: int, open_browser_tab: bool) -> list[str]:
         str(APP_PATH),
         "--server.port",
         str(port),
+        "--server.headless",
+        "true",
+        "--browser.gatherUsageStats",
+        "false",
     ]
-
-    if not open_browser_tab:
-        command.extend(["--server.headless", "true"])
-
-    return command
 
 
 def main() -> None:

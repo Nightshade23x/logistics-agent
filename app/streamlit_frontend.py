@@ -1,6 +1,7 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -39,6 +40,20 @@ def humanize(value: Any) -> str:
 
     text = str(value).strip()
 
+    if not text:
+        return ""
+
+    sentence_like = (
+        len(text) > 70
+        or "." in text
+        or "?" in text
+        or "!" in text
+        or "; " in text
+    )
+
+    if sentence_like and "_" not in text:
+        return text
+
     acronyms = {
         "cbm": "CBM",
         "kg": "kg",
@@ -58,7 +73,23 @@ def humanize(value: Any) -> str:
         "ddp": "DDP",
     }
 
-    small_words = {"a", "an", "and", "as", "at", "by", "for", "from", "in", "of", "on", "or", "the", "to", "with"}
+    small_words = {
+        "a",
+        "an",
+        "and",
+        "as",
+        "at",
+        "by",
+        "for",
+        "from",
+        "in",
+        "of",
+        "on",
+        "or",
+        "the",
+        "to",
+        "with",
+    }
 
     text = text.replace("_", " ").replace("-", " ")
     words = []
@@ -76,13 +107,26 @@ def humanize(value: Any) -> str:
     return " ".join(words)
 
 
+def is_empty(value: Any) -> bool:
+    if value is None:
+        return True
+
+    if isinstance(value, str) and not value.strip():
+        return True
+
+    if isinstance(value, (list, dict)) and not value:
+        return True
+
+    return False
+
+
 def status_color(status: Any) -> str:
     lowered = str(status or "").lower()
 
     if "critical" in lowered or "blocked" in lowered or "failed" in lowered:
         return "red"
 
-    if "review" in lowered or "missing" in lowered or "not_configured" in lowered:
+    if "review" in lowered or "missing" in lowered or "need" in lowered or "not_configured" in lowered:
         return "orange"
 
     if "ready" in lowered or "clear" in lowered or "available" in lowered:
@@ -92,25 +136,235 @@ def status_color(status: Any) -> str:
 
 
 def badge(label: Any) -> str:
+    if is_empty(label):
+        return ""
+
     color = status_color(label)
     return f":{color}-badge[{humanize(label)}]"
 
 
+def json_safe(value: Any) -> Any:
+    try:
+        json.dumps(value)
+        return value
+    except TypeError:
+        return str(value)
+
+
+def extract_requested_items(question: str) -> list[dict[str, str]]:
+    pattern = re.compile(
+        r"(?P<quantity>\d+)\s+(?P<item>[A-Za-z][A-Za-z0-9 /-]*?)(?=,| and |\.\s| from | under | below | within | with |$)",
+        re.IGNORECASE,
+    )
+
+    items = []
+
+    for match in pattern.finditer(question or ""):
+        quantity = match.group("quantity").strip()
+        item = match.group("item").strip(" .,")
+
+        if item:
+            items.append({"quantity": quantity, "item": item})
+
+    return items
+
+
 def get_sample_shopping_payload() -> dict[str, Any]:
     full_payload = process_json_file_request(SAMPLE_SHOPPING_REQUEST)
-    return build_compact_frontend_payload(full_payload)
+    compact_payload = build_compact_frontend_payload(full_payload)
+    compact_payload["_source"] = "Sample shopping request"
+    return compact_payload
 
 
 def get_text_payload(text_request: str) -> dict[str, Any]:
     raw_response = run_user_agent_from_text(text_request)
     full_payload = build_frontend_payload(raw_response)
-    return build_compact_frontend_payload(full_payload)
+    compact_payload = build_compact_frontend_payload(full_payload)
+
+    compact_payload["_source"] = "Custom question"
+    compact_payload["_question"] = text_request
+    compact_payload["_extracted_items"] = extract_requested_items(text_request)
+    compact_payload["_raw_user_agent_response"] = json_safe(raw_response)
+
+    return compact_payload
 
 
 def get_document_payload() -> dict[str, Any]:
     raw_response = run_user_agent_from_files([SAMPLE_INVOICE, SAMPLE_PACKING_LIST])
     full_payload = build_frontend_payload(raw_response)
-    return build_compact_frontend_payload(full_payload)
+    compact_payload = build_compact_frontend_payload(full_payload)
+    compact_payload["_source"] = "Sample documents"
+    return compact_payload
+
+
+def get_clean_headline(payload: dict[str, Any]) -> str:
+    decision = humanize(payload.get("decision") or payload.get("status") or "review_required")
+    intent = humanize(payload.get("detected_intent") or "request")
+
+    lowered_decision = decision.lower()
+
+    if "need" in lowered_decision or "missing" in lowered_decision:
+        return f"{intent} needs more information before a reliable plan can be produced."
+
+    if "critical" in lowered_decision or "high risk" in lowered_decision:
+        return f"{intent} requires critical review before booking."
+
+    if "ready" in lowered_decision:
+        return f"{intent} is ready for review."
+
+    if "review" in lowered_decision:
+        return f"{intent} is ready for human review."
+
+    return f"{intent} processed by the backend."
+
+
+def walk_text_values(value: Any) -> list[str]:
+    values: list[str] = []
+
+    if isinstance(value, str):
+        stripped = value.strip()
+
+        if stripped:
+            values.append(stripped)
+
+    elif isinstance(value, dict):
+        priority_keys = [
+            "answer",
+            "final_answer",
+            "short_answer",
+            "summary",
+            "message",
+            "recommendation",
+            "next_step",
+            "explanation",
+            "reason",
+        ]
+
+        for key in priority_keys:
+            if key in value:
+                values.extend(walk_text_values(value[key]))
+
+        for key, child in value.items():
+            if key not in priority_keys:
+                values.extend(walk_text_values(child))
+
+    elif isinstance(value, list):
+        for child in value:
+            values.extend(walk_text_values(child))
+
+    return values
+
+
+def extract_answer_text(payload: dict[str, Any]) -> str:
+    candidates: list[str] = []
+
+    for key in ["short_answer", "summary", "message", "answer", "final_answer"]:
+        if key in payload:
+            candidates.extend(walk_text_values(payload[key]))
+
+    raw_response = payload.get("_raw_user_agent_response")
+
+    if raw_response:
+        candidates.extend(walk_text_values(raw_response))
+
+    for candidate in candidates:
+        text = candidate.strip()
+
+        if len(text) < 8:
+            continue
+
+        low_quality = [
+            "None CBM",
+            "None Kg",
+            "Recommended Container None",
+            "Risk Level None",
+        ]
+
+        if any(marker in text for marker in low_quality):
+            continue
+
+        return text
+
+    return ""
+
+
+def collect_missing_information(payload: dict[str, Any]) -> list[Any]:
+    missing: list[Any] = []
+
+    booking = payload.get("booking_readiness", {})
+    action_plan = payload.get("action_plan", {})
+
+    if isinstance(booking, dict):
+        missing.extend(booking.get("missing_information", []) or [])
+        missing.extend(booking.get("missing_inputs", []) or [])
+        missing.extend(booking.get("review_items", []) or [])
+
+    if isinstance(action_plan, dict):
+        missing.extend(action_plan.get("user_questions", []) or [])
+        missing.extend(action_plan.get("missing_information", []) or [])
+        missing.extend(action_plan.get("before_booking", []) or [])
+
+    for section in payload.get("ui_sections", []) or []:
+        if not isinstance(section, dict):
+            continue
+
+        status = str(section.get("status", "")).lower()
+
+        if "missing" in status or "need" in status or "review" in status:
+            missing.extend(section.get("actions", []) or [])
+            missing.extend(section.get("bullets", []) or [])
+
+    cleaned: list[Any] = []
+    seen = set()
+
+    for item in missing:
+        key = str(item).strip().lower()
+
+        if not key or key in seen:
+            continue
+
+        seen.add(key)
+        cleaned.append(item)
+
+    return cleaned
+
+
+def build_fallback_answer(payload: dict[str, Any]) -> str:
+    intent = humanize(payload.get("detected_intent") or "request").lower()
+    decision = humanize(payload.get("decision") or "needs_more_information").lower()
+    agents_called = payload.get("agents_called", []) or []
+    question = payload.get("_question", "")
+    extracted_items = payload.get("_extracted_items", []) or []
+
+    item_text = ""
+
+    if extracted_items:
+        item_text = " I detected these requested items: " + ", ".join(
+            f"{item['quantity']} {item['item']}" for item in extracted_items
+        ) + "."
+
+    if "shopping" in intent:
+        return (
+            f"The backend treated this as a shopping/procurement request and returned {decision}."
+            f"{item_text} "
+            "It did not produce a full logistics plan because the custom question does not yet contain enough "
+            "structured shipment information for reliable container planning. Add item dimensions, unit weights, "
+            "origin, destination, Incoterm, and supplier choice to get logistics metrics."
+        )
+
+    if agents_called:
+        return (
+            f"The backend processed the request through {', '.join(humanize(agent) for agent in agents_called)} "
+            f"and returned {decision}. More structured details are needed before the frontend can show a complete plan."
+        )
+
+    if question:
+        return (
+            "The backend received the custom question, but it did not return a complete frontend-ready answer. "
+            "Use the raw payload tab to inspect the backend response."
+        )
+
+    return "The backend processed the request, but no detailed answer was returned."
 
 
 def render_metric_cards(metrics: dict[str, Any], columns: int = 4) -> None:
@@ -118,28 +372,28 @@ def render_metric_cards(metrics: dict[str, Any], columns: int = 4) -> None:
         st.info("No metrics available.")
         return
 
-    filtered_items = [(key, value) for key, value in metrics.items() if value not in [None, "", [], {}]]
+    filtered_items = [(key, value) for key, value in metrics.items() if not is_empty(value)]
 
     if not filtered_items:
         st.info("No metrics available.")
         return
 
-    cols = st.columns(columns)
+    cols = st.columns(max(1, columns))
 
     for index, (key, value) in enumerate(filtered_items):
-        with cols[index % columns]:
+        with cols[index % max(1, columns)]:
             if isinstance(value, list):
                 display = ", ".join(humanize(item) for item in value)
             elif isinstance(value, dict):
                 display = "; ".join(
                     f"{humanize(child_key)}: {humanize(child_value)}"
                     for child_key, child_value in value.items()
-                    if child_value not in [None, "", [], {}]
+                    if not is_empty(child_value)
                 )
             else:
                 display = humanize(value)
 
-            st.metric(humanize(key), display)
+            st.metric(humanize(key), display or "?")
 
 
 def render_list(title: str, items: list[Any]) -> None:
@@ -154,36 +408,83 @@ def render_list(title: str, items: list[Any]) -> None:
 
 def render_executive_summary(payload: dict[str, Any]) -> None:
     executive = payload.get("executive_summary", {})
-    final_answer = payload.get("final_answer", {})
 
     st.subheader("Executive Summary")
-
-    headline = executive.get("headline") or final_answer.get("headline") or payload.get("short_answer")
-    st.markdown(f"### {humanize(headline)}")
+    st.markdown(f"### {get_clean_headline(payload)}")
 
     cols = st.columns(4)
 
     with cols[0]:
-        st.metric("Decision", humanize(payload.get("decision")))
+        st.metric("Decision", humanize(payload.get("decision")) or "?")
 
     with cols[1]:
-        st.metric("Booking Score", executive.get("booking_score"))
+        st.metric("Intent", humanize(payload.get("detected_intent")) or "?")
 
     with cols[2]:
-        st.metric("First Pass", humanize(executive.get("ready_for_first_pass")))
+        st.metric("Partner Status", humanize(payload.get("partner_review_status")) or "?")
 
     with cols[3]:
-        st.metric("Ready for Booking", humanize(executive.get("ready_for_booking")))
+        st.metric("Booking Score", executive.get("booking_score") or "?")
 
     st.markdown(
         " ".join(
-            [
-                badge(payload.get("decision")),
-                badge(executive.get("status")),
-                badge(payload.get("partner_review_status")),
+            badge(item)
+            for item in [
+                payload.get("decision"),
+                executive.get("status"),
+                payload.get("partner_review_status"),
             ]
+            if item
         )
     )
+
+
+def render_agent_answer(payload: dict[str, Any]) -> None:
+    st.subheader("Backend Answer")
+
+    answer_text = extract_answer_text(payload) or build_fallback_answer(payload)
+    decision = str(payload.get("decision") or "").lower()
+
+    agents_called = payload.get("agents_called", []) or []
+    extracted_items = payload.get("_extracted_items", []) or []
+
+    if "critical" in decision:
+        st.error(answer_text)
+    elif "need" in decision or "missing" in decision or "review" in decision:
+        st.warning(answer_text)
+    else:
+        st.success(answer_text)
+
+    meta = {
+        "decision": payload.get("decision"),
+        "detected_intent": payload.get("detected_intent"),
+        "agents_called": agents_called,
+        "partner_review_status": payload.get("partner_review_status"),
+    }
+
+    render_metric_cards(meta, columns=4)
+
+    if extracted_items:
+        st.markdown("#### Items detected from custom question")
+        st.dataframe(extracted_items, use_container_width=True)
+
+    missing = collect_missing_information(payload)
+
+    if missing:
+        st.markdown("#### Information needed")
+        for item in missing[:12]:
+            st.markdown(f"- {humanize(item)}")
+    elif not payload.get("logistics_metrics"):
+        st.markdown("#### Information likely needed")
+        for item in [
+            "Origin country and destination country",
+            "Incoterm or shipping terms",
+            "Supplier selection or supplier quote",
+            "Unit dimensions for each item",
+            "Unit weight for each item",
+            "Cargo value, freight quote, insurance, duty, and tax inputs",
+        ]:
+            st.markdown(f"- {item}")
 
 
 def render_logistics_visualizer(visualizer: dict[str, Any]) -> None:
@@ -253,7 +554,9 @@ def render_logistics_visualizer(visualizer: dict[str, Any]) -> None:
             ):
                 st.markdown(f"**Zone:** {humanize(step.get('suggested_zone'))}")
                 st.markdown(f"**Reason:** {humanize(step.get('reason'))}")
+
                 tags = step.get("category_tags", [])
+
                 if tags:
                     st.markdown(" ".join(badge(tag) for tag in tags))
 
@@ -262,6 +565,7 @@ def render_ui_sections(payload: dict[str, Any]) -> None:
     sections = payload.get("ui_sections", [])
 
     if not isinstance(sections, list) or not sections:
+        st.info("No review sections available.")
         return
 
     st.subheader("Review Sections")
@@ -270,11 +574,15 @@ def render_ui_sections(payload: dict[str, Any]) -> None:
         if not isinstance(section, dict):
             continue
 
-        with st.expander(f"{section.get('title')} — {humanize(section.get('status'))}", expanded=False):
+        title = section.get("title") or "Review Section"
+        status = humanize(section.get("status"))
+
+        with st.expander(f"{title} ? {status}", expanded=False):
             st.markdown(f"**Status:** {badge(section.get('status'))}")
             st.markdown(humanize(section.get("summary")))
 
             metrics = section.get("metrics", {})
+
             if metrics:
                 render_metric_cards(metrics, columns=3)
 
@@ -290,11 +598,11 @@ def render_booking_and_actions(payload: dict[str, Any]) -> None:
 
     render_metric_cards(
         {
-            "booking_status": booking.get("status"),
-            "score": booking.get("score"),
-            "ready_for_first_pass": booking.get("ready_for_first_pass"),
-            "ready_for_booking": booking.get("ready_for_booking"),
-            "next_gate": booking.get("next_gate"),
+            "booking_status": booking.get("status") if isinstance(booking, dict) else None,
+            "score": booking.get("score") if isinstance(booking, dict) else None,
+            "ready_for_first_pass": booking.get("ready_for_first_pass") if isinstance(booking, dict) else None,
+            "ready_for_booking": booking.get("ready_for_booking") if isinstance(booking, dict) else None,
+            "next_gate": booking.get("next_gate") if isinstance(booking, dict) else None,
         },
         columns=5,
     )
@@ -302,13 +610,15 @@ def render_booking_and_actions(payload: dict[str, Any]) -> None:
     col1, col2 = st.columns(2)
 
     with col1:
-        render_list("Missing Information", booking.get("missing_information", []))
-        render_list("Review Items", booking.get("review_items", []))
+        if isinstance(booking, dict):
+            render_list("Missing Information", booking.get("missing_information", []))
+            render_list("Review Items", booking.get("review_items", []))
 
     with col2:
-        render_list("Before Booking", action_plan.get("before_booking", []))
-        render_list("Partner Steps", action_plan.get("partner_steps", []))
-        render_list("User Questions", action_plan.get("user_questions", []))
+        if isinstance(action_plan, dict):
+            render_list("Before Booking", action_plan.get("before_booking", []))
+            render_list("Partner Steps", action_plan.get("partner_steps", []))
+            render_list("User Questions", action_plan.get("user_questions", []))
 
 
 def render_payload(payload: dict[str, Any]) -> None:
@@ -316,16 +626,20 @@ def render_payload(payload: dict[str, Any]) -> None:
 
     st.divider()
 
-    overview_tab, logistics_tab, review_tab, raw_tab = st.tabs(
+    render_agent_answer(payload)
+
+    st.divider()
+
+    answer_tab, logistics_tab, review_tab, raw_tab = st.tabs(
         [
-            "Overview",
+            "Answer & Status",
             "Logistics Visualizer",
             "Review Sections",
             "Raw Payload",
         ]
     )
 
-    with overview_tab:
+    with answer_tab:
         st.subheader("Logistics Metrics")
         render_metric_cards(payload.get("logistics_metrics", {}), columns=4)
 
@@ -425,9 +739,9 @@ def main() -> None:
 
     st.sidebar.divider()
     st.sidebar.markdown("### Payload Status")
-    st.sidebar.markdown(f"Decision: **{humanize(payload.get('decision'))}**")
-    st.sidebar.markdown(f"Intent: **{humanize(payload.get('detected_intent'))}**")
-    st.sidebar.markdown(f"Partner: **{humanize(payload.get('partner_review_status'))}**")
+    st.sidebar.markdown(f"Decision: **{humanize(payload.get('decision')) or '?'}**")
+    st.sidebar.markdown(f"Intent: **{humanize(payload.get('detected_intent')) or '?'}**")
+    st.sidebar.markdown(f"Partner: **{humanize(payload.get('partner_review_status')) or '?'}**")
 
     st.divider()
 
@@ -436,4 +750,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

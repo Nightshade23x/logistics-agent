@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import importlib
 import sys
@@ -23,8 +23,35 @@ def main() -> None:
     assert module.humanize("fcl_preferred") == "FCL Preferred"
     assert module.humanize(True) == "Yes"
     assert module.humanize(False) == "No"
-    assert module.DEFAULT_TEXT_REQUEST
+
+    fake_payload = {
+        "decision": "needs_more_information",
+        "detected_intent": "shopping",
+        "_question": "I need 20 laptops and 10 tablets from India under 12000 USD.",
+        "_extracted_items": [
+            {"quantity": "20", "item": "laptops"},
+            {"quantity": "10", "item": "tablets"},
+        ],
+        "agents_called": ["shopping_agent"],
+    }
+
+    fallback_answer = module.build_fallback_answer(fake_payload)
+
+    assert "shopping/procurement request" in fallback_answer
+    assert "20 laptops" in fallback_answer
+    assert "10 tablets" in fallback_answer
+
+    extracted_items = module.extract_requested_items(
+        "I need 20 laptops and 10 tablets from India under 12000 USD."
+    )
+
+    assert extracted_items
+    assert extracted_items[0]["quantity"] == "20"
+
     assert hasattr(module, "render_payload")
+    assert hasattr(module, "render_agent_answer")
+    assert hasattr(module, "get_clean_headline")
+    assert hasattr(module, "extract_answer_text")
     assert hasattr(module, "main")
 
     print("PASS: Streamlit frontend smoke test passed")
