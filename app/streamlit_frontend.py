@@ -558,6 +558,25 @@ def build_frontend_answer(payload: dict[str, Any]) -> str:
     )
 
 
+def has_displayable_metrics(metrics: Any) -> bool:
+    if not isinstance(metrics, dict):
+        return False
+
+    return any(not is_empty(value) for value in metrics.values())
+
+
+def render_empty_state(title: str, message: str, bullets: list[str] | None = None) -> None:
+    st.info(f"**{title}**\n\n{message}")
+
+    if bullets:
+        for bullet in bullets:
+            st.markdown(f"- {bullet}")
+
+
+def is_custom_question_payload(payload: dict[str, Any]) -> bool:
+    return payload.get("_source") == "Custom question"
+
+
 def render_metric_cards(metrics: dict[str, Any], columns: int = 4) -> None:
     if not isinstance(metrics, dict) or not metrics:
         st.info("No metrics available.")
@@ -680,6 +699,12 @@ def render_agent_answer(payload: dict[str, Any]) -> None:
 def render_procurement_summary(payload: dict[str, Any]) -> None:
     st.subheader("Procurement Summary")
 
+    if is_custom_question_payload(payload):
+        st.caption(
+            "This is the first stage for a custom question. If suppliers are not shortlisted here, logistics, "
+            "booking readiness, and partner review cannot be completed yet."
+        )
+
     parsed_report = payload.get("_parsed_report", {}) or {}
     budget = payload.get("_budget", {}) or {}
     preferred = payload.get("_preferred_supplier_countries", []) or []
@@ -697,7 +722,22 @@ def render_procurement_summary(payload: dict[str, Any]) -> None:
         "excluded_supplier_countries": excluded,
     }
 
-    render_metric_cards(metrics, columns=4)
+    if has_displayable_metrics(metrics):
+        render_metric_cards(metrics, columns=4)
+    else:
+        render_empty_state(
+            "No procurement metrics returned",
+            "The backend did not return structured procurement metrics for this run.",
+        )
+
+    selected_suppliers = parsed_report.get("selected_suppliers")
+    shortlisted = parsed_report.get("shortlisted_supplier_options")
+
+    if selected_suppliers == 0 or shortlisted == 0:
+        st.warning(
+            "No suppliers were shortlisted. The next stage cannot create a shipment plan until at least one "
+            "supplier/item option is selected."
+        )
 
     raw_report = payload.get("_raw_report_text")
 
@@ -784,7 +824,10 @@ def render_ui_sections(payload: dict[str, Any]) -> None:
     sections = payload.get("ui_sections", [])
 
     if not isinstance(sections, list) or not sections:
-        st.info("No review sections available.")
+        render_empty_state(
+            "No review sections available",
+            "This run did not return structured review sections. For custom questions, this usually means only the first procurement step ran.",
+        )
         return
 
     st.subheader("Review Sections")
@@ -829,6 +872,35 @@ def render_booking_and_actions(payload: dict[str, Any]) -> None:
         "next_gate": booking.get("next_gate"),
     }
 
+    has_booking = has_displayable_metrics(metrics)
+    has_actions = bool(
+        booking.get("missing_information")
+        or booking.get("review_items")
+        or action_plan.get("before_booking")
+        or action_plan.get("partner_steps")
+        or action_plan.get("user_questions")
+    )
+
+    if not has_booking and not has_actions:
+        if is_custom_question_payload(payload):
+            render_empty_state(
+                "Booking readiness is not available for this run",
+                "The backend only reached the procurement stage. Booking readiness needs selected supplier items, "
+                "logistics metrics, documents, and partner review outputs.",
+                [
+                    "Shortlist or select supplier options first.",
+                    "Provide origin, destination, Incoterm, item dimensions, and item weights.",
+                    "Run logistics planning after procurement has usable item data.",
+                    "Run partner review after logistics and compliance data exist.",
+                ],
+            )
+        else:
+            render_empty_state(
+                "Booking readiness not returned",
+                "No booking readiness object was returned in this payload.",
+            )
+        return
+
     render_metric_cards(metrics, columns=5)
 
     col1, col2 = st.columns(2)
@@ -868,18 +940,46 @@ def render_payload(payload: dict[str, Any]) -> None:
         st.divider()
 
         st.subheader("Backend Validation")
-        render_metric_cards(payload.get("backend_validation", {}), columns=3)
+
+        backend_validation = payload.get("backend_validation", {})
+
+        if has_displayable_metrics(backend_validation):
+            render_metric_cards(backend_validation, columns=3)
+        else:
+            render_empty_state(
+                "Backend validation details are not available",
+                "This custom text response did not return a structured backend validation block. "
+                "Use the raw payload tab for debugging, or run the sample shopping flow for the full contract-validated payload.",
+            )
 
     with procurement_tab:
         render_procurement_summary(payload)
 
     with logistics_tab:
         st.subheader("Logistics Metrics")
-        render_metric_cards(payload.get("logistics_metrics", {}), columns=4)
 
-        st.divider()
+        logistics_metrics = payload.get("logistics_metrics", {})
+        logistics_visualizer = payload.get("logistics_visualizer", {})
 
-        render_logistics_visualizer(payload.get("logistics_visualizer", {}))
+        if has_displayable_metrics(logistics_metrics):
+            render_metric_cards(logistics_metrics, columns=4)
+            st.divider()
+            render_logistics_visualizer(logistics_visualizer)
+        else:
+            render_empty_state(
+                "Logistics has not run for this custom question",
+                "No container, CBM, weight, routing, or visualizer data can be shown until procurement produces usable selected items.",
+                [
+                    "Select supplier/item options.",
+                    "Provide dimensions and unit weights.",
+                    "Provide origin, destination, and Incoterm.",
+                    "Then run the logistics agent.",
+                ],
+            )
+
+            if logistics_visualizer:
+                st.divider()
+                render_logistics_visualizer(logistics_visualizer)
 
     with review_tab:
         render_ui_sections(payload)

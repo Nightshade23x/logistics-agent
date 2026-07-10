@@ -75,6 +75,10 @@ Excluded supplier countries: ['China']
     assert hasattr(module, "render_payload")
     assert hasattr(module, "render_agent_answer")
     assert hasattr(module, "render_procurement_summary")
+    assert hasattr(module, "has_displayable_metrics")
+    assert hasattr(module, "render_empty_state")
+    assert module.has_displayable_metrics({"a": 1}) is True
+    assert module.has_displayable_metrics({"a": None, "b": ""}) is False
     assert hasattr(module, "get_clean_headline")
     assert hasattr(module, "build_frontend_answer")
     assert hasattr(module, "main")
