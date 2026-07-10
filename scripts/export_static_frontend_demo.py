@@ -38,7 +38,22 @@ def display_value(value: Any) -> str:
 
     text = str(value).strip()
 
-    replacements = {
+    if not text:
+        return ""
+
+    # Preserve normal sentences instead of title-casing every word.
+    looks_like_sentence = (
+        len(text) > 45
+        or "." in text
+        or "," in text
+        or ";" in text
+        or ":" in text
+    )
+
+    if looks_like_sentence and "_" not in text:
+        return text
+
+    acronym_replacements = {
         "cbm": "CBM",
         "kg": "kg",
         "fcl": "FCL",
@@ -47,17 +62,48 @@ def display_value(value: Any) -> str:
         "usd": "USD",
         "ai": "AI",
         "id": "ID",
+        "hs": "HS",
+        "msds": "MSDS",
+        "un38.3": "UN38.3",
+        "exw": "EXW",
+        "fob": "FOB",
+        "cif": "CIF",
+        "dap": "DAP",
+        "ddp": "DDP",
+    }
+
+    small_words = {
+        "a",
+        "an",
+        "and",
+        "as",
+        "at",
+        "by",
+        "for",
+        "from",
+        "in",
+        "of",
+        "on",
+        "or",
+        "the",
+        "to",
+        "with",
     }
 
     text = text.replace("_", " ").replace("-", " ")
     words = []
 
-    for word in text.split():
+    for index, word in enumerate(text.split()):
         lowered = word.lower()
-        words.append(replacements.get(lowered, word.capitalize()))
+
+        if lowered in acronym_replacements:
+            words.append(acronym_replacements[lowered])
+        elif index > 0 and lowered in small_words:
+            words.append(lowered)
+        else:
+            words.append(word[:1].upper() + word[1:])
 
     return " ".join(words)
-
 
 def display_key(value: Any) -> str:
     return display_value(value)
@@ -89,6 +135,70 @@ def render_badge(label: Any) -> str:
     return f'<span class="badge {status_class(label)}">{esc_display(label)}</span>'
 
 
+def _metric_value_is_empty(value: Any) -> bool:
+    if value is None:
+        return True
+
+    if isinstance(value, str) and not value.strip():
+        return True
+
+    if isinstance(value, (list, dict)) and not value:
+        return True
+
+    return False
+
+
+def render_metric_value(value: Any) -> str:
+    if _metric_value_is_empty(value):
+        return ""
+
+    if isinstance(value, dict):
+        rows = []
+
+        for key, child_value in value.items():
+            if _metric_value_is_empty(child_value):
+                continue
+
+            if isinstance(child_value, list):
+                child_display = ", ".join(display_value(item) for item in child_value)
+            elif isinstance(child_value, dict):
+                child_display = "; ".join(
+                    f"{display_value(inner_key)}: {display_value(inner_value)}"
+                    for inner_key, inner_value in child_value.items()
+                    if not _metric_value_is_empty(inner_value)
+                )
+            else:
+                child_display = display_value(child_value)
+
+            rows.append(
+                f"""
+                <div class="metric-kv-row">
+                    <span class="metric-kv-key">{esc_display(key)}</span>
+                    <span class="metric-kv-value">{esc(child_display)}</span>
+                </div>
+                """
+            )
+
+        if not rows:
+            return ""
+
+        return f'<div class="metric-kv">{"".join(rows)}</div>'
+
+    if isinstance(value, list):
+        items = [
+            f"<li>{esc_display(item)}</li>"
+            for item in value
+            if not _metric_value_is_empty(item)
+        ]
+
+        if not items:
+            return ""
+
+        return f'<ul class="metric-list">{"".join(items)}</ul>'
+
+    return esc_display(value)
+
+
 def render_metric_grid(metrics: dict[str, Any]) -> str:
     if not isinstance(metrics, dict) or not metrics:
         return ""
@@ -96,20 +206,27 @@ def render_metric_grid(metrics: dict[str, Any]) -> str:
     cards = []
 
     for key, value in metrics.items():
-        if isinstance(value, (dict, list)):
-            value = json.dumps(value, ensure_ascii=False)
+        if _metric_value_is_empty(value):
+            continue
+
+        rendered_value = render_metric_value(value)
+
+        if not rendered_value:
+            continue
 
         cards.append(
             f"""
             <div class="metric">
                 <div class="metric-label">{esc(display_key(key))}</div>
-                <div class="metric-value">{esc_display(value)}</div>
+                <div class="metric-value">{rendered_value}</div>
             </div>
             """
         )
 
-    return f'<div class="metric-grid">{"".join(cards)}</div>'
+    if not cards:
+        return ""
 
+    return f'<div class="metric-grid">{"".join(cards)}</div>'
 
 def render_list(items: list[Any], class_name: str = "list") -> str:
     if not isinstance(items, list) or not items:

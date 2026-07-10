@@ -20,6 +20,13 @@ RAW_ENUMS_THAT_SHOULD_NOT_RENDER = [
     "protected_middle_zone",
 ]
 
+RAW_JSON_METRIC_PATTERNS = [
+    "[&quot;",
+    "{&quot;",
+    "[\"",
+    "{\"",
+]
+
 
 def main() -> None:
     result = subprocess.run(
@@ -44,14 +51,25 @@ def main() -> None:
             print(f"FAILED: raw enum still visible in static frontend HTML: {raw_enum}")
             raise SystemExit(1)
 
+    for raw_pattern in RAW_JSON_METRIC_PATTERNS:
+        if raw_pattern in html:
+            print(f"FAILED: raw JSON metric formatting still visible in static frontend HTML: {raw_pattern}")
+            raise SystemExit(1)
+
     expected_labels = [
         "Review Required",
         "Needs More Information",
         "Fill Missing Information",
         "FCL Preferred",
-        "Ready For Review With High Risk",
+        "Ready for Review With High Risk",
         "Partner Review Not Configured",
         "Non Stackable",
+        "Commercial Invoice",
+        "Packing List",
+        "Bill of Lading or Airway Bill",
+        "Freight Quote USD",
+        "Insurance Premium USD",
+        "Duty Rate Percent",
     ]
 
     for label in expected_labels:
