@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import json
 import os
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
 from typing import Any
 
 
-DEFAULT_GEMINI_MODEL = "gemini-2.0-flash"
+DEFAULT_GEMINI_MODEL = "gemini-2.5-flash"
 GEMINI_ENDPOINT_TEMPLATE = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
@@ -157,6 +158,7 @@ def call_gemini_generate_content(
     api_key: str,
     model: str,
     timeout_seconds: int = 30,
+    max_attempts: int = 3,
 ) -> str:
     endpoint = GEMINI_ENDPOINT_TEMPLATE.format(model=model)
 
@@ -177,21 +179,43 @@ def call_gemini_generate_content(
         },
     }
 
-    request = urllib.request.Request(
-        endpoint,
-        data=json.dumps(body).encode("utf-8"),
-        headers={
-            "Content-Type": "application/json",
-            "X-goog-api-key": api_key,
-        },
-        method="POST",
-    )
+    request_body = json.dumps(body).encode("utf-8")
 
-    with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
-        response_body = response.read().decode("utf-8", errors="replace")
+    for attempt in range(1, max_attempts + 1):
+        request = urllib.request.Request(
+            endpoint,
+            data=request_body,
+            headers={
+                "Content-Type": "application/json",
+                "X-goog-api-key": api_key,
+            },
+            method="POST",
+        )
 
-    response_payload = json.loads(response_body)
-    return _parse_gemini_text(response_payload)
+        try:
+            with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
+                response_body = response.read().decode("utf-8", errors="replace")
+
+            response_payload = json.loads(response_body)
+            return _parse_gemini_text(response_payload)
+
+        except urllib.error.HTTPError as exc:
+            # 503 is usually temporary service/model overload. Retry it.
+            # Do not retry 429 automatically because it can mean hard quota exhaustion.
+            if exc.code == 503 and attempt < max_attempts:
+                retry_after = exc.headers.get("Retry-After") if exc.headers else None
+
+                try:
+                    wait_seconds = float(retry_after) if retry_after else 2.5 * attempt
+                except ValueError:
+                    wait_seconds = 2.5 * attempt
+
+                time.sleep(min(wait_seconds, 10))
+                continue
+
+            raise
+
+    return ""
 
 
 def generate_smart_answer(
@@ -233,6 +257,8 @@ def generate_smart_answer(
 
         if exc.code == 429:
             status = "quota_or_rate_limit_429"
+        elif exc.code == 503:
+            status = "model_high_demand_503"
 
         return {
             "mode": "fallback",
