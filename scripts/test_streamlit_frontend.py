@@ -64,6 +64,32 @@ Excluded supplier countries: ['China']
         "agents_called": ["shopping_agent"],
     }
 
+    structured_payload = {
+        "decision": "review_required",
+        "detected_intent": "shopping",
+        "agents_called": ["shopping_agent", "logistics_agent", "partner_review_service"],
+        "partner_review_status": "partner_review_not_configured",
+        "logistics_metrics": {
+            "total_cbm": 19.41,
+            "total_weight_kg": 2250.0,
+            "recommended_container": "20ft Standard Container",
+            "risk_level": "high",
+        },
+        "booking_readiness": {
+            "score": 40,
+            "ready_for_first_pass": True,
+            "ready_for_booking": False,
+            "next_gate": "fill_missing_information",
+        },
+    }
+
+    structured_answer = module.build_frontend_answer(structured_payload)
+
+    assert "review_required" not in structured_answer
+    assert "partner_review_service" not in structured_answer
+    assert "Review Required" in structured_answer
+    assert "20ft Standard Container" in structured_answer
+
     fallback_answer = module.build_frontend_answer(fake_payload)
 
     assert "shopping/procurement request" in fallback_answer
@@ -97,6 +123,9 @@ Excluded supplier countries: ['China']
     assert module.has_displayable_metrics({"a": None, "b": ""}) is False
     assert hasattr(module, "get_clean_headline")
     assert hasattr(module, "build_frontend_answer")
+    assert hasattr(module, "build_structured_run_answer")
+    assert hasattr(module, "build_followup_question_with_missing_info")
+    assert hasattr(module, "render_missing_information_form")
     assert hasattr(module, "generate_smart_answer")
     assert hasattr(module, "main")
 

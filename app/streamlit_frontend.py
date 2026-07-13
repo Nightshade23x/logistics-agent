@@ -497,7 +497,7 @@ def render_stage_tracker(payload: dict[str, Any]) -> None:
 
     for stage in stages:
         state = stage["state"]
-        icon = "?" if state == "done" else ("?" if state == "active" else "?")
+        icon = "Pending:" if state == "done" else ("Pending:" if state == "active" else "Pending:")
         label = esc_html(stage["label"])
         detail = esc_html(stage["detail"])
         cards.append(
@@ -542,7 +542,7 @@ def humanize(value: Any) -> str:
     sentence_like = (
         len(text) > 70
         or "." in text
-        or "?" in text
+        or "Pending:" in text
         or "!" in text
         or "; " in text
     )
@@ -705,12 +705,38 @@ def get_raw_report_text(raw_response: Any) -> str:
 
 
 def extract_requested_items(question: str) -> list[dict[str, str]]:
+    currency_words = {
+        "usd",
+        "eur",
+        "gbp",
+        "dollar",
+        "dollars",
+        "budget",
+        "cost",
+        "price",
+        "k",
+        "kwacha",
+    }
+
+    stop_words = {
+        "from",
+        "under",
+        "below",
+        "within",
+        "with",
+        "budget",
+        "avoid",
+        "prefer",
+        "preferred",
+    }
+
+    # Handles phrases like:
+    # "20 laptops and 10 tablets from India under 12000 USD"
+    # without incorrectly treating "12000 USD" as an item.
     pattern = re.compile(
-        r"\b(?P<quantity>\d+)\s+(?P<item>[A-Za-z][A-Za-z0-9 /-]*?)(?=,| and |\.\s| from | under | below | within | with | budget |$)",
+        r"\b(?P<quantity>\d+)\s+(?P<item>[A-Za-z][A-Za-z0-9 /-]*?)(?=\s+and\s+\d+\s+[A-Za-z]|\s+\d+\s+[A-Za-z]|,|\.| from | under | below | within | with | budget | avoid | prefer |$)",
         re.IGNORECASE,
     )
-
-    currency_words = {"usd", "eur", "gbp", "dollar", "dollars", "budget", "cost", "price", "k", "kwacha"}
 
     items: list[dict[str, str]] = []
 
@@ -718,10 +744,21 @@ def extract_requested_items(question: str) -> list[dict[str, str]]:
         quantity = match.group("quantity").strip()
         item = match.group("item").strip(" .,").lower()
 
-        if not item or item in currency_words:
+        # Clean list joins such as "laptops and" if the regex stops before the next quantity.
+        item = re.sub(r"\s+and\s*$", "", item, flags=re.IGNORECASE).strip()
+
+        words = item.split()
+
+        if not item:
             continue
 
-        if any(word in item.split() for word in currency_words):
+        if item in currency_words:
+            continue
+
+        if any(word in currency_words for word in words):
+            continue
+
+        if any(word in stop_words for word in words):
             continue
 
         if len(item) > 45:
@@ -729,35 +766,57 @@ def extract_requested_items(question: str) -> list[dict[str, str]]:
 
         items.append({"quantity": quantity, "item": item})
 
-    return items
+    # De-duplicate while preserving order.
+    deduped: list[dict[str, str]] = []
+    seen = set()
+
+    for item in items:
+        key = (item["quantity"], item["item"])
+
+        if key in seen:
+            continue
+
+        seen.add(key)
+        deduped.append(item)
+
+    return deduped
+
 
 
 def extract_budget(question: str) -> dict[str, Any]:
+    text = question or ""
+
     patterns = [
-        r"(?:under|below|within|budget|max(?:imum)?(?: budget)?(?: of)?|limit(?: of)?)\s*(?P<amount>\d+(?:\.\d+)?)\s*(?P<currency>usd|eur|gbp|\$)?",
-        r"(?P<amount>\d+(?:\.\d+)?)\s*(?P<currency>usd|eur|gbp|\$)\s*(?:budget|limit)?",
+        # under 12000 USD / below 12000 USD / within 12000 USD
+        r"\b(?:under|below|within|budget(?: is)?|budget(?: of)?|max(?:imum)?(?: budget)?(?: of)?|limit(?: of)?)\s*(?P<amount>\d+(?:\.\d+)?)\s*(?P<currency>usd|eur|gbp|\$)?\b",
+
+        # 12000 USD budget / 12000 USD
+        r"\b(?P<amount>\d+(?:\.\d+)?)\s*(?P<currency>usd|eur|gbp|\$)\b(?:\s*(?:budget|limit))?",
     ]
 
     for pattern in patterns:
-        match = re.search(pattern, question or "", flags=re.IGNORECASE)
+        match = re.search(pattern, text, flags=re.IGNORECASE)
 
-        if match:
-            currency = match.groupdict().get("currency") or "USD"
-            currency = "USD" if currency == "$" else currency.upper()
+        if not match:
+            continue
 
-            return {
-                "amount": float(match.group("amount")),
-                "currency": currency,
-            }
+        currency = match.groupdict().get("currency") or "USD"
+        currency = "USD" if currency == "$" else currency.upper()
+
+        return {
+            "amount": float(match.group("amount")),
+            "currency": currency,
+        }
 
     return {}
 
 
+
 def extract_country_list(question: str, keyword: str) -> list[str]:
     if keyword == "avoid":
-        pattern = r"\bavoid\s+(?P<countries>[A-Za-z ,]+?)(?=\.|;|$)"
+        pattern = r"\bavoid\s+(Pending:P<countries>[A-Za-z ,]+Pending:)(Pending:=\.|;|$)"
     else:
-        pattern = r"\b(?:from|prefer(?: suppliers from)?)\s+(?P<countries>[A-Z][A-Za-z ,]+?)(?=\.|,| under | below | within | budget | avoid |$)"
+        pattern = r"\b(Pending::from|prefer(Pending:: suppliers from)Pending:)\s+(Pending:P<countries>[A-Z][A-Za-z ,]+Pending:)(Pending:=\.|,| under | below | within | budget | avoid |$)"
 
     match = re.search(pattern, question or "", flags=re.IGNORECASE)
 
@@ -784,47 +843,114 @@ def parse_raw_shopping_report(report_text: str) -> dict[str, Any]:
     if not report_text:
         return parsed
 
-    status_match = re.search(r"(?:Shopping Agent status|Status):\s*([A-Za-z_]+)", report_text, flags=re.IGNORECASE)
-    selected_match = re.search(r"Selected suppliers:\s*(\d+)", report_text, flags=re.IGNORECASE)
-    cost_match = re.search(r"Estimated total procurement cost:\s*([0-9.]+)\s*USD", report_text, flags=re.IGNORECASE)
-    budget_match = re.search(r"Budget limit:\s*([0-9.]+)\s*USD", report_text, flags=re.IGNORECASE)
-    risk_match = re.search(r"Overall risk level:\s*([A-Za-z_]+)", report_text, flags=re.IGNORECASE)
-    destination_match = re.search(r"Destination country:\s*([A-Za-z_]+)", report_text, flags=re.IGNORECASE)
-    supplier_options_match = re.search(r"Shortlisted\s*(\d+)\s*supplier option", report_text, flags=re.IGNORECASE)
-    excluded_match = re.search(r"Excluded supplier countries:\s*\[([^\]]*)\]", report_text, flags=re.IGNORECASE)
+    status_patterns = [
+        r"Shopping Agent status:\s*(?P<value>[A-Za-z_]+)",
+        r"\bStatus:\s*(?P<value>[A-Za-z_]+)",
+    ]
 
-    if status_match:
-        parsed["status"] = status_match.group(1)
+    for pattern in status_patterns:
+        match = re.search(pattern, report_text, flags=re.IGNORECASE)
+
+        if match:
+            parsed["status"] = match.group("value").strip()
+            break
+
+    selected_match = re.search(
+        r"Selected suppliers:\s*(?P<value>\d+)",
+        report_text,
+        flags=re.IGNORECASE,
+    )
+
+    if not selected_match:
+        selected_match = re.search(
+            r"Selected\s+(?P<value>\d+)\s+supplier",
+            report_text,
+            flags=re.IGNORECASE,
+        )
+
+    supplier_options_match = re.search(
+        r"Shortlisted\s*(?P<value>\d+)\s*supplier option",
+        report_text,
+        flags=re.IGNORECASE,
+    )
+
+    if not supplier_options_match:
+        supplier_options_match = re.search(
+            r"Selected\s+(?P<value>\d+)\s+supplier option",
+            report_text,
+            flags=re.IGNORECASE,
+        )
+
+    cost_match = re.search(
+        r"Estimated (?:total )?procurement cost:\s*(?P<value>[0-9.]+)\s*USD",
+        report_text,
+        flags=re.IGNORECASE,
+    )
+
+    budget_match = re.search(
+        r"Budget limit:\s*(?P<value>[0-9.]+)\s*USD",
+        report_text,
+        flags=re.IGNORECASE,
+    )
+
+    risk_match = re.search(
+        r"Overall risk level:\s*(?P<value>[A-Za-z_]+)",
+        report_text,
+        flags=re.IGNORECASE,
+    )
+
+    destination_match = re.search(
+        r"Destination country:\s*(?P<value>[A-Za-z_]+)",
+        report_text,
+        flags=re.IGNORECASE,
+    )
+
+    excluded_match = re.search(
+        r"Excluded supplier countries:\s*\[(?P<value>[^\]]*)\]",
+        report_text,
+        flags=re.IGNORECASE,
+    )
 
     if selected_match:
-        parsed["selected_suppliers"] = int(selected_match.group(1))
+        parsed["selected_suppliers"] = int(selected_match.group("value"))
 
     if supplier_options_match:
-        parsed["shortlisted_supplier_options"] = int(supplier_options_match.group(1))
+        parsed["shortlisted_supplier_options"] = int(supplier_options_match.group("value"))
 
     if cost_match:
-        parsed["estimated_procurement_cost_usd"] = float(cost_match.group(1))
+        parsed["estimated_procurement_cost_usd"] = float(cost_match.group("value"))
 
     if budget_match:
-        parsed["budget_limit_usd"] = float(budget_match.group(1))
+        parsed["budget_limit_usd"] = float(budget_match.group("value"))
 
     if risk_match:
-        parsed["overall_risk_level"] = risk_match.group(1)
+        parsed["overall_risk_level"] = risk_match.group("value").strip()
 
     if destination_match:
-        destination = destination_match.group(1)
+        destination = destination_match.group("value").strip()
         parsed["destination_country"] = None if destination.lower() == "none" else destination
 
     if excluded_match:
         countries = []
-        raw = excluded_match.group(1)
+        raw = excluded_match.group("value")
 
         for quoted_single, quoted_double in re.findall(r"'([^']+)'|\"([^\"]+)\"", raw):
-            countries.append(quoted_single or quoted_double)
+            value = quoted_single or quoted_double
+
+            if value:
+                countries.append(value)
+
+        if not countries:
+            countries = [
+                value.strip()
+                for value in raw.split(",")
+                if value.strip()
+            ]
 
         parsed["excluded_supplier_countries"] = countries
 
     return parsed
+
 
 
 def get_sample_shopping_payload() -> dict[str, Any]:
@@ -932,6 +1058,9 @@ def extract_answer_text(payload: dict[str, Any]) -> str:
             "Risk Level None",
             "SHOPPING AGENT REPORT",
             "PURCHASE ORDER DRAFTS",
+            "partner_review_service",
+            "review_required",
+            "needs_more_information",
         ]
 
         if any(marker in text for marker in low_quality):
@@ -986,7 +1115,88 @@ def collect_missing_information(payload: dict[str, Any]) -> list[Any]:
     return cleaned
 
 
+def build_structured_run_answer(payload: dict[str, Any]) -> str:
+    logistics = payload.get("logistics_metrics", {}) or {}
+    booking = payload.get("booking_readiness", {}) if isinstance(payload.get("booking_readiness"), dict) else {}
+    partner_status = payload.get("partner_review_status")
+    agents = payload.get("agents_called", []) or []
+
+    parts = []
+
+    decision = payload.get("decision")
+    if decision:
+        parts.append(f"Decision: {humanize(decision)}.")
+
+    if agents:
+        parts.append("Agents called: " + ", ".join(humanize(agent) for agent in agents) + ".")
+
+    if logistics:
+        cbm = logistics.get("total_cbm") or logistics.get("cbm")
+        weight = logistics.get("total_weight_kg") or logistics.get("weight_kg")
+        container = logistics.get("recommended_container")
+        risk = logistics.get("risk_level")
+
+        logistics_bits = []
+
+        if cbm:
+            logistics_bits.append(f"{cbm} CBM")
+
+        if weight:
+            logistics_bits.append(f"{weight} kg")
+
+        if container:
+            logistics_bits.append(f"recommended container: {humanize(container)}")
+
+        if risk:
+            logistics_bits.append(f"risk level: {humanize(risk)}")
+
+        if logistics_bits:
+            parts.append("Logistics plan: " + ", ".join(logistics_bits) + ".")
+
+    if partner_status:
+        parts.append(f"Partner review: {humanize(partner_status)}.")
+
+    if booking:
+        ready_first_pass = booking.get("ready_for_first_pass")
+        ready_booking = booking.get("ready_for_booking")
+        score = booking.get("score")
+        next_gate = booking.get("next_gate")
+
+        booking_bits = []
+
+        if score is not None:
+            booking_bits.append(f"booking score {score}")
+
+        if ready_first_pass is not None:
+            booking_bits.append(f"first-pass ready: {humanize(ready_first_pass)}")
+
+        if ready_booking is not None:
+            booking_bits.append(f"ready for booking: {humanize(ready_booking)}")
+
+        if next_gate:
+            booking_bits.append(f"next gate: {humanize(next_gate)}")
+
+        if booking_bits:
+            parts.append("Booking readiness: " + ", ".join(booking_bits) + ".")
+
+    if not parts:
+        return ""
+
+    if booking and booking.get("ready_for_booking") is False:
+        parts.append(
+            "This is usable for review, but it still needs the missing trade, cost, document, and risk inputs before final booking."
+        )
+
+    return " ".join(parts)
+
+
 def build_frontend_answer(payload: dict[str, Any]) -> str:
+    if payload.get("logistics_metrics") or payload.get("booking_readiness"):
+        structured_answer = build_structured_run_answer(payload)
+
+        if structured_answer:
+            return structured_answer
+
     explicit_answer = extract_answer_text(payload)
 
     if explicit_answer:
@@ -1137,13 +1347,13 @@ def render_agent_answer(payload: dict[str, Any]) -> None:
         label = f"Answer mode: {humanize(mode)}"
 
         if provider:
-            label += f" ? Provider: {humanize(provider)}"
+            label += f" - Provider: {humanize(provider)}"
 
         if model:
-            label += f" ? Model: {model}"
+            label += f" - Model: {model}"
 
         if status:
-            label += f" ? Status: {humanize(status)}"
+            label += f" - Status: {humanize(status)}"
 
         st.caption(label)
 
@@ -1343,7 +1553,7 @@ def render_ui_sections(payload: dict[str, Any]) -> None:
         title = section.get("title") or "Review Section"
         status = humanize(section.get("status"))
 
-        with st.expander(f"{title} ? {status}", expanded=False):
+        with st.expander(f"{title} | {status}", expanded=False):
             st.markdown(f"**Status:** {badge(section.get('status'))}")
             st.markdown(humanize(section.get("summary")))
 
@@ -1496,12 +1706,124 @@ def render_booking_and_actions(payload: dict[str, Any]) -> None:
         render_action_cards(grouped)
 
 
+def build_followup_question_with_missing_info(payload: dict[str, Any], answers: dict[str, Any]) -> str:
+    base_question = st.session_state.get("active_question") or DEFAULT_TEXT_REQUEST
+
+    if st.session_state.get("active_source") in ["Full structured demo", "Initial full structured demo"]:
+        base_question = (
+            "I need 50 TVs, 5 scooters, and 100 ceramic tiles. "
+            "Prefer suppliers from India. Avoid China. Budget is 13000 USD."
+        )
+
+    additions = []
+
+    for key, value in answers.items():
+        if is_empty(value):
+            continue
+
+        additions.append(f"{humanize(key)}: {value}")
+
+    if not additions:
+        return base_question
+
+    return base_question.strip() + "\n\nAdditional missing information provided:\n- " + "\n- ".join(additions)
+
+
+def render_missing_information_form(payload: dict[str, Any]) -> None:
+    decision_text = str(payload.get("decision") or "").lower()
+    booking = payload.get("booking_readiness", {}) if isinstance(payload.get("booking_readiness"), dict) else {}
+
+    needs_info = (
+        "need" in decision_text
+        or "review" in decision_text
+        or booking.get("ready_for_booking") is False
+        or collect_missing_information(payload)
+    )
+
+    if not needs_info:
+        return
+
+    st.markdown('<div class="section-title">Provide Missing Information</div>', unsafe_allow_html=True)
+    st.caption(
+        "Fill what you know, then rerun. The app will append these details to the current request and send it back through the backend agents."
+    )
+
+    with st.form("missing_information_form", clear_on_submit=False):
+        col1, col2, col3 = st.columns(3)
+
+        with col1:
+            origin_country = st.text_input("Origin country", value="India")
+            destination_country = st.text_input("Destination country", value="USA")
+            incoterm = st.selectbox(
+                "Incoterm / trade term",
+                ["", "EXW", "FOB", "CIF", "DAP", "DDP", "Other"],
+            )
+
+        with col2:
+            unit_dimensions = st.text_area(
+                "Item dimensions",
+                placeholder="Example: TV 120x70x15 cm, scooter 180x70x110 cm, tiles carton 40x40x30 cm",
+                height=95,
+            )
+            unit_weights = st.text_area(
+                "Item weights",
+                placeholder="Example: TV 18 kg each, scooter 110 kg each, tile carton 25 kg each",
+                height=95,
+            )
+
+        with col3:
+            freight_quote_usd = st.text_input("Freight quote USD", placeholder="Example: 1800")
+            insurance_premium_usd = st.text_input("Insurance premium USD", placeholder="Example: 150")
+            duty_rate_percent = st.text_input("Duty rate percent", placeholder="Example: 5")
+            import_tax_rate_percent = st.text_input("Import tax rate percent", placeholder="Example: 16")
+
+        extra_notes = st.text_area(
+            "Other notes",
+            placeholder="Example: fragile cargo, must arrive before 15 August, supplier quote attached later",
+            height=80,
+        )
+
+        submitted = st.form_submit_button("Rerun With Added Information", type="primary")
+
+    if submitted:
+        answers = {
+            "origin_country": origin_country,
+            "destination_country": destination_country,
+            "incoterm": incoterm,
+            "unit_dimensions": unit_dimensions,
+            "unit_weights": unit_weights,
+            "freight_quote_usd": freight_quote_usd,
+            "insurance_premium_usd": insurance_premium_usd,
+            "duty_rate_percent": duty_rate_percent,
+            "import_tax_rate_percent": import_tax_rate_percent,
+            "extra_notes": extra_notes,
+        }
+
+        followup_question = build_followup_question_with_missing_info(payload, answers)
+
+        apply_partner_runtime_settings(
+            st.session_state.get("use_live_partner", False),
+            st.session_state.get("orchestrator_url", "http://127.0.0.1:8010"),
+        )
+
+        run_frontend_flow(
+            source="Custom question with added information",
+            question=followup_question,
+            loading_message="Rerunning backend agents with the added missing information...",
+            loader=lambda: get_text_payload(followup_question),
+        )
+
+        st.rerun()
+
+
 def render_payload(payload: dict[str, Any]) -> None:
     render_executive_summary(payload)
 
     render_stage_tracker(payload)
 
     render_agent_answer(payload)
+
+    render_missing_information_form(payload)
 
     st.divider()
 
@@ -1600,11 +1922,11 @@ def render_agent_connection_summary(use_live_partner: bool, orchestrator_url: st
         },
         {
             "title": "Gemini smart answers",
-            "detail": f"{'Enabled' if gemini_key_loaded else 'Fallback only'} ? Model: {gemini_model}",
+            "detail": f"{'Enabled' if gemini_key_loaded else 'Fallback only'} - Model: {gemini_model}",
         },
         {
             "title": "Partner mode",
-            "detail": f"{partner_mode} ? {partner_detail}",
+            "detail": f"{partner_mode} - {partner_detail}",
         },
     ]
 
@@ -1693,7 +2015,7 @@ def render_last_run_status() -> None:
 def main() -> None:
     st.set_page_config(
         page_title="Logistics Agent Frontend",
-        page_icon="??",
+        page_icon="Pending:Pending:",
         layout="wide",
     )
 
@@ -1735,7 +2057,7 @@ def main() -> None:
         with status_col:
             gemini_status = "Enabled" if get_gemini_api_key() else "Fallback only"
             st.markdown("**Gemini smart answers**")
-            st.caption(f"{gemini_status} ? {get_gemini_model()}")
+            st.caption(f"{gemini_status} - {get_gemini_model()}")
 
         apply_partner_runtime_settings(
             st.session_state.use_live_partner,
@@ -1857,8 +2179,8 @@ def main() -> None:
     render_app_header(payload)
 
     st.caption(
-        f"Active run: {st.session_state.active_source} ? "
-        f"Partner mode: {'Live orchestrator' if st.session_state.use_live_partner else 'Standalone fallback'} ? "
+        f"Active run: {st.session_state.active_source} - "
+        f"Partner mode: {'Live orchestrator' if st.session_state.use_live_partner else 'Standalone fallback'} - "
         f"Gemini model: {get_gemini_model()}"
     )
 
