@@ -16,6 +16,7 @@ from app.backend_service import process_json_file_request
 from app.compact_frontend_payload import build_compact_frontend_payload
 from app.frontend_payload import build_frontend_payload
 from app.user_agent import run_user_agent_from_files, run_user_agent_from_text
+from app.smart_answer import generate_smart_answer
 
 
 SAMPLE_SHOPPING_REQUEST = ROOT_DIR / "data" / "suppliers" / "sample_shopping_request.json"
@@ -389,6 +390,14 @@ def get_text_payload(text_request: str) -> dict[str, Any]:
     if compact_payload.get("logistics_metrics") is None:
         compact_payload["logistics_metrics"] = {}
 
+    fallback_answer = build_frontend_answer(compact_payload)
+
+    compact_payload["_smart_answer"] = generate_smart_answer(
+        question=text_request,
+        payload=compact_payload,
+        fallback_answer=fallback_answer,
+    )
+
     return compact_payload
 
 
@@ -637,7 +646,8 @@ def render_executive_summary(payload: dict[str, Any]) -> None:
 def render_agent_answer(payload: dict[str, Any]) -> None:
     st.subheader("Backend Answer")
 
-    answer_text = build_frontend_answer(payload)
+    smart_answer = payload.get("_smart_answer", {}) or {}
+    answer_text = smart_answer.get("answer") or build_frontend_answer(payload)
     decision = str(payload.get("decision") or "").lower()
 
     if "critical" in decision:
@@ -646,6 +656,29 @@ def render_agent_answer(payload: dict[str, Any]) -> None:
         st.warning(answer_text)
     else:
         st.success(answer_text)
+
+    if smart_answer:
+        mode = smart_answer.get("mode")
+        provider = smart_answer.get("provider")
+        model = smart_answer.get("model")
+        status = smart_answer.get("status")
+
+        label = f"Answer mode: {humanize(mode)}"
+
+        if provider:
+            label += f" ? Provider: {humanize(provider)}"
+
+        if model:
+            label += f" ? Model: {model}"
+
+        if status:
+            label += f" ? Status: {humanize(status)}"
+
+        st.caption(label)
+
+        if smart_answer.get("error"):
+            with st.expander("Smart answer error details", expanded=False):
+                st.code(str(smart_answer.get("error")))
 
     agents_called = payload.get("agents_called", []) or []
 

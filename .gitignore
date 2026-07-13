@@ -41,3 +41,7 @@ samar_backend_integration_pack/
 partner_handoff_avishi/
 
 orchestrator_handoff_pack/
+# Local secrets - never commit real API keys
+config/local_secrets.env
+config/local_secrets.ps1
+.env.local

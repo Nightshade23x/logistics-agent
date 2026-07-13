@@ -81,6 +81,7 @@ Excluded supplier countries: ['China']
     assert module.has_displayable_metrics({"a": None, "b": ""}) is False
     assert hasattr(module, "get_clean_headline")
     assert hasattr(module, "build_frontend_answer")
+    assert hasattr(module, "generate_smart_answer")
     assert hasattr(module, "main")
 
     print("PASS: Streamlit frontend smoke test passed")

@@ -50,6 +50,10 @@ CHECKS = [
         [sys.executable, "scripts/test_open_streamlit_frontend.py"],
     ),
     (
+        "Smart answer synthesis test",
+        [sys.executable, "scripts/test_smart_answer.py"],
+    ),
+    (
         "Streamlit frontend smoke test",
         [sys.executable, "scripts/test_streamlit_frontend.py"],
     ),
