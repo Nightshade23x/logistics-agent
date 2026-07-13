@@ -77,6 +77,17 @@ Excluded supplier countries: ['China']
     assert hasattr(module, "render_procurement_summary")
     assert hasattr(module, "has_displayable_metrics")
     assert hasattr(module, "render_empty_state")
+    assert hasattr(module, "inject_app_styles")
+    assert hasattr(module, "render_app_header")
+    assert hasattr(module, "render_kpi_grid")
+    assert hasattr(module, "render_stage_tracker")
+    assert module.chip_class("ready_for_review") == "good"
+    assert module.chip_class("needs_more_information") == "warn"
+    assert module.chip_class("critical_review_required") == "bad"
+    assert module.classify_action_item("Confirm the Incoterm before booking") == "Trade Terms"
+    assert module.classify_action_item("Freight Quote USD") == "Cost Inputs"
+    assert module.classify_action_item("Document: Commercial Invoice") == "Documents"
+    assert module.classify_action_item("Logistics risk level is high") == "Cargo & Risk"
     assert module.has_displayable_metrics({"a": 1}) is True
     assert module.has_displayable_metrics({"a": None, "b": ""}) is False
     assert hasattr(module, "get_clean_headline")

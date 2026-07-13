@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import html
 import json
 import re
 import sys
@@ -27,6 +28,457 @@ DEFAULT_TEXT_REQUEST = (
     "I need 50 TVs, 5 scooters, and 100 ceramic tiles. "
     "Prefer suppliers from India. Avoid China. Budget 13000 USD."
 )
+
+
+def esc_html(value: Any) -> str:
+    return html.escape(str(value or ""), quote=True)
+
+
+def inject_app_styles() -> None:
+    st.markdown(
+        """
+        <style>
+            #MainMenu {visibility: hidden;}
+            footer {visibility: hidden;}
+            header {visibility: hidden;}
+
+            .block-container {
+                padding-top: 1.6rem;
+                padding-bottom: 3rem;
+                max-width: 1320px;
+            }
+
+            .app-hero {
+                border: 1px solid rgba(148, 163, 184, 0.22);
+                border-radius: 24px;
+                padding: 28px 30px;
+                margin-bottom: 22px;
+                background:
+                    radial-gradient(circle at top left, rgba(56, 189, 248, 0.18), transparent 32%),
+                    linear-gradient(135deg, rgba(15, 23, 42, 0.98), rgba(17, 24, 39, 0.92));
+                box-shadow: 0 16px 44px rgba(0, 0, 0, 0.24);
+            }
+
+            .app-eyebrow {
+                color: #38bdf8;
+                font-size: 0.82rem;
+                font-weight: 800;
+                text-transform: uppercase;
+                letter-spacing: 0.13em;
+                margin-bottom: 8px;
+            }
+
+            .app-title {
+                color: #f8fafc;
+                font-size: 2.45rem;
+                font-weight: 900;
+                line-height: 1.05;
+                margin: 0 0 10px 0;
+            }
+
+            .app-subtitle {
+                color: #cbd5e1;
+                font-size: 1.02rem;
+                line-height: 1.65;
+                max-width: 940px;
+                margin: 0;
+            }
+
+            .status-chip-row {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 10px;
+                margin-top: 18px;
+            }
+
+            .status-chip {
+                border: 1px solid rgba(148, 163, 184, 0.28);
+                border-radius: 999px;
+                padding: 7px 12px;
+                font-size: 0.82rem;
+                font-weight: 800;
+                color: #e5e7eb;
+                background: rgba(15, 23, 42, 0.72);
+            }
+
+            .status-chip.good {
+                color: #86efac;
+                border-color: rgba(34, 197, 94, 0.34);
+                background: rgba(22, 101, 52, 0.22);
+            }
+
+            .status-chip.warn {
+                color: #fde68a;
+                border-color: rgba(245, 158, 11, 0.38);
+                background: rgba(146, 64, 14, 0.22);
+            }
+
+            .status-chip.bad {
+                color: #fca5a5;
+                border-color: rgba(239, 68, 68, 0.38);
+                background: rgba(127, 29, 29, 0.24);
+            }
+
+            .kpi-grid {
+                display: grid;
+                grid-template-columns: repeat(4, minmax(0, 1fr));
+                gap: 14px;
+                margin: 14px 0 20px 0;
+            }
+
+            .kpi-card {
+                border: 1px solid rgba(148, 163, 184, 0.20);
+                border-radius: 18px;
+                padding: 17px 18px;
+                min-height: 104px;
+                background: rgba(15, 23, 42, 0.72);
+                box-shadow: 0 8px 28px rgba(0, 0, 0, 0.18);
+            }
+
+            .kpi-label {
+                color: #94a3b8;
+                font-size: 0.76rem;
+                font-weight: 800;
+                text-transform: uppercase;
+                letter-spacing: 0.08em;
+                margin-bottom: 10px;
+            }
+
+            .kpi-value {
+                color: #f8fafc;
+                font-size: 1.22rem;
+                font-weight: 900;
+                line-height: 1.25;
+                overflow-wrap: anywhere;
+            }
+
+            .panel-card {
+                border: 1px solid rgba(148, 163, 184, 0.20);
+                border-radius: 20px;
+                padding: 22px 24px;
+                margin: 14px 0 22px 0;
+                background: rgba(15, 23, 42, 0.70);
+                box-shadow: 0 10px 32px rgba(0, 0, 0, 0.18);
+            }
+
+            .answer-card {
+                border-radius: 20px;
+                padding: 22px 24px;
+                margin: 14px 0 16px 0;
+                font-size: 1.02rem;
+                line-height: 1.68;
+                border: 1px solid rgba(148, 163, 184, 0.22);
+                box-shadow: 0 10px 30px rgba(0, 0, 0, 0.18);
+            }
+
+            .answer-card.warn {
+                color: #fef3c7;
+                background: linear-gradient(135deg, rgba(113, 63, 18, 0.58), rgba(63, 63, 16, 0.48));
+                border-color: rgba(245, 158, 11, 0.32);
+            }
+
+            .answer-card.good {
+                color: #dcfce7;
+                background: linear-gradient(135deg, rgba(20, 83, 45, 0.58), rgba(6, 78, 59, 0.48));
+                border-color: rgba(34, 197, 94, 0.32);
+            }
+
+            .answer-card.bad {
+                color: #fee2e2;
+                background: linear-gradient(135deg, rgba(127, 29, 29, 0.60), rgba(88, 28, 28, 0.48));
+                border-color: rgba(239, 68, 68, 0.36);
+            }
+
+            .empty-card {
+                border: 1px dashed rgba(148, 163, 184, 0.34);
+                border-radius: 18px;
+                padding: 20px 22px;
+                margin: 12px 0 18px 0;
+                background: rgba(15, 23, 42, 0.52);
+            }
+
+            .empty-title {
+                color: #bfdbfe;
+                font-size: 1rem;
+                font-weight: 900;
+                margin-bottom: 9px;
+            }
+
+            .empty-message {
+                color: #cbd5e1;
+                line-height: 1.65;
+                margin-bottom: 0;
+            }
+
+            .stage-grid {
+                display: grid;
+                grid-template-columns: repeat(4, minmax(0, 1fr));
+                gap: 12px;
+                margin: 14px 0 24px 0;
+            }
+
+            .stage-card {
+                border: 1px solid rgba(148, 163, 184, 0.20);
+                border-radius: 17px;
+                padding: 16px 16px;
+                background: rgba(15, 23, 42, 0.70);
+            }
+
+            .stage-card.done {
+                border-color: rgba(34, 197, 94, 0.42);
+                background: rgba(20, 83, 45, 0.24);
+            }
+
+            .stage-card.active {
+                border-color: rgba(245, 158, 11, 0.46);
+                background: rgba(113, 63, 18, 0.24);
+            }
+
+            .stage-card.pending {
+                opacity: 0.72;
+            }
+
+            .stage-label {
+                color: #f8fafc;
+                font-size: 0.96rem;
+                font-weight: 900;
+                margin-bottom: 6px;
+            }
+
+            .stage-detail {
+                color: #94a3b8;
+                font-size: 0.82rem;
+                line-height: 1.45;
+            }
+
+            .action-grid {
+                display: grid;
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+                gap: 14px;
+                margin: 14px 0 20px 0;
+            }
+
+            .action-card {
+                border: 1px solid rgba(148, 163, 184, 0.22);
+                border-radius: 18px;
+                padding: 18px 20px;
+                background: rgba(15, 23, 42, 0.70);
+                box-shadow: 0 8px 24px rgba(0, 0, 0, 0.16);
+            }
+
+            .action-card-title {
+                color: #f8fafc;
+                font-size: 1rem;
+                font-weight: 900;
+                margin-bottom: 10px;
+            }
+
+            .action-card ul {
+                margin: 0;
+                padding-left: 18px;
+            }
+
+            .action-card li {
+                color: #cbd5e1;
+                margin-bottom: 8px;
+                line-height: 1.45;
+            }
+
+            .action-card li:last-child {
+                margin-bottom: 0;
+            }
+
+            .section-title {
+                margin-top: 8px;
+                margin-bottom: 8px;
+                color: #f8fafc;
+                font-size: 1.35rem;
+                font-weight: 900;
+            }
+
+            .section-caption {
+                color: #94a3b8;
+                font-size: 0.92rem;
+                margin-bottom: 14px;
+            }
+
+            div[data-testid="stTabs"] button {
+                font-weight: 800;
+                font-size: 0.96rem;
+            }
+
+            div[data-testid="stDataFrame"] {
+                border-radius: 16px;
+                overflow: hidden;
+            }
+
+            @media (max-width: 980px) {
+                .kpi-grid,
+                .stage-grid,
+                .action-grid {
+                    grid-template-columns: repeat(2, minmax(0, 1fr));
+                }
+
+                .app-title {
+                    font-size: 2rem;
+                }
+            }
+
+            @media (max-width: 620px) {
+                .kpi-grid,
+                .stage-grid,
+                .action-grid {
+                    grid-template-columns: 1fr;
+                }
+            }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def chip_class(value: Any) -> str:
+    lowered = str(value or "").lower()
+
+    if "critical" in lowered or "blocked" in lowered or "failed" in lowered or "error" in lowered:
+        return "bad"
+
+    if "ready" in lowered or "clear" in lowered or "available" in lowered or "generated" in lowered:
+        return "good"
+
+    if "review" in lowered or "missing" in lowered or "need" in lowered or "not_configured" in lowered or "not_run" in lowered:
+        return "warn"
+
+    return ""
+
+
+def render_chip(label: str, value: Any) -> str:
+    if is_empty(value):
+        value = "Not available"
+
+    return (
+        f'<span class="status-chip {chip_class(value)}">'
+        f'{esc_html(label)}: {esc_html(display_value(value, fallback="Not available"))}'
+        f'</span>'
+    )
+
+
+def render_app_header(payload: dict[str, Any]) -> None:
+    chips = "".join(
+        [
+            render_chip("Decision", payload.get("decision")),
+            render_chip("Intent", payload.get("detected_intent")),
+            render_chip("Partner", payload.get("partner_review_status")),
+        ]
+    )
+
+    st.markdown(
+        f"""
+        <div class="app-hero">
+            <div class="app-eyebrow">Logistics Agent Demo</div>
+            <h1 class="app-title">Procurement & Shipment Control Tower</h1>
+            <p class="app-subtitle">
+                Ask a buying or logistics question, review the agent output, and inspect procurement,
+                logistics, booking readiness, partner-review status, and raw backend payloads in one place.
+            </p>
+            <div class="status-chip-row">{chips}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_kpi_grid(metrics: dict[str, Any], columns: int = 4) -> None:
+    if not isinstance(metrics, dict) or not metrics:
+        render_empty_state("No metrics available", "This section did not return structured metrics.")
+        return
+
+    cards = []
+
+    for key, value in metrics.items():
+        if is_empty(value):
+            continue
+
+        label = esc_html(humanize(key))
+        displayed = esc_html(display_value(value, fallback="Not available"))
+        cards.append(
+            f'<div class="kpi-card"><div class="kpi-label">{label}</div><div class="kpi-value">{displayed}</div></div>'
+        )
+
+    if not cards:
+        render_empty_state("No metrics available", "This section did not return structured metrics.")
+        return
+
+    st.markdown(
+        f'<div class="kpi-grid">{"".join(cards)}</div>',
+        unsafe_allow_html=True,
+    )
+
+
+def render_stage_tracker(payload: dict[str, Any]) -> None:
+    parsed_report = payload.get("_parsed_report", {}) or {}
+    logistics_metrics = payload.get("logistics_metrics", {}) or {}
+    partner_status = str(payload.get("partner_review_status") or "").lower()
+    booking = payload.get("booking_readiness", {}) if isinstance(payload.get("booking_readiness"), dict) else {}
+
+    selected_suppliers = parsed_report.get("selected_suppliers")
+    shortlisted = parsed_report.get("shortlisted_supplier_options")
+
+    procurement_done = bool(
+        payload.get("detected_intent") == "shopping"
+        or payload.get("agents_called")
+        or parsed_report
+    )
+
+    procurement_usable = bool(
+        (selected_suppliers and selected_suppliers > 0)
+        or (shortlisted and shortlisted > 0)
+        or payload.get("logistics_metrics")
+    )
+
+    logistics_done = has_displayable_metrics(logistics_metrics)
+    partner_done = partner_status not in ["", "not_run", "partner_review_not_configured", "not available"]
+    booking_done = bool(booking.get("ready_for_booking"))
+
+    stages = [
+        {
+            "label": "Procurement",
+            "detail": "Supplier and item selection",
+            "state": "done" if procurement_usable else ("active" if procurement_done else "pending"),
+        },
+        {
+            "label": "Logistics",
+            "detail": "CBM, weight, container, routing",
+            "state": "done" if logistics_done else ("pending" if not procurement_usable else "active"),
+        },
+        {
+            "label": "Partner Review",
+            "detail": "Risk, compliance, trader, finance",
+            "state": "done" if partner_done else ("pending" if not logistics_done else "active"),
+        },
+        {
+            "label": "Booking",
+            "detail": "Final readiness and actions",
+            "state": "done" if booking_done else ("pending" if not partner_done else "active"),
+        },
+    ]
+
+    cards = []
+
+    for stage in stages:
+        state = stage["state"]
+        icon = "?" if state == "done" else ("?" if state == "active" else "?")
+        label = esc_html(stage["label"])
+        detail = esc_html(stage["detail"])
+        cards.append(
+            f'<div class="stage-card {state}"><div class="stage-label">{icon} {label}</div><div class="stage-detail">{detail}</div></div>'
+        )
+
+    st.markdown('<div class="section-title">Workflow Status</div>', unsafe_allow_html=True)
+    st.markdown(
+        f'<div class="stage-grid">{"".join(cards)}</div>',
+        unsafe_allow_html=True,
+    )
 
 
 def is_empty(value: Any) -> bool:
@@ -575,11 +1027,21 @@ def has_displayable_metrics(metrics: Any) -> bool:
 
 
 def render_empty_state(title: str, message: str, bullets: list[str] | None = None) -> None:
-    st.info(f"**{title}**\n\n{message}")
+    bullet_html = ""
 
     if bullets:
-        for bullet in bullets:
-            st.markdown(f"- {bullet}")
+        bullet_html = "<ul>" + "".join(f"<li>{esc_html(bullet)}</li>" for bullet in bullets) + "</ul>"
+
+    st.markdown(
+        f"""
+        <div class="empty-card">
+            <div class="empty-title">{esc_html(title)}</div>
+            <p class="empty-message">{esc_html(message)}</p>
+            {bullet_html}
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 
 def is_custom_question_payload(payload: dict[str, Any]) -> bool:
@@ -587,21 +1049,7 @@ def is_custom_question_payload(payload: dict[str, Any]) -> bool:
 
 
 def render_metric_cards(metrics: dict[str, Any], columns: int = 4) -> None:
-    if not isinstance(metrics, dict) or not metrics:
-        st.info("No metrics available.")
-        return
-
-    filtered_items = [(key, value) for key, value in metrics.items() if not is_empty(value)]
-
-    if not filtered_items:
-        st.info("No metrics available.")
-        return
-
-    cols = st.columns(max(1, columns))
-
-    for index, (key, value) in enumerate(filtered_items):
-        with cols[index % max(1, columns)]:
-            st.metric(humanize(key), display_value(value, fallback="Not available"))
+    render_kpi_grid(metrics, columns=columns)
 
 
 def render_list(title: str, items: list[Any]) -> None:
@@ -618,7 +1066,7 @@ def render_executive_summary(payload: dict[str, Any]) -> None:
     executive = payload.get("executive_summary", {})
     parsed_report = payload.get("_parsed_report", {}) or {}
 
-    st.subheader("Executive Summary")
+    st.markdown('<div class="section-title">Executive Summary</div>', unsafe_allow_html=True)
     st.markdown(f"### {get_clean_headline(payload)}")
 
     metrics = {
@@ -628,19 +1076,7 @@ def render_executive_summary(payload: dict[str, Any]) -> None:
         "booking_score": executive.get("booking_score"),
     }
 
-    render_metric_cards(metrics, columns=4)
-
-    st.markdown(
-        " ".join(
-            badge(item)
-            for item in [
-                metrics.get("decision"),
-                executive.get("status"),
-                payload.get("partner_review_status"),
-            ]
-            if item
-        )
-    )
+    render_kpi_grid(metrics, columns=4)
 
 
 def render_agent_answer(payload: dict[str, Any]) -> None:
@@ -651,11 +1087,16 @@ def render_agent_answer(payload: dict[str, Any]) -> None:
     decision = str(payload.get("decision") or "").lower()
 
     if "critical" in decision:
-        st.error(answer_text)
+        answer_class = "bad"
     elif "need" in decision or "missing" in decision or "review" in decision:
-        st.warning(answer_text)
+        answer_class = "warn"
     else:
-        st.success(answer_text)
+        answer_class = "good"
+
+    st.markdown(
+        f'<div class="answer-card {answer_class}">{esc_html(answer_text)}</div>',
+        unsafe_allow_html=True,
+    )
 
     if smart_answer:
         mode = smart_answer.get("mode")
@@ -885,11 +1326,88 @@ def render_ui_sections(payload: dict[str, Any]) -> None:
             render_list("Actions", section.get("actions", []))
 
 
+def classify_action_item(item: Any) -> str:
+    text = str(item or "").lower()
+
+    if any(word in text for word in ["incoterm", "trade term", "exw", "fob", "cif", "dap", "ddp"]):
+        return "Trade Terms"
+
+    if any(word in text for word in ["invoice", "packing list", "bill of lading", "airway", "certificate", "document"]):
+        return "Documents"
+
+    if any(word in text for word in ["freight", "insurance", "duty", "tax", "landed cost", "cost"]):
+        return "Cost Inputs"
+
+    if any(word in text for word in ["risk", "fragile", "heavy", "stack", "cargo", "dimensions", "weight"]):
+        return "Cargo & Risk"
+
+    if any(word in text for word in ["partner", "compliance", "trader", "finance"]):
+        return "Partner Review"
+
+    return "Commercial Follow-up"
+
+
+def dedupe_items(items: list[Any], limit: int = 8) -> list[str]:
+    cleaned = []
+    seen = set()
+
+    for item in items:
+        value = humanize(item).strip()
+        key = value.lower()
+
+        if not value or key in seen:
+            continue
+
+        seen.add(key)
+        cleaned.append(value)
+
+        if len(cleaned) >= limit:
+            break
+
+    return cleaned
+
+
+def render_action_cards(groups: dict[str, list[Any]]) -> None:
+    cards = []
+
+    preferred_order = [
+        "Trade Terms",
+        "Cost Inputs",
+        "Documents",
+        "Cargo & Risk",
+        "Partner Review",
+        "Commercial Follow-up",
+    ]
+
+    for title in preferred_order:
+        items = dedupe_items(groups.get(title, []), limit=7)
+
+        if not items:
+            continue
+
+        bullets = "".join(f"<li>{esc_html(item)}</li>" for item in items)
+        cards.append(
+            f'<div class="action-card"><div class="action-card-title">{esc_html(title)}</div><ul>{bullets}</ul></div>'
+        )
+
+    if not cards:
+        render_empty_state(
+            "No action items available",
+            "The backend did not return structured next steps for this run.",
+        )
+        return
+
+    st.markdown(
+        f'<div class="action-grid">{"".join(cards)}</div>',
+        unsafe_allow_html=True,
+    )
+
+
 def render_booking_and_actions(payload: dict[str, Any]) -> None:
     booking = payload.get("booking_readiness", {})
     action_plan = payload.get("action_plan", {})
 
-    st.subheader("Booking Readiness & Action Plan")
+    st.markdown('<div class="section-title">Booking Readiness & Action Plan</div>', unsafe_allow_html=True)
 
     if not isinstance(booking, dict):
         booking = {}
@@ -906,15 +1424,15 @@ def render_booking_and_actions(payload: dict[str, Any]) -> None:
     }
 
     has_booking = has_displayable_metrics(metrics)
-    has_actions = bool(
-        booking.get("missing_information")
-        or booking.get("review_items")
-        or action_plan.get("before_booking")
-        or action_plan.get("partner_steps")
-        or action_plan.get("user_questions")
-    )
 
-    if not has_booking and not has_actions:
+    all_action_items = []
+    all_action_items.extend(booking.get("missing_information", []) or [])
+    all_action_items.extend(booking.get("review_items", []) or [])
+    all_action_items.extend(action_plan.get("before_booking", []) or [])
+    all_action_items.extend(action_plan.get("partner_steps", []) or [])
+    all_action_items.extend(action_plan.get("user_questions", []) or [])
+
+    if not has_booking and not all_action_items:
         if is_custom_question_payload(payload):
             render_empty_state(
                 "Booking readiness is not available for this run",
@@ -934,24 +1452,24 @@ def render_booking_and_actions(payload: dict[str, Any]) -> None:
             )
         return
 
-    render_metric_cards(metrics, columns=5)
+    if has_booking:
+        render_kpi_grid(metrics, columns=5)
 
-    col1, col2 = st.columns(2)
+    grouped: dict[str, list[Any]] = {}
 
-    with col1:
-        render_list("Missing Information", booking.get("missing_information", []))
-        render_list("Review Items", booking.get("review_items", []))
+    for item in all_action_items:
+        group = classify_action_item(item)
+        grouped.setdefault(group, []).append(item)
 
-    with col2:
-        render_list("Before Booking", action_plan.get("before_booking", []))
-        render_list("Partner Steps", action_plan.get("partner_steps", []))
-        render_list("User Questions", action_plan.get("user_questions", []))
+    if grouped:
+        st.markdown('<div class="section-caption">Grouped next steps before booking.</div>', unsafe_allow_html=True)
+        render_action_cards(grouped)
 
 
 def render_payload(payload: dict[str, Any]) -> None:
     render_executive_summary(payload)
 
-    st.divider()
+    render_stage_tracker(payload)
 
     render_agent_answer(payload)
 
@@ -1037,8 +1555,7 @@ def main() -> None:
         layout="wide",
     )
 
-    st.title("Logistics Agent Frontend")
-    st.caption("Interactive frontend using the backend compact frontend payload.")
+    inject_app_styles()
 
     if "active_payload" not in st.session_state:
         with st.spinner("Loading sample shopping request..."):
@@ -1046,7 +1563,7 @@ def main() -> None:
             st.session_state.active_source = "Sample shopping request"
             st.session_state.active_question = ""
 
-    st.markdown("### Ask a Custom Question")
+    st.markdown('<div class="section-title">Ask a Custom Question</div>', unsafe_allow_html=True)
 
     with st.form("custom_question_form", clear_on_submit=False):
         custom_question = st.text_input(
@@ -1109,7 +1626,7 @@ def main() -> None:
     st.sidebar.markdown(f"Intent: **{display_value(payload.get('detected_intent'), fallback='Not available')}**")
     st.sidebar.markdown(f"Partner: **{display_value(payload.get('partner_review_status'), fallback='Not run')}**")
 
-    st.divider()
+    render_app_header(payload)
 
     render_payload(payload)
 
