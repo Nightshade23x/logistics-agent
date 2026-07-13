@@ -332,6 +332,51 @@ def inject_app_styles() -> None:
                 line-height: 1.45;
             }
 
+            .guided-builder-card {
+                border: 1px solid rgba(148, 163, 184, 0.24);
+                border-radius: 20px;
+                padding: 18px 20px;
+                margin: 10px 0 20px 0;
+                background: rgba(15, 23, 42, 0.62);
+            }
+
+            .action-center-grid {
+                display: grid;
+                grid-template-columns: repeat(3, minmax(0, 1fr));
+                gap: 14px;
+                margin: 12px 0 18px 0;
+            }
+
+            .action-center-card {
+                border: 1px solid rgba(148, 163, 184, 0.22);
+                border-radius: 18px;
+                padding: 15px 17px;
+                background: rgba(2, 6, 23, 0.54);
+            }
+
+            .action-center-label {
+                color: #94a3b8;
+                font-size: 0.78rem;
+                font-weight: 800;
+                text-transform: uppercase;
+                letter-spacing: 0.04em;
+                margin-bottom: 5px;
+            }
+
+            .action-center-value {
+                color: #f8fafc;
+                font-size: 1.02rem;
+                font-weight: 900;
+            }
+
+            .next-step-box {
+                border-left: 4px solid rgba(59, 130, 246, 0.85);
+                border-radius: 14px;
+                padding: 12px 15px;
+                background: rgba(30, 64, 175, 0.13);
+                margin: 8px 0;
+            }
+
             div[data-testid="stTabs"] button {
                 font-weight: 800;
                 font-size: 0.96rem;
@@ -1825,6 +1870,8 @@ def render_payload(payload: dict[str, Any]) -> None:
 
     render_missing_information_form(payload)
 
+    render_frontend_action_center(payload)
+
     st.divider()
 
     answer_tab, procurement_tab, logistics_tab, review_tab, raw_tab = st.tabs(
@@ -2010,6 +2057,386 @@ def render_last_run_status() -> None:
     }
 
     render_kpi_grid(trace_metrics, columns=5)
+
+
+def normalize_optional_text(value: Any) -> str:
+    if value is None:
+        return ""
+
+    return str(value).strip()
+
+
+def build_guided_request_text(data: dict[str, Any]) -> str:
+    items = []
+
+    for row in data.get("items", []):
+        quantity = normalize_optional_text(row.get("quantity"))
+        item = normalize_optional_text(row.get("item"))
+
+        if quantity and item:
+            items.append(f"{quantity} {item}")
+
+    if items:
+        request = "I need " + ", ".join(items) + "."
+    else:
+        request = "I need help planning a procurement and shipment."
+
+    preferred_country = normalize_optional_text(data.get("preferred_supplier_country"))
+    avoid_countries = normalize_optional_text(data.get("avoid_countries"))
+    origin_country = normalize_optional_text(data.get("origin_country"))
+    destination_country = normalize_optional_text(data.get("destination_country"))
+    budget_amount = normalize_optional_text(data.get("budget_amount"))
+    budget_currency = normalize_optional_text(data.get("budget_currency")) or "USD"
+    incoterm = normalize_optional_text(data.get("incoterm"))
+    target_date = normalize_optional_text(data.get("target_date"))
+    dimensions = normalize_optional_text(data.get("dimensions"))
+    weights = normalize_optional_text(data.get("weights"))
+    freight_quote = normalize_optional_text(data.get("freight_quote_usd"))
+    insurance = normalize_optional_text(data.get("insurance_premium_usd"))
+    duty_rate = normalize_optional_text(data.get("duty_rate_percent"))
+    import_tax = normalize_optional_text(data.get("import_tax_rate_percent"))
+    notes = normalize_optional_text(data.get("notes"))
+
+    additions = []
+
+    if preferred_country:
+        additions.append(f"Prefer suppliers from {preferred_country}.")
+
+    if avoid_countries:
+        additions.append(f"Avoid supplier countries: {avoid_countries}.")
+
+    if origin_country:
+        additions.append(f"Origin country: {origin_country}.")
+
+    if destination_country:
+        additions.append(f"Destination country: {destination_country}.")
+
+    if budget_amount:
+        additions.append(f"Budget is {budget_amount} {budget_currency}.")
+
+    if incoterm:
+        additions.append(f"Incoterm / trade term: {incoterm}.")
+
+    if target_date:
+        additions.append(f"Target delivery date: {target_date}.")
+
+    if dimensions:
+        additions.append(f"Item dimensions: {dimensions}.")
+
+    if weights:
+        additions.append(f"Item weights: {weights}.")
+
+    if freight_quote:
+        additions.append(f"Freight quote: {freight_quote} USD.")
+
+    if insurance:
+        additions.append(f"Insurance premium: {insurance} USD.")
+
+    if duty_rate:
+        additions.append(f"Duty rate: {duty_rate}%.")
+
+    if import_tax:
+        additions.append(f"Import tax rate: {import_tax}%.")
+
+    if notes:
+        additions.append(f"Other notes: {notes}.")
+
+    additions.append(
+        "Please recommend suppliers, estimate logistics needs, flag compliance/risk issues, and tell me what is still needed before booking."
+    )
+
+    return request + " " + " ".join(additions)
+
+
+def render_guided_request_builder() -> None:
+    st.markdown('<div class="section-title">Guided Request Builder</div>', unsafe_allow_html=True)
+    st.caption(
+        "Use this when the user does not want to write a perfect prompt. The app will turn the form into a backend request and run the agents."
+    )
+
+    with st.container(border=True):
+        st.markdown("**Product lines**")
+
+        item_col1, item_col2, item_col3 = st.columns(3)
+
+        with item_col1:
+            quantity_1 = st.text_input("Quantity 1", value="50", key="guided_qty_1")
+            item_1 = st.text_input("Item 1", value="TVs", key="guided_item_1")
+
+        with item_col2:
+            quantity_2 = st.text_input("Quantity 2", value="5", key="guided_qty_2")
+            item_2 = st.text_input("Item 2", value="scooters", key="guided_item_2")
+
+        with item_col3:
+            quantity_3 = st.text_input("Quantity 3", value="100", key="guided_qty_3")
+            item_3 = st.text_input("Item 3", value="ceramic tiles", key="guided_item_3")
+
+        st.markdown("**Trade and shipment details**")
+
+        base_col1, base_col2, base_col3, base_col4 = st.columns(4)
+
+        with base_col1:
+            origin_country = st.text_input("Origin country", value="India", key="guided_origin")
+            preferred_supplier_country = st.text_input("Preferred supplier country", value="India", key="guided_preferred")
+
+        with base_col2:
+            destination_country = st.text_input("Destination country", value="USA", key="guided_destination")
+            avoid_countries = st.text_input("Avoid supplier countries", value="China", key="guided_avoid")
+
+        with base_col3:
+            budget_amount = st.text_input("Budget amount", value="13000", key="guided_budget")
+            budget_currency = st.selectbox("Budget currency", ["USD", "EUR", "GBP"], key="guided_currency")
+
+        with base_col4:
+            incoterm = st.selectbox("Incoterm", ["", "EXW", "FOB", "CIF", "DAP", "DDP", "Other"], key="guided_incoterm")
+            target_date = st.text_input("Target delivery date", placeholder="Example: 2026-08-15", key="guided_target_date")
+
+        with st.expander("Optional details for booking readiness", expanded=False):
+            detail_col1, detail_col2 = st.columns(2)
+
+            with detail_col1:
+                dimensions = st.text_area(
+                    "Dimensions",
+                    placeholder="Example: TV 120x70x15 cm, scooter 180x70x110 cm, tile carton 40x40x30 cm",
+                    height=90,
+                    key="guided_dimensions",
+                )
+                freight_quote_usd = st.text_input("Freight quote USD", placeholder="Example: 1800", key="guided_freight")
+
+            with detail_col2:
+                weights = st.text_area(
+                    "Weights",
+                    placeholder="Example: TV 18 kg each, scooter 110 kg each, tile carton 25 kg each",
+                    height=90,
+                    key="guided_weights",
+                )
+                insurance_premium_usd = st.text_input("Insurance premium USD", placeholder="Example: 150", key="guided_insurance")
+
+            tax_col1, tax_col2 = st.columns(2)
+
+            with tax_col1:
+                duty_rate_percent = st.text_input("Duty rate percent", placeholder="Example: 5", key="guided_duty")
+
+            with tax_col2:
+                import_tax_rate_percent = st.text_input("Import tax rate percent", placeholder="Example: 16", key="guided_tax")
+
+            notes = st.text_area(
+                "Other notes",
+                placeholder="Example: fragile cargo, supplier quote pending, must arrive before school term starts",
+                height=80,
+                key="guided_notes",
+            )
+
+        data = {
+            "items": [
+                {"quantity": quantity_1, "item": item_1},
+                {"quantity": quantity_2, "item": item_2},
+                {"quantity": quantity_3, "item": item_3},
+            ],
+            "origin_country": origin_country,
+            "destination_country": destination_country,
+            "preferred_supplier_country": preferred_supplier_country,
+            "avoid_countries": avoid_countries,
+            "budget_amount": budget_amount,
+            "budget_currency": budget_currency,
+            "incoterm": incoterm,
+            "target_date": target_date,
+            "dimensions": dimensions if "dimensions" in locals() else "",
+            "weights": weights if "weights" in locals() else "",
+            "freight_quote_usd": freight_quote_usd if "freight_quote_usd" in locals() else "",
+            "insurance_premium_usd": insurance_premium_usd if "insurance_premium_usd" in locals() else "",
+            "duty_rate_percent": duty_rate_percent if "duty_rate_percent" in locals() else "",
+            "import_tax_rate_percent": import_tax_rate_percent if "import_tax_rate_percent" in locals() else "",
+            "notes": notes if "notes" in locals() else "",
+        }
+
+        preview_text = build_guided_request_text(data)
+
+        with st.expander("Preview backend request", expanded=False):
+            st.code(preview_text, language="text")
+
+        if st.button("Run Guided Request", type="primary", use_container_width=True, key="run_guided_request"):
+            apply_partner_runtime_settings(
+                st.session_state.get("use_live_partner", False),
+                st.session_state.get("orchestrator_url", "http://127.0.0.1:8010"),
+            )
+
+            run_frontend_flow(
+                source="Guided request",
+                question=preview_text,
+                loading_message="Running guided request through procurement, logistics, and review agents...",
+                loader=lambda: get_text_payload(preview_text),
+            )
+
+            st.rerun()
+
+
+def frontend_collect_missing_items(payload: dict[str, Any]) -> list[str]:
+    missing: list[str] = []
+
+    direct_missing = payload.get("missing_information")
+
+    if isinstance(direct_missing, list):
+        missing.extend(str(item) for item in direct_missing if not is_empty(item))
+    elif not is_empty(direct_missing):
+        missing.append(str(direct_missing))
+
+    booking = payload.get("booking_readiness")
+
+    if isinstance(booking, dict):
+        for key in ["missing_information", "missing_inputs", "required_inputs", "open_items"]:
+            value = booking.get(key)
+
+            if isinstance(value, list):
+                missing.extend(str(item) for item in value if not is_empty(item))
+            elif not is_empty(value):
+                missing.append(str(value))
+
+    review_sections = payload.get("review_sections")
+
+    if isinstance(review_sections, list):
+        for section in review_sections:
+            if not isinstance(section, dict):
+                continue
+
+            for key in ["missing_information", "missing_inputs", "next_steps", "blockers", "warnings"]:
+                value = section.get(key)
+
+                if isinstance(value, list):
+                    missing.extend(str(item) for item in value if not is_empty(item))
+                elif not is_empty(value):
+                    missing.append(str(value))
+
+    cleaned: list[str] = []
+    seen = set()
+
+    for item in missing:
+        readable = humanize(item)
+
+        if readable.lower() in seen:
+            continue
+
+        seen.add(readable.lower())
+        cleaned.append(readable)
+
+    return cleaned[:12]
+
+
+def infer_booking_status(payload: dict[str, Any]) -> str:
+    booking = payload.get("booking_readiness")
+
+    if isinstance(booking, dict):
+        ready_for_booking = booking.get("ready_for_booking")
+        ready_for_first_pass = booking.get("ready_for_first_pass")
+
+        if ready_for_booking is True:
+            return "Ready For Booking"
+
+        if ready_for_first_pass is True:
+            return "Ready For Review"
+
+    decision = str(payload.get("decision") or payload.get("status") or "").lower()
+
+    if "critical" in decision:
+        return "Critical Review Needed"
+
+    if "need" in decision:
+        return "Needs More Information"
+
+    if "review" in decision:
+        return "Review Required"
+
+    if "ready" in decision:
+        return "Ready"
+
+    return "In Progress"
+
+
+def render_frontend_action_center(payload: dict[str, Any]) -> None:
+    st.markdown('<div class="section-title">Action Center</div>', unsafe_allow_html=True)
+
+    agents = payload.get("agents_called") or []
+    missing_items = frontend_collect_missing_items(payload)
+    booking = payload.get("booking_readiness") if isinstance(payload.get("booking_readiness"), dict) else {}
+    smart_answer = payload.get("_smart_answer") if isinstance(payload.get("_smart_answer"), dict) else {}
+
+    cards = [
+        {
+            "label": "Booking status",
+            "value": infer_booking_status(payload),
+        },
+        {
+            "label": "Agents used",
+            "value": str(len(agents)) if agents else "0",
+        },
+        {
+            "label": "Missing items",
+            "value": str(len(missing_items)),
+        },
+    ]
+
+    html = []
+
+    for card in cards:
+        html.append(
+            f'<div class="action-center-card"><div class="action-center-label">{esc_html(card["label"])}</div><div class="action-center-value">{esc_html(card["value"])}</div></div>'
+        )
+
+    st.markdown(
+        f'<div class="action-center-grid">{"".join(html)}</div>',
+        unsafe_allow_html=True,
+    )
+
+    detail_col1, detail_col2 = st.columns([1.15, 1])
+
+    with detail_col1:
+        st.markdown("**Next steps**")
+
+        next_steps: list[str] = []
+
+        if booking.get("next_gate"):
+            next_steps.append(f"Complete next gate: {humanize(booking.get('next_gate'))}")
+
+        if missing_items:
+            next_steps.append("Fill the missing information form and rerun the request.")
+
+        if payload.get("partner_review_status"):
+            next_steps.append(f"Partner review status: {humanize(payload.get('partner_review_status'))}")
+
+        if not next_steps:
+            next_steps.append("Review the procurement and logistics tabs, then proceed with booking checks.")
+
+        for step in next_steps[:5]:
+            st.markdown(
+                f'<div class="next-step-box">{esc_html(step)}</div>',
+                unsafe_allow_html=True,
+            )
+
+    with detail_col2:
+        st.markdown("**Runtime summary**")
+
+        runtime_rows = {
+            "Answer provider": smart_answer.get("provider") or smart_answer.get("mode") or "Not available",
+            "Answer status": smart_answer.get("status") or "Not available",
+            "Partner mode": "Live orchestrator" if st.session_state.get("use_live_partner") else "Standalone fallback",
+            "Decision": humanize(payload.get("decision") or payload.get("status")),
+        }
+
+        st.table(
+            [
+                {"Field": key, "Value": humanize(value)}
+                for key, value in runtime_rows.items()
+            ]
+        )
+
+    if missing_items:
+        st.markdown("**Missing information detected**")
+        st.table(
+            [
+                {"No.": index + 1, "Input needed": item}
+                for index, item in enumerate(missing_items)
+            ]
+        )
 
 
 def main() -> None:

@@ -93,6 +93,51 @@ Excluded supplier countries: ['China']
     fallback_answer = module.build_frontend_answer(fake_payload)
 
     assert "shopping/procurement request" in fallback_answer
+
+
+    guided_request = module.build_guided_request_text(
+        {
+            "items": [
+                {"quantity": "50", "item": "TVs"},
+                {"quantity": "5", "item": "scooters"},
+                {"quantity": "100", "item": "ceramic tiles"},
+            ],
+            "origin_country": "India",
+            "destination_country": "USA",
+            "preferred_supplier_country": "India",
+            "avoid_countries": "China",
+            "budget_amount": "13000",
+            "budget_currency": "USD",
+            "incoterm": "FOB",
+            "dimensions": "TV 120x70x15 cm",
+            "weights": "TV 18 kg each",
+            "freight_quote_usd": "1800",
+            "insurance_premium_usd": "150",
+            "duty_rate_percent": "5",
+            "import_tax_rate_percent": "16",
+            "notes": "fragile cargo",
+        }
+    )
+
+    assert "50 TVs" in guided_request
+    assert "5 scooters" in guided_request
+    assert "100 ceramic tiles" in guided_request
+    assert "Avoid supplier countries: China" in guided_request
+    assert "Budget is 13000 USD" in guided_request
+    assert "Incoterm / trade term: FOB" in guided_request
+
+    missing_payload = {
+        "decision": "needs_more_information",
+        "booking_readiness": {
+            "ready_for_booking": False,
+            "missing_inputs": ["freight_quote_usd", "insurance_premium_usd"],
+        },
+    }
+
+    assert module.infer_booking_status(missing_payload) == "Needs More Information"
+    missing_items = [item.lower() for item in module.frontend_collect_missing_items(missing_payload)]
+
+    assert any("freight" in item and "quote" in item for item in missing_items)
     assert "20 laptops" in fallback_answer
     assert "10 tablets" in fallback_answer
     assert "12000 USD" in fallback_answer
@@ -126,6 +171,10 @@ Excluded supplier countries: ['China']
     assert hasattr(module, "build_structured_run_answer")
     assert hasattr(module, "build_followup_question_with_missing_info")
     assert hasattr(module, "render_missing_information_form")
+    assert hasattr(module, "build_guided_request_text")
+    assert hasattr(module, "frontend_collect_missing_items")
+    assert hasattr(module, "infer_booking_status")
+    assert hasattr(module, "render_frontend_action_center")
     assert hasattr(module, "generate_smart_answer")
     assert hasattr(module, "main")
 
