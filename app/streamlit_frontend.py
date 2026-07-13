@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import html
 import json
+import os
 import re
+import subprocess
 import sys
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -17,7 +20,7 @@ from app.backend_service import process_json_file_request
 from app.compact_frontend_payload import build_compact_frontend_payload
 from app.frontend_payload import build_frontend_payload
 from app.user_agent import run_user_agent_from_files, run_user_agent_from_text
-from app.smart_answer import generate_smart_answer
+from app.smart_answer import generate_smart_answer, get_gemini_api_key, get_gemini_model
 
 
 SAMPLE_SHOPPING_REQUEST = ROOT_DIR / "data" / "suppliers" / "sample_shopping_request.json"
@@ -300,6 +303,33 @@ def inject_app_styles() -> None:
                 color: #94a3b8;
                 font-size: 0.92rem;
                 margin-bottom: 14px;
+            }
+
+            .control-grid {
+                display: grid;
+                grid-template-columns: repeat(3, minmax(0, 1fr));
+                gap: 14px;
+                margin: 12px 0 20px 0;
+            }
+
+            .control-card {
+                border: 1px solid rgba(148, 163, 184, 0.22);
+                border-radius: 18px;
+                padding: 16px 18px;
+                background: rgba(15, 23, 42, 0.68);
+            }
+
+            .control-title {
+                color: #f8fafc;
+                font-size: 0.95rem;
+                font-weight: 900;
+                margin-bottom: 6px;
+            }
+
+            .control-detail {
+                color: #94a3b8;
+                font-size: 0.84rem;
+                line-height: 1.45;
             }
 
             div[data-testid="stTabs"] button {
@@ -1548,6 +1578,118 @@ def render_payload(payload: dict[str, Any]) -> None:
         st.json(payload)
 
 
+def apply_partner_runtime_settings(use_live_partner: bool, orchestrator_url: str) -> None:
+    if use_live_partner and orchestrator_url.strip():
+        os.environ["TRADE_ORCHESTRATOR_BASE_URL"] = orchestrator_url.strip()
+        return
+
+    os.environ.pop("TRADE_ORCHESTRATOR_BASE_URL", None)
+
+
+def render_agent_connection_summary(use_live_partner: bool, orchestrator_url: str) -> None:
+    gemini_key_loaded = bool(get_gemini_api_key())
+    gemini_model = get_gemini_model()
+
+    partner_mode = "Live orchestrator" if use_live_partner else "Standalone fallback"
+    partner_detail = orchestrator_url if use_live_partner else "Partner review uses local fallback unless live URL is enabled."
+
+    cards = [
+        {
+            "title": "Backend agents",
+            "detail": "Shopping, logistics, document AI, booking readiness, and payload builders are local backend modules.",
+        },
+        {
+            "title": "Gemini smart answers",
+            "detail": f"{'Enabled' if gemini_key_loaded else 'Fallback only'} ? Model: {gemini_model}",
+        },
+        {
+            "title": "Partner mode",
+            "detail": f"{partner_mode} ? {partner_detail}",
+        },
+    ]
+
+    html_cards = []
+
+    for card in cards:
+        html_cards.append(
+            f'<div class="control-card"><div class="control-title">{esc_html(card["title"])}</div><div class="control-detail">{esc_html(card["detail"])}</div></div>'
+        )
+
+    st.markdown(
+        f'<div class="control-grid">{"".join(html_cards)}</div>',
+        unsafe_allow_html=True,
+    )
+
+
+def load_payload_with_spinner(label: str, loader) -> None:
+    with st.spinner(label):
+        st.session_state.active_payload = loader()
+
+
+def run_live_partner_health_check(orchestrator_url: str) -> dict[str, Any]:
+    env = os.environ.copy()
+    env["TRADE_ORCHESTRATOR_BASE_URL"] = orchestrator_url.strip() or "http://127.0.0.1:8010"
+    env["PYTHONIOENCODING"] = "utf-8"
+
+    result = subprocess.run(
+        [sys.executable, "scripts/check_live_partner_stack.py"],
+        cwd=ROOT_DIR,
+        env=env,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        capture_output=True,
+        timeout=90,
+    )
+
+    return {
+        "returncode": result.returncode,
+        "output": (result.stdout or "") + ("\n" + result.stderr if result.stderr else ""),
+    }
+
+
+def run_frontend_flow(
+    *,
+    source: str,
+    question: str,
+    loading_message: str,
+    loader,
+) -> None:
+    started_at = datetime.now().strftime("%H:%M:%S")
+
+    with st.spinner(loading_message):
+        payload = loader()
+
+    st.session_state.active_payload = payload
+    st.session_state.active_source = source
+    st.session_state.active_question = question
+    st.session_state.last_run_message = f"{source} completed at {started_at}"
+    st.session_state.last_run_agents = payload.get("agents_called", []) or []
+    st.session_state.last_run_decision = payload.get("decision")
+    st.session_state.last_run_partner_status = payload.get("partner_review_status")
+    st.session_state.last_run_gemini_status = (payload.get("_smart_answer", {}) or {}).get("status")
+    st.session_state.last_run_gemini_mode = (payload.get("_smart_answer", {}) or {}).get("mode")
+
+
+def render_last_run_status() -> None:
+    message = st.session_state.get("last_run_message")
+
+    if not message:
+        return
+
+    st.success(message)
+
+    trace_metrics = {
+        "decision": st.session_state.get("last_run_decision"),
+        "agents_called": st.session_state.get("last_run_agents"),
+        "partner_status": st.session_state.get("last_run_partner_status"),
+        "gemini_mode": st.session_state.get("last_run_gemini_mode"),
+        "gemini_status": st.session_state.get("last_run_gemini_status"),
+    }
+
+    render_kpi_grid(trace_metrics, columns=5)
+
+
 def main() -> None:
     st.set_page_config(
         page_title="Logistics Agent Frontend",
@@ -1558,17 +1700,137 @@ def main() -> None:
     inject_app_styles()
 
     if "active_payload" not in st.session_state:
-        with st.spinner("Loading sample shopping request..."):
-            st.session_state.active_payload = get_sample_shopping_payload()
-            st.session_state.active_source = "Sample shopping request"
-            st.session_state.active_question = ""
+        run_frontend_flow(
+            source="Initial full structured demo",
+            question="",
+            loading_message="Loading full structured demo...",
+            loader=get_sample_shopping_payload,
+        )
+
+    if "use_live_partner" not in st.session_state:
+        st.session_state.use_live_partner = False
+
+    if "orchestrator_url" not in st.session_state:
+        st.session_state.orchestrator_url = "http://127.0.0.1:8010"
+
+    st.markdown('<div class="section-title">Demo Controls</div>', unsafe_allow_html=True)
+
+    with st.container(border=True):
+        mode_col, url_col, status_col = st.columns([1, 1.35, 1.15])
+
+        with mode_col:
+            st.session_state.use_live_partner = st.checkbox(
+                "Use live partner orchestrator",
+                value=st.session_state.use_live_partner,
+                help="Enable this only when Avishi's orchestrator service is running locally.",
+            )
+
+        with url_col:
+            st.session_state.orchestrator_url = st.text_input(
+                "Trade orchestrator URL",
+                value=st.session_state.orchestrator_url,
+                help="Usually http://127.0.0.1:8010",
+            )
+
+        with status_col:
+            gemini_status = "Enabled" if get_gemini_api_key() else "Fallback only"
+            st.markdown("**Gemini smart answers**")
+            st.caption(f"{gemini_status} ? {get_gemini_model()}")
+
+        apply_partner_runtime_settings(
+            st.session_state.use_live_partner,
+            st.session_state.orchestrator_url,
+        )
+
+        if st.session_state.use_live_partner:
+            st.warning(
+                "Live partner mode is enabled. Risk/compliance/finance should answer through the orchestrator. "
+                "Trader may still fail until Avishi fixes the trader agent provider setup."
+            )
+
+        render_agent_connection_summary(
+            st.session_state.use_live_partner,
+            st.session_state.orchestrator_url,
+        )
+
+        demo_col1, demo_col2, demo_col3 = st.columns(3)
+
+        with demo_col1:
+            if st.button("Run Full Structured Demo", type="primary", use_container_width=True, key="run_full_structured_demo"):
+                apply_partner_runtime_settings(
+                    st.session_state.use_live_partner,
+                    st.session_state.orchestrator_url,
+                )
+                run_frontend_flow(
+                    source="Full structured demo",
+                    question="",
+                    loading_message="Running shopping, logistics, and partner review agents...",
+                    loader=get_sample_shopping_payload,
+                )
+
+        with demo_col2:
+            if st.button("Run Sample Documents", use_container_width=True, key="run_sample_documents"):
+                apply_partner_runtime_settings(
+                    st.session_state.use_live_partner,
+                    st.session_state.orchestrator_url,
+                )
+                run_frontend_flow(
+                    source="Sample documents",
+                    question="",
+                    loading_message="Running document agent flow...",
+                    loader=get_document_payload,
+                )
+
+        with demo_col3:
+            if st.button("Run Plain-English Demo", use_container_width=True, key="run_plain_english_demo"):
+                apply_partner_runtime_settings(
+                    st.session_state.use_live_partner,
+                    st.session_state.orchestrator_url,
+                )
+                run_frontend_flow(
+                    source="Plain-English demo",
+                    question=DEFAULT_TEXT_REQUEST,
+                    loading_message="Running plain-English request through the user agent...",
+                    loader=lambda: get_text_payload(DEFAULT_TEXT_REQUEST),
+                )
+
+        check_col1, check_col2 = st.columns([1, 2])
+
+        with check_col1:
+            if st.button("Check Live Partner Stack", use_container_width=True, key="check_live_partner_stack"):
+                with st.spinner("Checking finance and orchestrator services..."):
+                    st.session_state.partner_health_check = run_live_partner_health_check(
+                        st.session_state.orchestrator_url,
+                    )
+
+        with check_col2:
+            st.caption(
+                "Live partner mode needs the local finance service and orchestrator service running. "
+                "Trader may still fail until Avishi fixes that agent."
+            )
+
+        if st.session_state.get("partner_health_check"):
+            result = st.session_state.partner_health_check
+
+            if result.get("returncode") == 0:
+                st.success("Live partner check completed.")
+            else:
+                st.warning("Live partner check completed with warnings or failures.")
+
+            with st.expander("Live partner check output", expanded=False):
+                st.code(result.get("output", ""), language="text")
 
     st.markdown('<div class="section-title">Ask a Custom Question</div>', unsafe_allow_html=True)
 
     with st.form("custom_question_form", clear_on_submit=False):
-        custom_question = st.text_input(
+        custom_question = st.text_area(
             "Search or ask a procurement/logistics question",
-            placeholder="Example: I need 20 laptops from India under 12000 USD. Avoid China. What suppliers and shipping plan should I use?",
+            value=st.session_state.get("active_question", ""),
+            placeholder=(
+                "Example: I need 50 TVs, 5 scooters, and 100 ceramic tiles. "
+                "Prefer suppliers from India. Avoid China. Budget is 13000 USD."
+            ),
+            height=95,
         )
 
         submitted = st.form_submit_button("Run Custom Question", type="primary")
@@ -1577,59 +1839,32 @@ def main() -> None:
         if not custom_question.strip():
             st.warning("Type a question first.")
         else:
-            with st.spinner("Running backend user agent..."):
-                st.session_state.active_payload = get_text_payload(custom_question.strip())
-                st.session_state.active_source = "Custom question"
-                st.session_state.active_question = custom_question.strip()
-
-    st.sidebar.header("Demo Controls")
-
-    mode = st.sidebar.radio(
-        "Load a demo flow",
-        [
-            "Sample shopping request",
-            "Plain English request",
-            "Sample documents",
-        ],
-    )
-
-    if st.sidebar.button("Load Selected Demo"):
-        with st.spinner(f"Loading {mode}..."):
-            if mode == "Sample shopping request":
-                st.session_state.active_payload = get_sample_shopping_payload()
-                st.session_state.active_source = "Sample shopping request"
-                st.session_state.active_question = ""
-
-            elif mode == "Plain English request":
-                st.session_state.active_payload = get_text_payload(DEFAULT_TEXT_REQUEST)
-                st.session_state.active_source = "Plain English request"
-                st.session_state.active_question = DEFAULT_TEXT_REQUEST
-
-            else:
-                st.session_state.active_payload = get_document_payload()
-                st.session_state.active_source = "Sample documents"
-                st.session_state.active_question = ""
-
-    st.sidebar.divider()
-    st.sidebar.markdown("### Active Run")
-    st.sidebar.markdown(f"Source: **{st.session_state.active_source}**")
-
-    if st.session_state.active_question:
-        st.sidebar.markdown("Question:")
-        st.sidebar.info(st.session_state.active_question)
+            apply_partner_runtime_settings(
+                st.session_state.use_live_partner,
+                st.session_state.orchestrator_url,
+            )
+            run_frontend_flow(
+                source="Custom question",
+                question=custom_question.strip(),
+                loading_message="Running backend user agent and Gemini smart-answer synthesis...",
+                loader=lambda: get_text_payload(custom_question.strip()),
+            )
 
     payload = st.session_state.active_payload
 
-    st.sidebar.divider()
-    st.sidebar.markdown("### Payload Status")
-    st.sidebar.markdown(f"Decision: **{display_value(payload.get('decision'), fallback='Not available')}**")
-    st.sidebar.markdown(f"Intent: **{display_value(payload.get('detected_intent'), fallback='Not available')}**")
-    st.sidebar.markdown(f"Partner: **{display_value(payload.get('partner_review_status'), fallback='Not run')}**")
+    render_last_run_status()
 
     render_app_header(payload)
+
+    st.caption(
+        f"Active run: {st.session_state.active_source} ? "
+        f"Partner mode: {'Live orchestrator' if st.session_state.use_live_partner else 'Standalone fallback'} ? "
+        f"Gemini model: {get_gemini_model()}"
+    )
 
     render_payload(payload)
 
 
 if __name__ == "__main__":
     main()
+

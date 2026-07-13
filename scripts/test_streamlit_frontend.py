@@ -81,6 +81,11 @@ Excluded supplier countries: ['China']
     assert hasattr(module, "render_app_header")
     assert hasattr(module, "render_kpi_grid")
     assert hasattr(module, "render_stage_tracker")
+    assert hasattr(module, "apply_partner_runtime_settings")
+    assert hasattr(module, "render_agent_connection_summary")
+    assert hasattr(module, "run_frontend_flow")
+    assert hasattr(module, "render_last_run_status")
+    assert hasattr(module, "run_live_partner_health_check")
     assert module.chip_class("ready_for_review") == "good"
     assert module.chip_class("needs_more_information") == "warn"
     assert module.chip_class("critical_review_required") == "bad"
