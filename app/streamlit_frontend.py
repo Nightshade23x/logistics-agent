@@ -9,6 +9,17 @@ import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+from app.frontend_workflow import (
+    active_request_text,
+    collect_missing_items_from_payload,
+    field_display_name,
+    infer_known_request_fields,
+    infer_next_frontend_action,
+    missing_text_to_field_ids,
+    render_workflow_guide,
+    user_fillable_missing_fields,
+    workflow_step_states,
+)
 
 import streamlit as st
 
@@ -1862,6 +1873,8 @@ def render_missing_information_form(payload: dict[str, Any]) -> None:
 
 
 def render_payload(payload: dict[str, Any]) -> None:
+    render_workflow_guide(payload)
+
     render_executive_summary(payload)
 
     render_stage_tracker(payload)
@@ -2568,6 +2581,8 @@ def main() -> None:
 
             with st.expander("Live partner check output", expanded=False):
                 st.code(result.get("output", ""), language="text")
+
+    render_guided_request_builder()
 
     st.markdown('<div class="section-title">Ask a Custom Question</div>', unsafe_allow_html=True)
 

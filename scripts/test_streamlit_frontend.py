@@ -138,6 +138,32 @@ Excluded supplier countries: ['China']
     missing_items = [item.lower() for item in module.frontend_collect_missing_items(missing_payload)]
 
     assert any("freight" in item and "quote" in item for item in missing_items)
+
+
+    known_fields = module.infer_known_request_fields(
+        "Origin country: India. Destination country: USA. Incoterm / trade term: FOB. "
+        "Item dimensions: TV 120x70x15 cm. Item weights: TV 18 kg each. "
+        "Freight quote: 1800 USD. Insurance premium: 150 USD. Duty rate: 5%. Import tax rate: 16%."
+    )
+
+    assert known_fields["origin_country"] is True
+    assert known_fields["destination_country"] is True
+    assert known_fields["incoterm"] is True
+    assert known_fields["item_dimensions"] is True
+    assert known_fields["item_weights"] is True
+    assert known_fields["freight_quote_usd"] is True
+    assert known_fields["insurance_premium_usd"] is True
+    assert known_fields["duty_rate_percent"] is True
+    assert known_fields["import_tax_rate_percent"] is True
+
+    mapped_fields = module.missing_text_to_field_ids(
+        ["Freight quote USD", "Insurance premium USD", "Duty rate percent", "Import tax rate percent"]
+    )
+
+    assert "freight_quote_usd" in mapped_fields
+    assert "insurance_premium_usd" in mapped_fields
+    assert "duty_rate_percent" in mapped_fields
+    assert "import_tax_rate_percent" in mapped_fields
     assert "20 laptops" in fallback_answer
     assert "10 tablets" in fallback_answer
     assert "12000 USD" in fallback_answer
@@ -175,6 +201,12 @@ Excluded supplier countries: ['China']
     assert hasattr(module, "frontend_collect_missing_items")
     assert hasattr(module, "infer_booking_status")
     assert hasattr(module, "render_frontend_action_center")
+    assert hasattr(module, "infer_known_request_fields")
+    assert hasattr(module, "missing_text_to_field_ids")
+    assert hasattr(module, "user_fillable_missing_fields")
+    assert hasattr(module, "infer_next_frontend_action")
+    assert hasattr(module, "workflow_step_states")
+    assert hasattr(module, "render_workflow_guide")
     assert hasattr(module, "generate_smart_answer")
     assert hasattr(module, "main")
 
