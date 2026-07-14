@@ -283,11 +283,6 @@ def render_workflow_guide(payload: dict[str, Any]) -> None:
         )
 
     next_action = infer_next_frontend_action(payload)
-    next_action_text = str(next_action)
-
-    if next_action_text.lower().startswith("next:"):
-        next_action_text = next_action_text[5:].strip()
-
 
     workflow_html = f"""
     <div style='border:1px solid rgba(59,130,246,0.28); border-radius:22px; padding:18px 20px;
@@ -301,8 +296,8 @@ def render_workflow_guide(payload: dict[str, Any]) -> None:
             {''.join(step_html)}
         </div>
         <div style='border-left:4px solid rgba(248,113,113,0.90); border-radius:14px; padding:13px 15px;
-                    background:rgba(127,29,29,0.18); color:#fee2e2; font-weight:800;'>
-            Next: {html.escape(next_action_text)}
+            background:rgba(127,29,29,0.18); color:#fee2e2; font-weight:800; line-height:1.5; white-space:normal; word-break:break-word;'>
+            Next: {html.escape(str(next_action))}
         </div>
     </div>
     """
