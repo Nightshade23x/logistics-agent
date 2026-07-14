@@ -261,7 +261,7 @@ def _build_shopping_to_logistics_response(
 
     response = _build_user_agent_response(
         status=combined_status,
-        summary="User Agent routed the request to Shopping Agent, then handed selected items to Logistics Agent.",
+        summary="User Agent routed the request to Shopping Agent, then handed selected items to the Logistics Agent.",
         detected_intent=detected_intent,
         agents_called=["shopping_agent", "logistics_agent"],
         specialist_response=shopping_response,
