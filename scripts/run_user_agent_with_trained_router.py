@@ -36,11 +36,13 @@ def main() -> None:
 
     compact = {
         "status": response.get("status"),
+        "router_source": response.get("router_source"),
         "detected_intent": response.get("detected_intent"),
         "agents_called": response.get("agents_called"),
         "review_services_called": response.get("review_services_called"),
         "summary": response.get("summary"),
         "missing_information": response.get("missing_information"),
+        "trained_router_decision": response.get("trained_router_decision"),
     }
 
     print(json.dumps(compact, indent=2))

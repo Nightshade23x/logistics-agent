@@ -37,7 +37,7 @@ def _route_text_request(text: str) -> dict[str, Any]:
             "detected_intent": decision.get("intent", "unknown"),
             "scores": {},
             "source": "trained_router",
-            "trained_decision": decision,
+            "trained_router_decision": decision,
         }
 
     except Exception as error:
@@ -296,34 +296,58 @@ def run_user_agent_from_text(text: str) -> dict[str, Any]:
     if detected_intent == "shopping":
         shopping_response = run_shopping_agent_from_text(text)
 
-        return _build_shopping_to_logistics_response(
+        response = _build_shopping_to_logistics_response(
             shopping_response=shopping_response,
             detected_intent=detected_intent,
             summary="User Agent routed the request to the Shopping Agent.",
-            route_reason="The request contains supplier, purchasing, budget, or product sourcing language.",
+            route_reason=routing.get("trained_router_decision", {}).get(
+                "reason",
+                "The request contains supplier, purchasing, budget, or product sourcing language.",
+            ),
         )
 
+        response["router_source"] = routing.get("source")
+        response["trained_router_decision"] = routing.get("trained_router_decision")
+
+        return response
+
     if detected_intent == "logistics":
-        return _build_user_agent_response(
+        response = _build_user_agent_response(
             status="needs_more_information",
             summary="User Agent detected a logistics request, but V1 requires logistics requests as structured JSON.",
             detected_intent=detected_intent,
             agents_called=[],
             specialist_response=None,
             missing_information=["structured_logistics_json"],
-            route_reason="The request contains shipping, container, CBM, or cargo language.",
+            route_reason=routing.get("trained_router_decision", {}).get(
+                "reason",
+                "The request contains shipping, container, CBM, or cargo language.",
+            ),
         )
 
+        response["router_source"] = routing.get("source")
+        response["trained_router_decision"] = routing.get("trained_router_decision")
+
+        return response
+
     if detected_intent == "document":
-        return _build_user_agent_response(
+        response = _build_user_agent_response(
             status="needs_more_information",
             summary="User Agent detected a document request. Please provide document file paths for Document AI.",
             detected_intent=detected_intent,
             agents_called=[],
             specialist_response=None,
             missing_information=["document_file_paths"],
-            route_reason="The request contains invoice, packing list, bill of lading, or certificate language.",
+            route_reason=routing.get("trained_router_decision", {}).get(
+                "reason",
+                "The request contains invoice, packing list, bill of lading, or certificate language.",
+            ),
         )
+
+        response["router_source"] = routing.get("source")
+        response["trained_router_decision"] = routing.get("trained_router_decision")
+
+        return response
 
     return _build_user_agent_response(
         status="needs_more_information",
