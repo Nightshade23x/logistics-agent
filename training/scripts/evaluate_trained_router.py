@@ -86,31 +86,42 @@ def build_prompt(tokenizer, messages: list[dict[str, str]]) -> str:
     )
 
 
-def load_model(base_model_name: str, adapter_path: Path):
+def load_model(base_model_name: str, adapter_path):
     dtype = torch.float16 if torch.cuda.is_available() else torch.float32
 
-    tokenizer = AutoTokenizer.from_pretrained(
-        adapter_path,
-        trust_remote_code=True,
-    )
+    if adapter_path is None:
+        tokenizer = AutoTokenizer.from_pretrained(
+            base_model_name,
+            trust_remote_code=True,
+        )
 
-    base_model = AutoModelForCausalLM.from_pretrained(
-        base_model_name,
-        torch_dtype=dtype,
-        trust_remote_code=True,
-    )
+        model = AutoModelForCausalLM.from_pretrained(
+            base_model_name,
+            dtype=dtype,
+            trust_remote_code=True,
+        )
+    else:
+        tokenizer = AutoTokenizer.from_pretrained(
+            adapter_path,
+            trust_remote_code=True,
+        )
 
-    model = PeftModel.from_pretrained(
-        base_model,
-        adapter_path,
-    )
+        base_model = AutoModelForCausalLM.from_pretrained(
+            base_model_name,
+            dtype=dtype,
+            trust_remote_code=True,
+        )
+
+        model = PeftModel.from_pretrained(
+            base_model,
+            adapter_path,
+        )
 
     if torch.cuda.is_available():
         model = model.to("cuda")
 
     model.eval()
     return model, tokenizer
-
 
 def generate_prediction(model, tokenizer, messages: list[dict[str, str]], max_new_tokens: int) -> str:
     prompt = build_prompt(tokenizer, messages)
@@ -146,7 +157,7 @@ def main() -> None:
     parser.add_argument("--limit", type=int, default=0)
     args = parser.parse_args()
 
-    adapter_path = Path(args.adapter_path)
+    adapter_path = None if args.adapter_path.lower() in {"none", "base", "no-adapter"} else Path(args.adapter_path)
     eval_file = Path(args.eval_file)
     output_file = Path(args.output_file)
 
