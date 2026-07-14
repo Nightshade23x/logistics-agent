@@ -45,3 +45,10 @@ orchestrator_handoff_pack/
 config/local_secrets.env
 config/local_secrets.ps1
 .env.local
+training/outputs/
+training/checkpoints/
+*.safetensors
+*.bin
+*.pt
+*.pth
+wandb/
