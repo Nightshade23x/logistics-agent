@@ -52,3 +52,7 @@ training/checkpoints/
 *.pt
 *.pth
 wandb/
+
+# Local handoff zip/staging files
+handoff_frontend_model_training/
+frontend_handoff_model_training.zip
