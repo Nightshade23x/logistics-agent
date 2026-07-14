@@ -1,5 +1,6 @@
 ﻿from __future__ import annotations
 
+import os
 from app.text_request_intent import classify_text_request_intent
 from app.shopping_service import run_shopping_agent_from_text
 
@@ -17,6 +18,33 @@ from app.final_verdict import derive_final_verdict, format_final_verdict
 from app.logistics_service import run_logistics_agent
 from app.partner_review_service import run_partner_review
 from app.shopping_service import run_shopping_agent, run_shopping_agent_from_text
+
+
+def _use_trained_router() -> bool:
+    return os.environ.get("USE_TRAINED_ROUTER", "0").lower() in {"1", "true", "yes"}
+
+
+def _route_text_request(text: str) -> dict[str, Any]:
+    if not _use_trained_router():
+        return detect_text_intent(text)
+
+    try:
+        from app.trained_router_backend import predict_trained_route
+
+        decision = predict_trained_route(text)
+
+        return {
+            "detected_intent": decision.get("intent", "unknown"),
+            "scores": {},
+            "source": "trained_router",
+            "trained_decision": decision,
+        }
+
+    except Exception as error:
+        fallback = detect_text_intent(text)
+        fallback["source"] = "rule_based_fallback"
+        fallback["trained_router_error"] = str(error)
+        return fallback
 
 
 def _build_final_answer(agent_response: dict[str, Any]) -> str:
@@ -130,8 +158,10 @@ def _attach_partner_review(
         request_id=partner_payload.get("request_id"),
     )
 
-    if "partner_review_service" not in response["agents_called"]:
-        response["agents_called"].append("partner_review_service")
+    response.setdefault("review_services_called", [])
+
+    if "partner_review_service" not in response["review_services_called"]:
+        response["review_services_called"].append("partner_review_service")
 
     response.setdefault("specialist_responses", {})
     response["specialist_responses"]["partner_review_service"] = partner_review
@@ -260,7 +290,7 @@ def _build_shopping_to_logistics_response(
 
 
 def run_user_agent_from_text(text: str) -> dict[str, Any]:
-    routing = detect_text_intent(text)
+    routing = _route_text_request(text)
     detected_intent = routing["detected_intent"]
 
     if detected_intent == "shopping":

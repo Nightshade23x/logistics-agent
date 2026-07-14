@@ -25,7 +25,8 @@ def test_user_agent_routes_shopping_text():
 
     assert response["agent_name"] == "user_agent"
     assert response["detected_intent"] == "shopping"
-    assert response["agents_called"] == ["shopping_agent", "logistics_agent", "partner_review_service"]
+    assert response["agents_called"] == ["shopping_agent", "logistics_agent"]
+    assert response.get("review_services_called") == ["partner_review_service"]
     assert response["specialist_response"]["agent_name"] == "shopping_agent"
     assert response["specialist_responses"]["logistics_agent"]["agent_name"] == "logistics_agent"
 
@@ -40,7 +41,8 @@ def test_user_agent_routes_document_files():
 
     assert response["agent_name"] == "user_agent"
     assert response["detected_intent"] == "document"
-    assert response["agents_called"] == ["document_ai_agent", "logistics_agent", "partner_review_service"]
+    assert response["agents_called"] == ["document_ai_agent", "logistics_agent"]
+    assert response.get("review_services_called") == ["partner_review_service"]
     assert response["specialist_response"]["agent_name"] == "document_ai_agent"
     assert response["specialist_responses"]["logistics_agent"]["agent_name"] == "logistics_agent"
     assert response["logistics_input"]["origin"] == "India"
@@ -60,7 +62,8 @@ def test_user_agent_routes_shopping_json():
 
     assert response["agent_name"] == "user_agent"
     assert response["detected_intent"] == "shopping"
-    assert response["agents_called"] == ["shopping_agent", "logistics_agent", "partner_review_service"]
+    assert response["agents_called"] == ["shopping_agent", "logistics_agent"]
+    assert response.get("review_services_called") == ["partner_review_service"]
     assert response["specialist_responses"]["logistics_agent"]["agent_name"] == "logistics_agent"
 
 
@@ -86,7 +89,8 @@ def test_user_agent_routes_logistics_json():
 
     assert response["agent_name"] == "user_agent"
     assert response["detected_intent"] == "logistics"
-    assert response["agents_called"] == ["logistics_agent", "partner_review_service"]
+    assert response["agents_called"] == ["logistics_agent"]
+    assert response.get("review_services_called") == ["partner_review_service"]
     assert response["specialist_response"]["agent_name"] == "logistics_agent"
     assert response["specialist_responses"]["logistics_agent"]["agent_name"] == "logistics_agent"
     assert response["specialist_responses"]["partner_review_service"]["agent_name"] == "partner_review_service"
