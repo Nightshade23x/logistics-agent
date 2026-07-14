@@ -254,7 +254,8 @@ def workflow_step_states(payload: dict[str, Any]) -> list[dict[str, str]]:
 
 
 def render_workflow_guide(payload: dict[str, Any]) -> None:
-    import streamlit as st
+    import html
+    import streamlit.components.v1 as components
 
     steps = workflow_step_states(payload)
 
@@ -274,32 +275,37 @@ def render_workflow_guide(payload: dict[str, Any]) -> None:
 
         step_html.append(
             f"""
-            <div style='border:1px solid {border}; background:{bg}; border-radius:16px; padding:13px 14px;'>
-                <div style='color:#f8fafc; font-size:0.92rem; font-weight:900; margin-bottom:4px;'>{html.escape(step["label"])}</div>
-                <div style='color:#94a3b8; font-size:0.78rem; font-weight:800; text-transform:uppercase; letter-spacing:0.04em;'>{html.escape(step["status"])}</div>
+            <div style='border:1px solid {border}; background:{bg}; border-radius:16px; padding:13px 14px; min-height:78px;'>
+                <div style='color:#f8fafc; font-size:0.92rem; font-weight:900; margin-bottom:4px;'>{html.escape(str(step["label"]))}</div>
+                <div style='color:#94a3b8; font-size:0.78rem; font-weight:800; text-transform:uppercase; letter-spacing:0.04em;'>{html.escape(str(step["status"]))}</div>
             </div>
             """
         )
 
     next_action = infer_next_frontend_action(payload)
+    next_action_text = str(next_action)
 
-    st.markdown(
-        f"""
-        <div style='border:1px solid rgba(59,130,246,0.28); border-radius:22px; padding:18px 20px;
-                    background:linear-gradient(135deg, rgba(15,23,42,0.88), rgba(30,41,59,0.54));
-                    margin:18px 0 24px 0;'>
-            <div style='color:#f8fafc; font-size:1.12rem; font-weight:900; margin-bottom:8px;'>Workflow Guide</div>
-            <div style='color:#cbd5e1; font-size:0.92rem; margin-bottom:16px;'>
-                Use this to know where you are, what has already run, and what to do next.
-            </div>
-            <div style='display:grid; grid-template-columns:repeat(5, minmax(0, 1fr)); gap:12px; margin-bottom:16px;'>
-                {''.join(step_html)}
-            </div>
-            <div style='border-left:4px solid rgba(248,113,113,0.90); border-radius:14px; padding:13px 15px;
-                        background:rgba(127,29,29,0.18); color:#fee2e2; font-weight:800;'>
-                {html.escape(next_action)}
-            </div>
+    if next_action_text.lower().startswith("next:"):
+        next_action_text = next_action_text[5:].strip()
+
+
+    workflow_html = f"""
+    <div style='border:1px solid rgba(59,130,246,0.28); border-radius:22px; padding:18px 20px;
+                background:linear-gradient(135deg, rgba(15,23,42,0.88), rgba(30,41,59,0.54));
+                margin:0; font-family:Inter, system-ui, -apple-system, BlinkMacSystemFont, sans-serif;'>
+        <div style='color:#f8fafc; font-size:1.12rem; font-weight:900; margin-bottom:8px;'>Workflow Guide</div>
+        <div style='color:#cbd5e1; font-size:0.92rem; margin-bottom:16px;'>
+            Use this to know where you are, what has already run, and what to do next.
         </div>
-        """,
-        unsafe_allow_html=True,
-    )
+        <div style='display:grid; grid-template-columns:repeat(5, minmax(0, 1fr)); gap:12px; margin-bottom:16px;'>
+            {''.join(step_html)}
+        </div>
+        <div style='border-left:4px solid rgba(248,113,113,0.90); border-radius:14px; padding:13px 15px;
+                    background:rgba(127,29,29,0.18); color:#fee2e2; font-weight:800;'>
+            Next: {html.escape(next_action_text)}
+        </div>
+    </div>
+    """
+
+    components.html(workflow_html, height=380, scrolling=False)
+

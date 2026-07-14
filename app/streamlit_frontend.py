@@ -1016,7 +1016,15 @@ def get_sample_shopping_payload() -> dict[str, Any]:
     return compact_payload
 
 
-def get_text_payload(text_request: str) -> dict[str, Any]:
+def get_text_payload(
+    text_request: str,
+    use_trained_router: bool | None = None,
+) -> dict[str, Any]:
+    if use_trained_router is None:
+        use_trained_router = bool(st.session_state.get("use_trained_router", False))
+
+    apply_trained_router_runtime_settings(use_trained_router)
+
     raw_response = run_user_agent_from_text(text_request)
     full_payload = build_frontend_payload(raw_response)
     compact_payload = build_compact_frontend_payload(full_payload)
@@ -1035,6 +1043,15 @@ def get_text_payload(text_request: str) -> dict[str, Any]:
     compact_payload["_raw_report_text"] = report_text
     compact_payload["_parsed_report"] = parsed_report
     compact_payload["_raw_user_agent_response"] = json_safe(raw_response)
+    compact_payload["router_source"] = raw_response.get(
+        "router_source",
+        "trained_router" if use_trained_router else "rule_based",
+    )
+    compact_payload["trained_router_decision"] = json_safe(
+        raw_response.get("trained_router_decision")
+    )
+    compact_payload["review_services_called"] = raw_response.get("review_services_called", [])
+    compact_payload["_use_trained_router"] = use_trained_router
 
     if is_empty(compact_payload.get("decision")) and parsed_report.get("status"):
         compact_payload["decision"] = parsed_report["status"]
@@ -2008,6 +2025,14 @@ def load_payload_with_spinner(label: str, loader) -> None:
         st.session_state.active_payload = loader()
 
 
+def apply_trained_router_runtime_settings(use_trained_router: bool) -> None:
+    if use_trained_router:
+        os.environ["USE_TRAINED_ROUTER"] = "1"
+        return
+
+    os.environ["USE_TRAINED_ROUTER"] = "0"
+
+
 def run_live_partner_health_check(orchestrator_url: str) -> dict[str, Any]:
     env = os.environ.copy()
     env["TRADE_ORCHESTRATOR_BASE_URL"] = orchestrator_url.strip() or "http://127.0.0.1:8010"
@@ -2432,6 +2457,7 @@ def render_frontend_action_center(payload: dict[str, Any]) -> None:
             "Answer provider": smart_answer.get("provider") or smart_answer.get("mode") or "Not available",
             "Answer status": smart_answer.get("status") or "Not available",
             "Partner mode": "Live orchestrator" if st.session_state.get("use_live_partner") else "Standalone fallback",
+            "Router source": humanize(payload.get("router_source") or "rule_based"),
             "Decision": humanize(payload.get("decision") or payload.get("status")),
         }
 
@@ -2481,10 +2507,19 @@ def main() -> None:
         mode_col, url_col, status_col = st.columns([1, 1.35, 1.15])
 
         with mode_col:
+            if "use_trained_router" not in st.session_state:
+                st.session_state.use_trained_router = False
+
             st.session_state.use_live_partner = st.checkbox(
                 "Use live partner orchestrator",
                 value=st.session_state.use_live_partner,
                 help="Enable this only when Avishi's orchestrator service is running locally.",
+            )
+
+            st.session_state.use_trained_router = st.checkbox(
+                "Use trained router model",
+                value=st.session_state.use_trained_router,
+                help="Enable the fine-tuned LoRA router for custom and guided text requests.",
             )
 
         with url_col:
@@ -2623,6 +2658,7 @@ def main() -> None:
     st.caption(
         f"Active run: {st.session_state.active_source} - "
         f"Partner mode: {'Live orchestrator' if st.session_state.use_live_partner else 'Standalone fallback'} - "
+        f"Router: {'Trained LoRA' if st.session_state.get('use_trained_router') else 'Rule-based'} - "
         f"Gemini model: {get_gemini_model()}"
     )
 
