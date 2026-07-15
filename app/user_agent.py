@@ -1,6 +1,7 @@
 ﻿from __future__ import annotations
 
 import os
+import re
 from app.text_request_intent import classify_text_request_intent
 from app.shopping_service import run_shopping_agent_from_text
 
@@ -18,6 +19,7 @@ from app.final_verdict import derive_final_verdict, format_final_verdict
 from app.logistics_service import run_logistics_agent
 from app.partner_review_service import run_partner_review
 from app.shopping_service import run_shopping_agent, run_shopping_agent_from_text
+from app.trader_adapter import run_trader_agent
 
 
 def _use_trained_router() -> bool:
@@ -273,11 +275,120 @@ def _can_handoff_shopping_to_logistics(
     )
 
 
+def _use_trader_agent() -> bool:
+    return os.environ.get("ENABLE_TRADER_AGENT", "0").lower() in {"1", "true", "yes"}
+
+
+def _first(value: Any) -> Any:
+    if isinstance(value, list) and value:
+        return value[0]
+    return value
+
+
+def _first_item_name(items: Any) -> str | None:
+    if isinstance(items, list) and items:
+        first_item = items[0]
+        if isinstance(first_item, dict):
+            return (
+                first_item.get("product_name")
+                or first_item.get("name")
+                or first_item.get("item_name")
+                or first_item.get("description")
+            )
+        return str(first_item)
+
+    return None
+
+
+
+
+def _normalize_country_name(value: str | None) -> str | None:
+    if not value:
+        return value
+
+    cleaned = value.strip()
+    upper = cleaned.upper()
+
+    common = {
+        "USA": "USA",
+        "US": "USA",
+        "U.S.": "USA",
+        "U.S.A.": "USA",
+        "UK": "UK",
+        "U.K.": "UK",
+        "UAE": "UAE",
+        "EU": "EU",
+    }
+
+    return common.get(upper, cleaned.title())
+
+def _extract_route_from_text(text: str | None) -> dict[str, str | None]:
+    if not text:
+        return {"country_from": None, "country_to": None}
+
+    match = re.search(
+        r"\bfrom\s+([A-Za-z][A-Za-z\s]+?)\s+to\s+([A-Za-z][A-Za-z\s]+?)(?:\.|,|$|\s+for|\s+with|\s+and)",
+        text,
+        flags=re.IGNORECASE,
+    )
+
+    if not match:
+        return {"country_from": None, "country_to": None}
+
+    return {
+        "country_from": _normalize_country_name(match.group(1)),
+        "country_to": _normalize_country_name(match.group(2)),
+    }
+
+def _build_trader_input_from_handoffs(
+    shopping_response: dict[str, Any],
+    logistics_input: dict[str, Any],
+    logistics_response: dict[str, Any],
+    original_text: str | None = None,
+) -> dict[str, Any]:
+    shopping_handoff = shopping_response.get("handoff_payload", {})
+    logistics_handoff = logistics_response.get("handoff_payload", {})
+    route_from_text = _extract_route_from_text(original_text)
+
+    selected_items = shopping_handoff.get("selected_items") or shopping_handoff.get("items") or []
+    logistics_items = logistics_input.get("items", [])
+
+    product_description = (
+        _first_item_name(selected_items)
+        or _first_item_name(logistics_items)
+        or shopping_handoff.get("product_description")
+        or shopping_handoff.get("product_name")
+    )
+
+    country_from = (
+        _first(shopping_handoff.get("supplier_countries"))
+        or shopping_handoff.get("origin_country")
+        or logistics_input.get("origin_country")
+        or logistics_handoff.get("origin_country")
+        or route_from_text.get("country_from")
+    )
+
+    country_to = (
+        shopping_handoff.get("destination_country")
+        or logistics_input.get("destination_country")
+        or logistics_handoff.get("destination_country")
+        or route_from_text.get("country_to")
+    )
+
+    return {
+        "product_description": product_description,
+        "country_from": country_from,
+        "country_to": country_to,
+        "target_market": country_to,
+    }
+
+
 def _build_shopping_to_logistics_response(
     shopping_response: dict[str, Any],
     detected_intent: str,
     summary: str,
     route_reason: str,
+    original_text: str | None = None,
 ) -> dict[str, Any]:
     if not _can_handoff_shopping_to_logistics(shopping_response):
         return _build_user_agent_response(
@@ -295,39 +406,87 @@ def _build_shopping_to_logistics_response(
     )
     logistics_response = run_logistics_agent(logistics_input)
 
-    combined_status = _combine_statuses(
-        [
-            shopping_response["status"],
-            logistics_response["status"],
-        ]
-    )
+    agents_called = ["shopping_agent", "logistics_agent"]
+    specialist_responses = {
+        "shopping_agent": shopping_response,
+        "logistics_agent": logistics_response,
+    }
+
+    statuses = [
+        shopping_response["status"],
+        logistics_response["status"],
+    ]
 
     missing_information = [
         *shopping_response.get("missing_information", []),
         *logistics_response.get("missing_information", []),
     ]
 
+    handoff_requests = [
+        *logistics_response.get("handoff_requests", []),
+    ]
+
+    trader_input: dict[str, Any] | None = None
+    trader_response: dict[str, Any] | None = None
+
+    if _use_trader_agent():
+        trader_input = _build_trader_input_from_handoffs(
+            shopping_response=shopping_response,
+            logistics_input=logistics_input,
+            logistics_response=logistics_response,
+            original_text=original_text,
+        )
+        trader_response = run_trader_agent(trader_input, use_reasoning=True)
+
+        agents_called.append("trader_agent")
+        specialist_responses["trader_agent"] = trader_response
+        statuses.append(trader_response.get("status", "review_required"))
+        missing_information.extend(trader_response.get("missing_information", []))
+        handoff_requests.extend(trader_response.get("handoff_requests", []))
+
+    combined_status = _combine_statuses(statuses)
+
+    if trader_response:
+        response_summary = (
+            "User Agent routed the request to Shopping Agent, handed selected items "
+            "to the Logistics Agent, then ran Trader Agent trade assessment."
+        )
+    else:
+        response_summary = (
+            "User Agent routed the request to Shopping Agent, then handed selected "
+            "items to the Logistics Agent."
+        )
+
     response = _build_user_agent_response(
         status=combined_status,
-        summary="User Agent routed the request to Shopping Agent, then handed selected items to the Logistics Agent.",
+        summary=response_summary,
         detected_intent=detected_intent,
-        agents_called=["shopping_agent", "logistics_agent"],
+        agents_called=agents_called,
         specialist_response=shopping_response,
         missing_information=missing_information,
         route_reason=route_reason,
     )
 
-    response["specialist_responses"] = {
-        "shopping_agent": shopping_response,
-        "logistics_agent": logistics_response,
-    }
+    response["specialist_responses"] = specialist_responses
     response["logistics_input"] = logistics_input
     response["handoff_payload"] = logistics_response.get("handoff_payload", {})
-    response["handoff_requests"] = logistics_response.get("handoff_requests", [])
-    response["final_answer"] = (
-        f"{_build_final_answer(shopping_response)}\n\n"
-        f"{_build_final_answer(logistics_response)}"
-    )
+    response["handoff_requests"] = handoff_requests
+
+    if trader_input is not None:
+        response["trader_input"] = trader_input
+
+    if trader_response is not None:
+        response["trader_handoff_payload"] = trader_response.get("handoff_payload", {})
+
+    final_parts = [
+        _build_final_answer(shopping_response),
+        _build_final_answer(logistics_response),
+    ]
+
+    if trader_response is not None:
+        final_parts.append(_build_final_answer(trader_response))
+
+    response["final_answer"] = "\n\n".join(final_parts)
 
     return _attach_partner_review(
         response=response,
@@ -363,6 +522,7 @@ def run_user_agent_from_text(text: str) -> dict[str, Any]:
                 detected_intent=detected_intent,
                 summary="User Agent routed the request to the Shopping Agent.",
                 route_reason=route_reason,
+                original_text=text,
             )
         else:
             response = _build_user_agent_response(
