@@ -296,15 +296,36 @@ def run_user_agent_from_text(text: str) -> dict[str, Any]:
     if detected_intent == "shopping":
         shopping_response = run_shopping_agent_from_text(text)
 
-        response = _build_shopping_to_logistics_response(
-            shopping_response=shopping_response,
-            detected_intent=detected_intent,
-            summary="User Agent routed the request to the Shopping Agent.",
-            route_reason=routing.get("trained_router_decision", {}).get(
-                "reason",
-                "The request contains supplier, purchasing, budget, or product sourcing language.",
-            ),
+        trained_decision = routing.get("trained_router_decision") or {}
+        requested_agents = trained_decision.get("agents_to_call")
+
+        should_call_logistics = True
+
+        if routing.get("source") == "trained_router" and isinstance(requested_agents, list):
+            should_call_logistics = "logistics_agent" in requested_agents
+
+        route_reason = trained_decision.get(
+            "reason",
+            "The request contains supplier, purchasing, budget, or product sourcing language.",
         )
+
+        if should_call_logistics:
+            response = _build_shopping_to_logistics_response(
+                shopping_response=shopping_response,
+                detected_intent=detected_intent,
+                summary="User Agent routed the request to the Shopping Agent.",
+                route_reason=route_reason,
+            )
+        else:
+            response = _build_user_agent_response(
+                status=shopping_response.get("status", "review_required"),
+                summary="User Agent routed the request to the Shopping Agent.",
+                detected_intent=detected_intent,
+                agents_called=["shopping_agent"],
+                specialist_response=shopping_response,
+                missing_information=shopping_response.get("missing_information", []),
+                route_reason=route_reason,
+            )
 
         response["router_source"] = routing.get("source")
         response["trained_router_decision"] = routing.get("trained_router_decision")
@@ -349,15 +370,23 @@ def run_user_agent_from_text(text: str) -> dict[str, Any]:
 
         return response
 
-    return _build_user_agent_response(
+    response = _build_user_agent_response(
         status="needs_more_information",
         summary="User Agent could not confidently detect the request type.",
         detected_intent="unknown",
         agents_called=[],
         specialist_response=None,
         missing_information=["clearer_user_request"],
-        route_reason="No strong routing keywords were detected.",
+        route_reason=routing.get("trained_router_decision", {}).get(
+            "reason",
+            "No strong routing keywords were detected.",
+        ),
     )
+
+    response["router_source"] = routing.get("source")
+    response["trained_router_decision"] = routing.get("trained_router_decision")
+
+    return response
 
 
 def _combine_statuses(statuses: list[str]) -> str:

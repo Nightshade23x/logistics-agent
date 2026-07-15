@@ -200,6 +200,10 @@ def _extract_items_from_sentences(text: str) -> list[dict[str, Any]]:
     seen_phrases = set()
 
     patterns = [
+        r"\bfind\s+(?:a\s+)?suppliers?\s+for\s+(.+?)(?:\.|\n|$)",
+        r"\bget\s+(?:me\s+)?(?:a\s+)?suppliers?\s+for\s+(.+?)(?:\.|\n|$)",
+        r"\bsource\s+(?:a\s+)?suppliers?\s+for\s+(.+?)(?:\.|\n|$)",
+        r"\bestimate\s+freight\s+and\s+find\s+(?:a\s+)?suppliers?\s+for\s+(.+?)(?:\.|\n|$)",
         r"\bI\s+need\s+(.+?)(?:\.|\n|$)",
         r"\bneed\s+(.+?)(?:\.|\n|$)",
         r"\bwant\s+(?:to\s+buy\s+|to\s+source\s+)?(.+?)(?:\.|\n|$)",

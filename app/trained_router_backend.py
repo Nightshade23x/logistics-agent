@@ -9,7 +9,7 @@ from app.router_decision_schema import validate_router_decision
 
 
 DEFAULT_BASE_MODEL = "Qwen/Qwen2.5-0.5B-Instruct"
-DEFAULT_ADAPTER_PATH = "G:/ai-models/checkpoints/router-qwen-0.5b-lora-expanded-400/final_adapter"
+DEFAULT_ADAPTER_PATH = "G:/ai-models/checkpoints/router-qwen-0.5b-lora-v5-balanced-450/final_adapter"
 
 SYSTEM_PROMPT = """
 You are the User Agent router for a trade and logistics multi-agent system.
@@ -44,6 +44,7 @@ def _load_model(base_model_name: str, adapter_path: str):
 
     base_model = AutoModelForCausalLM.from_pretrained(
         base_model_name,
+        local_files_only=True,
         dtype=dtype,
         trust_remote_code=True,
     )
