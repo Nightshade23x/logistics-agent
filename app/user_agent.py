@@ -496,6 +496,42 @@ def _build_shopping_to_logistics_response(
     )
 
 
+
+def _build_trader_input_from_document_handoff(
+    document_handoff: dict[str, Any],
+    logistics_input: dict[str, Any],
+    logistics_response: dict[str, Any],
+) -> dict[str, Any]:
+    logistics_handoff = logistics_response.get("handoff_payload", {})
+
+    items = (
+        document_handoff.get("items")
+        or logistics_input.get("items")
+        or logistics_handoff.get("items")
+        or []
+    )
+
+    product_description = _first_item_name(items)
+
+    country_from = (
+        document_handoff.get("origin_country")
+        or logistics_input.get("origin_country")
+        or logistics_handoff.get("origin_country")
+    )
+
+    country_to = (
+        document_handoff.get("destination_country")
+        or logistics_input.get("destination_country")
+        or logistics_handoff.get("destination_country")
+    )
+
+    return {
+        "product_description": product_description,
+        "country_from": country_from,
+        "country_to": country_to,
+        "target_market": country_to,
+    }
+
 def run_user_agent_from_text(text: str) -> dict[str, Any]:
     routing = _route_text_request(text)
     detected_intent = routing["detected_intent"]
@@ -682,39 +718,87 @@ def run_user_agent_from_files(paths: list[str | Path]) -> dict[str, Any]:
             logistics_input = _document_handoff_to_logistics_input(document_handoff)
             logistics_response = run_logistics_agent(logistics_input)
 
-            combined_status = _combine_statuses(
-                [
-                    document_response["status"],
-                    logistics_response["status"],
-                ]
-            )
+            agents_called = ["document_ai_agent", "logistics_agent"]
+            specialist_responses = {
+                "document_ai_agent": document_response,
+                "logistics_agent": logistics_response,
+            }
+
+            statuses = [
+                document_response["status"],
+                logistics_response["status"],
+            ]
 
             missing_information = [
                 *document_response.get("missing_information", []),
                 *logistics_response.get("missing_information", []),
             ]
 
+            handoff_requests = [
+                *logistics_response.get("handoff_requests", []),
+            ]
+
+            trader_input = None
+            trader_response = None
+
+            if _use_trader_agent():
+                trader_input = _build_trader_input_from_document_handoff(
+                    document_handoff=document_handoff,
+                    logistics_input=logistics_input,
+                    logistics_response=logistics_response,
+                )
+                trader_response = run_trader_agent(trader_input, use_reasoning=True)
+
+                agents_called.append("trader_agent")
+                specialist_responses["trader_agent"] = trader_response
+                statuses.append(trader_response.get("status", "review_required"))
+                missing_information.extend(trader_response.get("missing_information", []))
+                handoff_requests.extend(trader_response.get("handoff_requests", []))
+
+            combined_status = _combine_statuses(statuses)
+
+            if trader_response:
+                response_summary = (
+                    "User Agent routed the documents to Document AI, handed the "
+                    "validated cargo data to the Logistics Agent, then ran Trader "
+                    "Agent trade assessment."
+                )
+            else:
+                response_summary = (
+                    "User Agent routed the documents to Document AI, then handed "
+                    "the validated cargo data to the Logistics Agent."
+                )
+
             response = _build_user_agent_response(
                 status=combined_status,
-                summary="User Agent routed the documents to Document AI, then handed the validated cargo data to the Logistics Agent.",
+                summary=response_summary,
                 detected_intent=detected_intent,
-                agents_called=["document_ai_agent", "logistics_agent"],
+                agents_called=agents_called,
                 specialist_response=document_response,
                 missing_information=missing_information,
                 route_reason="The files were valid trade documents with consistent invoice and packing list cargo data.",
             )
 
-            response["specialist_responses"] = {
-                "document_ai_agent": document_response,
-                "logistics_agent": logistics_response,
-            }
+            response["specialist_responses"] = specialist_responses
             response["logistics_input"] = logistics_input
             response["handoff_payload"] = logistics_response.get("handoff_payload", {})
-            response["handoff_requests"] = logistics_response.get("handoff_requests", [])
-            response["final_answer"] = (
-                f"{_build_final_answer(document_response)}\n\n"
-                f"{_build_final_answer(logistics_response)}"
-            )
+            response["handoff_requests"] = handoff_requests
+
+            if trader_input is not None:
+                response["trader_input"] = trader_input
+
+            if trader_response is not None:
+                response["trader_handoff_payload"] = trader_response.get("handoff_payload", {})
+
+            final_parts = [
+                _build_final_answer(document_response),
+                _build_final_answer(logistics_response),
+            ]
+
+            if trader_response is not None:
+                final_parts.append(_build_final_answer(trader_response))
+
+            response["final_answer"] = "\n\n".join(final_parts)
 
             return _attach_partner_review(
                 response=response,
