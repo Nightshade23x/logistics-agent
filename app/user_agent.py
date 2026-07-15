@@ -82,6 +82,16 @@ def _route_text_request(text: str) -> dict[str, Any]:
                 "Deterministic guardrail: request includes both supplier sourcing "
                 "and shipping/logistics intent."
             )
+        elif _looks_like_direct_trader_request(text):
+            decision = dict(decision)
+            decision["intent"] = "trader"
+            decision["agents_to_call"] = ["trader_agent"]
+            decision["input_type"] = "text"
+            decision["confidence"] = "high"
+            decision["reason"] = (
+                "Deterministic guardrail: request asks for trade, tariff, duty, "
+                "FTA, HS code, customs, or export strategy assessment."
+            )
 
         return {
             "detected_intent": decision.get("intent", "unknown"),
@@ -532,6 +542,60 @@ def _build_trader_input_from_document_handoff(
         "target_market": country_to,
     }
 
+
+def _looks_like_direct_trader_request(text: str) -> bool:
+    lowered = text.lower()
+
+    trader_markers = [
+        "trade plan",
+        "assess trade",
+        "trade assessment",
+        "hs code",
+        "hscode",
+        "tariff",
+        "duty",
+        "duties",
+        "customs",
+        "fta",
+        "free trade agreement",
+        "export strategy",
+        "import duty",
+    ]
+
+    return any(marker in lowered for marker in trader_markers)
+
+
+def _extract_product_from_trade_text(text: str) -> str | None:
+    patterns = [
+        r"\b(?:for|of)\s+(.+?)\s+from\s+[A-Za-z][A-Za-z\s]+?\s+to\s+[A-Za-z][A-Za-z\s]+",
+        r"\b(?:for|of)\s+(.+?)(?:\.|,|$)",
+    ]
+
+    for pattern in patterns:
+        match = re.search(pattern, text, flags=re.IGNORECASE)
+        if match:
+            product = match.group(1).strip()
+            product = re.sub(
+                r"^(trade plan|hs code|hscode|tariff|duty|duties|customs|fta|export strategy)\s+",
+                "",
+                product,
+                flags=re.IGNORECASE,
+            ).strip()
+            return product or None
+
+    return None
+
+
+def _build_trader_input_from_text(text: str) -> dict[str, Any]:
+    route = _extract_route_from_text(text)
+
+    return {
+        "product_description": _extract_product_from_trade_text(text),
+        "country_from": route.get("country_from"),
+        "country_to": route.get("country_to"),
+        "target_market": route.get("country_to"),
+    }
+
 def run_user_agent_from_text(text: str) -> dict[str, Any]:
     routing = _route_text_request(text)
     detected_intent = routing["detected_intent"]
@@ -575,6 +639,35 @@ def run_user_agent_from_text(text: str) -> dict[str, Any]:
         response["trained_router_decision"] = routing.get("trained_router_decision")
 
         return response
+
+    if detected_intent == "trader":
+        trader_input = _build_trader_input_from_text(text)
+        trader_response = run_trader_agent(trader_input, use_reasoning=True)
+
+        response = _build_user_agent_response(
+            status=trader_response.get("status", "review_required"),
+            summary="User Agent routed the request directly to Trader Agent.",
+            detected_intent=detected_intent,
+            agents_called=["trader_agent"],
+            specialist_response=trader_response,
+            missing_information=trader_response.get("missing_information", []),
+            route_reason=routing.get("trained_router_decision", {}).get(
+                "reason",
+                "The request contains trade, customs, tariff, duty, FTA, or HS code language.",
+            ),
+        )
+
+        response["specialist_responses"] = {
+            "trader_agent": trader_response,
+        }
+        response["trader_input"] = trader_input
+        response["handoff_payload"] = trader_response.get("handoff_payload", {})
+        response["handoff_requests"] = trader_response.get("handoff_requests", [])
+        response["final_answer"] = _build_final_answer(trader_response)
+        response["router_source"] = routing.get("source")
+        response["trained_router_decision"] = routing.get("trained_router_decision")
+
+        return _attach_final_verdict(response)
 
     if detected_intent == "logistics":
         response = _build_user_agent_response(
