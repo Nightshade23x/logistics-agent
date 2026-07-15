@@ -38,6 +38,37 @@ def _normalize_trader_response(response: dict[str, Any]) -> dict[str, Any]:
     return response
 
 
+def _add_reasoning_fallback_note(
+    response: dict[str, Any],
+    reasoning_error: Exception,
+) -> dict[str, Any]:
+    """Keep core Trader output usable when Gemini reasoning fails."""
+
+    report = response.get("report")
+
+    fallback_message = (
+        "LLM reasoning was unavailable for this run. "
+        f"Core trade assessment still completed. Reason: {reasoning_error}"
+    )
+
+    if isinstance(report, dict):
+        report.setdefault("llm_judgment", fallback_message)
+        report["llm_reasoning_fallback"] = True
+    else:
+        response["report"] = {
+            "base_report": report,
+            "llm_judgment": fallback_message,
+            "llm_reasoning_fallback": True,
+        }
+
+    response.setdefault("missing_information", [])
+    response["missing_information"].append(
+        "Gemini reasoning was unavailable for this run; core Trader assessment was used instead."
+    )
+
+    return response
+
+
 def run_trader_agent(data: dict[str, Any], use_reasoning: bool = True) -> dict[str, Any]:
     """Run Trader Agent using the shared agent contract.
 
@@ -91,18 +122,27 @@ def run_trader_agent(data: dict[str, Any], use_reasoning: bool = True) -> dict[s
 
         load_dotenv(dotenv_path=ROOT_DIR / ".env", override=True)
 
+        from trader_agent.server import assess_trade_plan, assess_trade_plan_with_reasoning
+
+        reasoning_error: Exception | None = None
+
         if use_reasoning:
-            from trader_agent.server import assess_trade_plan_with_reasoning
-
-            result = assess_trade_plan_with_reasoning(
-                product_description=str(product_description),
-                country_from=str(country_from),
-                country_to=str(country_to),
-                target_market=str(target_market),
-            )
+            try:
+                result = assess_trade_plan_with_reasoning(
+                    product_description=str(product_description),
+                    country_from=str(country_from),
+                    country_to=str(country_to),
+                    target_market=str(target_market),
+                )
+            except Exception as exc:
+                reasoning_error = exc
+                result = assess_trade_plan(
+                    product_description=str(product_description),
+                    country_from=str(country_from),
+                    country_to=str(country_to),
+                    target_market=str(target_market),
+                )
         else:
-            from trader_agent.server import assess_trade_plan
-
             result = assess_trade_plan(
                 product_description=str(product_description),
                 country_from=str(country_from),
@@ -112,7 +152,10 @@ def run_trader_agent(data: dict[str, Any], use_reasoning: bool = True) -> dict[s
 
         dumped = _safe_model_dump(result)
         if isinstance(dumped, dict):
-            return _normalize_trader_response(dumped)
+            normalized = _normalize_trader_response(dumped)
+            if reasoning_error is not None:
+                normalized = _add_reasoning_fallback_note(normalized, reasoning_error)
+            return normalized
 
         return {
             "agent_name": "trader_agent",
