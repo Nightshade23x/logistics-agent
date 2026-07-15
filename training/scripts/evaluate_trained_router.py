@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 import torch
+from tqdm.auto import tqdm
 from peft import PeftModel
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
@@ -186,7 +187,7 @@ def main() -> None:
     missing_info_correct = 0
     full_match = 0
 
-    for index, record in enumerate(records, start=1):
+    for index, record in tqdm(enumerate(records, start=1), total=len(records), desc="Evaluating", unit="record"):
         expected = record["expected_output"]
         raw_prediction = generate_prediction(
             model=model,
