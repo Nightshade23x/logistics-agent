@@ -58,8 +58,8 @@ def currency(request: CurrencyConversionRequest):
 
 
 @app.post("/finance/report")
-def report(shipment: Shipment):
-    return router.generate_report(shipment)
+def report(shipment: Shipment, selling_price: float | None = None):
+    return router.generate_report(shipment, selling_price)
 
 @app.post("/finance/roi")
 def roi(

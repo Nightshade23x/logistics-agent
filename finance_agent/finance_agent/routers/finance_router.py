@@ -37,8 +37,8 @@ class FinanceRouter:
     def get_profit(self, report, selling_price):
         return profit_service.execute(report, selling_price)
     
-    def generate_report(self, report):
-        return report_service.execute(report)
+    def generate_report(self, shipment, selling_price=None):
+        return report_service.execute(shipment, selling_price)
     
     def get_roi(self, report, selling_price):
         return roi_service.execute(report, selling_price)
