@@ -24,6 +24,43 @@ def _use_trained_router() -> bool:
     return os.environ.get("USE_TRAINED_ROUTER", "0").lower() in {"1", "true", "yes"}
 
 
+
+def _looks_like_shopping_plus_logistics_request(text: str) -> bool:
+    """Guardrail for prompts that mention both sourcing and shipping."""
+
+    lowered = text.lower()
+
+    shopping_markers = [
+        "find supplier",
+        "get supplier",
+        "source supplier",
+        "supplier for",
+        "source ",
+        "buy ",
+        "purchase ",
+        "procure ",
+        "vendor",
+        "manufacturer",
+    ]
+
+    logistics_markers = [
+        "freight",
+        "shipping",
+        "ship ",
+        "shipment",
+        "container",
+        "logistics",
+        "lcl",
+        "fcl",
+        "cbm",
+        "from ",
+        " to ",
+    ]
+
+    return any(marker in lowered for marker in shopping_markers) and any(
+        marker in lowered for marker in logistics_markers
+    )
+
 def _route_text_request(text: str) -> dict[str, Any]:
     if not _use_trained_router():
         return detect_text_intent(text)
@@ -32,6 +69,17 @@ def _route_text_request(text: str) -> dict[str, Any]:
         from app.trained_router_backend import predict_trained_route
 
         decision = predict_trained_route(text)
+
+        if _looks_like_shopping_plus_logistics_request(text):
+            decision = dict(decision)
+            decision["intent"] = "shopping"
+            decision["agents_to_call"] = ["shopping_agent", "logistics_agent"]
+            decision["input_type"] = "text"
+            decision["confidence"] = "high"
+            decision["reason"] = (
+                "Deterministic guardrail: request includes both supplier sourcing "
+                "and shipping/logistics intent."
+            )
 
         return {
             "detected_intent": decision.get("intent", "unknown"),
