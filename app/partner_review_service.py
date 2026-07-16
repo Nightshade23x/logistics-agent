@@ -81,6 +81,27 @@ def _combine_partner_statuses(agent_responses: dict[str, Any]) -> str:
     return "clear"
 
 
+
+def _with_partner_review_observability(
+    response: dict[str, Any],
+    *,
+    mode: str,
+    live_orchestrator_configured: bool,
+    attempted: bool = True,
+) -> dict[str, Any]:
+    """Attach partner-review observability metadata for frontend/debug views."""
+
+    if not isinstance(response, dict):
+        return response
+
+    response.setdefault("partner_review_attempted", attempted)
+    response.setdefault("partner_review_mode", mode)
+    response.setdefault("partner_review_service_called", attempted)
+    response.setdefault("live_orchestrator_configured", live_orchestrator_configured)
+
+    return response
+
+
 def run_partner_review(
     payload: dict[str, Any],
     request_id: str | None = None,
@@ -90,7 +111,13 @@ def run_partner_review(
     trade_orchestrator_base_url = os.getenv("TRADE_ORCHESTRATOR_BASE_URL", "").strip()
     if trade_orchestrator_base_url:
         from app.partner_adapters.trade_orchestrator_client import run_trade_orchestrator_review
-        return run_trade_orchestrator_review(payload, base_url=trade_orchestrator_base_url)
+
+        response = run_trade_orchestrator_review(payload, base_url=trade_orchestrator_base_url)
+        return _with_partner_review_observability(
+            response,
+            mode="live_orchestrator",
+            live_orchestrator_configured=True,
+        )
 
     config = get_partner_integration_config()
 
@@ -108,18 +135,22 @@ def run_partner_review(
     items_checked = payload_validation.get("item_count", len(_extract_items(payload)))
 
     if not partner_requests["is_ready_for_partner_calls"]:
-        return {
-            "agent_name": "partner_review_service",
-            "status": "needs_more_information",
-            "summary": "Partner review payload is missing required information.",
-            "origin_country": origin_country,
-            "destination_country": destination_country,
-            "items_checked": items_checked,
-            "payload_validation": payload_validation,
-            "partner_agent_requests": partner_requests,
-            "agent_responses": {},
-            "missing_required_fields": payload_validation["errors"],
-        }
+        return _with_partner_review_observability(
+            {
+                "agent_name": "partner_review_service",
+                "status": "needs_more_information",
+                "summary": "Partner review payload is missing required information.",
+                "origin_country": origin_country,
+                "destination_country": destination_country,
+                "items_checked": items_checked,
+                "payload_validation": payload_validation,
+                "partner_agent_requests": partner_requests,
+                "agent_responses": {},
+                "missing_required_fields": payload_validation["errors"],
+            },
+            mode="local_fallback",
+            live_orchestrator_configured=False,
+        )
 
     agent_responses: dict[str, Any] = {}
 
@@ -177,15 +208,19 @@ def run_partner_review(
     missing_connections = _collect_missing_connections(agent_responses)
     status = _combine_partner_statuses(agent_responses)
 
-    return {
-        "agent_name": "partner_review_service",
-        "status": status,
-        "summary": "Partner review service prepared Risk, Compliance, Trader, and Finance checks.",
-        "origin_country": origin_country,
-        "destination_country": destination_country,
-        "items_checked": items_checked,
-        "payload_validation": payload_validation,
-        "partner_agent_requests": partner_requests,
-        "agent_responses": agent_responses,
-        "missing_connections": missing_connections,
-    }
+    return _with_partner_review_observability(
+        {
+            "agent_name": "partner_review_service",
+            "status": status,
+            "summary": "Partner review service prepared Risk, Compliance, Trader, and Finance checks.",
+            "origin_country": origin_country,
+            "destination_country": destination_country,
+            "items_checked": items_checked,
+            "payload_validation": payload_validation,
+            "partner_agent_requests": partner_requests,
+            "agent_responses": agent_responses,
+            "missing_connections": missing_connections,
+        },
+        mode="local_fallback",
+        live_orchestrator_configured=False,
+    )
