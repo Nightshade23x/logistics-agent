@@ -1,0 +1,133 @@
+{
+  "purpose": "Frontend display sample for partner review / live orchestrator mode.",
+  "prompt_used": "estimate freight and find supplier for 100 ceramic tiles from India to USA. Use CIF incoterm. Freight quote is 1200 USD. Insurance premium is 250 USD. Duty rate is 5 percent. Import tax rate is 8 percent.",
+  "important_frontend_note": "agents_called shows internal backend agents. review_services_called shows external partner review services.",
+  "ui_fields_to_display": {
+    "status": "critical_review_required",
+    "agents_called": [
+      "shopping_agent",
+      "logistics_agent"
+    ],
+    "review_services_called": [
+      "partner_review_service"
+    ],
+    "partner_review_status": "review_required",
+    "partner_review_attempted": true,
+    "partner_review_mode": "live_orchestrator",
+    "partner_review_service_called": true,
+    "live_orchestrator_configured": true
+  },
+  "partner_review": {
+    "agent_name": "partner_trade_orchestrator",
+    "status": "review_required",
+    "summary": "Trade orchestrator review completed.",
+    "plan": [
+      "Called Avishi's Trade Orchestrator as one specialist partner service.",
+      "Received combined risk, compliance, trader, and finance review.",
+      "Mapped orchestrator verdict into Samar backend status vocabulary."
+    ],
+    "report": {
+      "request_id": "mock-frontend-partner-review",
+      "parsed_shipment": {},
+      "verdict": {},
+      "synthesis": null,
+      "risk_report": {},
+      "compliance_report": {},
+      "trader_report": {},
+      "finance_report": {},
+      "agent_errors": {},
+      "samar_request_payload": {
+        "query": "ship 100 Ceramic tiles from India to USA. origin country is India. country_from is India. destination country is USA. country_to is USA. target market is USA. incoterm is CIF. cargo value is 480.0 USD. weight is 1200.0 kg. volume is 2.88 m3."
+      },
+      "samar_orchestrator_endpoint": "http://127.0.0.1:62975/orchestrate"
+    },
+    "input_resolution": {},
+    "missing_information": [],
+    "handoff_payload": {
+      "partner_service": "trade_orchestrator",
+      "orchestrator_request_id": "mock-frontend-partner-review",
+      "orchestrator_status": null,
+      "mapped_status": "review_required",
+      "verdict": {},
+      "synthesis": null,
+      "landed_cost": null,
+      "total_cost": null,
+      "freight_cost": null,
+      "insurance_cost": null,
+      "import_duty": null,
+      "taxes": null,
+      "currency": null,
+      "hs_code": null,
+      "duty_rate_percent": null,
+      "fta_exists": null,
+      "risk_tier": null,
+      "cpi_score": null,
+      "sanctions_status": null,
+      "agent_errors": {},
+      "configured": true,
+      "base_url": "http://127.0.0.1:62975"
+    },
+    "handoff_requests": [],
+    "partner_review_attempted": true,
+    "partner_review_mode": "live_orchestrator",
+    "partner_review_service_called": true,
+    "live_orchestrator_configured": true
+  },
+  "partner_review_payload": {
+    "request_id": "SHOP-TEXT-REQUEST",
+    "origin": "India",
+    "origin_country": "India",
+    "destination": "USA",
+    "destination_country": "USA",
+    "incoterm": "CIF",
+    "freight_quote_usd": 1200.0,
+    "insurance_premium_usd": 250.0,
+    "duty_rate_percent": 5.0,
+    "import_tax_rate_percent": 8.0,
+    "total_cbm": 2.88,
+    "total_weight_kg": 1200.0,
+    "selected_items": [
+      {
+        "supplier_id": "SUP-IN-001",
+        "supplier_name": "Mumbai Export House",
+        "country": "India",
+        "product_name": "Ceramic tiles",
+        "category": "building_materials",
+        "unit_price_usd": 4.8,
+        "requested_quantity": 100,
+        "estimated_total_cost_usd": 480.0,
+        "quality_score": 8.5,
+        "supplier_rating": 4.6,
+        "lead_time_days": 18,
+        "minimum_order_quantity": 50,
+        "available_quantity": 5000,
+        "availability_status": "available",
+        "preference_issues": [],
+        "selection_status": "eligible",
+        "is_preferred_country": false,
+        "match_score": 0.9,
+        "overall_score": 8.78,
+        "notes": "Good export packaging and regular container shipments.",
+        "risk_score": 1,
+        "risk_level": "low",
+        "risk_notes": [
+          "Supplier country India is not marked as a preferred country."
+        ]
+      }
+    ],
+    "items": null
+  },
+  "specialist_response_keys": [
+    "logistics_agent",
+    "partner_review_service",
+    "shopping_agent"
+  ],
+  "mock_orchestrator_requests_received": [
+    {
+      "path": "/orchestrate",
+      "body": {
+        "query": "ship 100 Ceramic tiles from India to USA. origin country is India. country_from is India. destination country is USA. country_to is USA. target market is USA. incoterm is CIF. cargo value is 480.0 USD. weight is 1200.0 kg. volume is 2.88 m3."
+      }
+    }
+  ]
+}
