@@ -149,7 +149,54 @@ def _build_user_agent_response(
     }
 
 
+
+PARTNER_REVIEW_OBSERVABILITY_FIELDS = (
+    "partner_review_attempted",
+    "partner_review_mode",
+    "partner_review_service_called",
+    "live_orchestrator_configured",
+)
+
+
+def _get_partner_review_response(response: dict[str, Any]) -> dict[str, Any]:
+    partner_review = response.get("partner_review")
+    if isinstance(partner_review, dict):
+        return partner_review
+
+    specialist_responses = response.get("specialist_responses")
+    if isinstance(specialist_responses, dict):
+        partner_response = specialist_responses.get("partner_review_service")
+        if isinstance(partner_response, dict):
+            return partner_response
+
+    return {}
+
+
+def _sync_partner_review_observability(response: dict[str, Any]) -> dict[str, Any]:
+    """Expose nested partner-review observability fields at User Agent top level."""
+
+    partner_response = _get_partner_review_response(response)
+    if not partner_response:
+        return response
+
+    if response.get("partner_review_status") is None and partner_response.get("status") is not None:
+        response["partner_review_status"] = partner_response.get("status")
+
+    for field in PARTNER_REVIEW_OBSERVABILITY_FIELDS:
+        if response.get(field) is None and partner_response.get(field) is not None:
+            response[field] = partner_response.get(field)
+
+    review_services = response.get("review_services_called")
+    if review_services is None:
+        response["review_services_called"] = ["partner_review_service"]
+    elif isinstance(review_services, list) and "partner_review_service" not in review_services:
+        review_services.append("partner_review_service")
+
+    return response
+
+
 def _attach_final_verdict(response: dict[str, Any]) -> dict[str, Any]:
+    _sync_partner_review_observability(response)
     final_verdict = derive_final_verdict(response)
     response["final_verdict"] = final_verdict
 
