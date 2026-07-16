@@ -210,40 +210,213 @@ def _attach_final_verdict(response: dict[str, Any]) -> dict[str, Any]:
     return response
 
 
+
+def _has_partner_payload_value(value: Any) -> bool:
+    if value is None:
+        return False
+
+    if isinstance(value, str):
+        return bool(value.strip())
+
+    if isinstance(value, (list, dict)):
+        return bool(value)
+
+    return True
+
+
+def _first_partner_payload_value(*values: Any) -> Any:
+    for value in values:
+        if _has_partner_payload_value(value):
+            return value
+
+    return None
+
+
+def _parse_float_from_text(value: str | None) -> float | None:
+    if not value:
+        return None
+
+    try:
+        return float(value.replace(",", "").strip())
+    except ValueError:
+        return None
+
+
+def _extract_trade_cost_fields_from_text(text: str | None) -> dict[str, Any]:
+    if not text:
+        return {}
+
+    fields: dict[str, Any] = {}
+
+    incoterm_codes = "EXW|FCA|FAS|FOB|CFR|CIF|CPT|CIP|DAP|DPU|DDP"
+
+    incoterm_patterns = [
+        rf"\b(?:use\s+)?({incoterm_codes})\s+incoterm\b",
+        rf"\bincoterm\s*(?:is|=|:)?\s*({incoterm_codes})\b",
+    ]
+
+    for pattern in incoterm_patterns:
+        match = re.search(pattern, text, flags=re.IGNORECASE)
+        if match:
+            fields["incoterm"] = match.group(1).upper()
+            break
+
+    numeric_patterns = {
+        "freight_quote_usd": [
+            r"\bfreight\s+quote\s*(?:is|=|:)?\s*(?:USD|\$)?\s*([0-9][0-9,]*(?:\.[0-9]+)?)\s*(?:USD|dollars?)?\b",
+            r"\bfreight\s+cost\s*(?:is|=|:)?\s*(?:USD|\$)?\s*([0-9][0-9,]*(?:\.[0-9]+)?)\s*(?:USD|dollars?)?\b",
+        ],
+        "insurance_premium_usd": [
+            r"\binsurance\s+premium\s*(?:is|=|:)?\s*(?:USD|\$)?\s*([0-9][0-9,]*(?:\.[0-9]+)?)\s*(?:USD|dollars?)?\b",
+            r"\binsurance\s+cost\s*(?:is|=|:)?\s*(?:USD|\$)?\s*([0-9][0-9,]*(?:\.[0-9]+)?)\s*(?:USD|dollars?)?\b",
+        ],
+        "duty_rate_percent": [
+            r"\bduty\s+rate\s*(?:is|=|:)?\s*([0-9][0-9,]*(?:\.[0-9]+)?)\s*(?:percent|%)\b",
+            r"\bimport\s+duty\s*(?:is|=|:)?\s*([0-9][0-9,]*(?:\.[0-9]+)?)\s*(?:percent|%)\b",
+        ],
+        "import_tax_rate_percent": [
+            r"\bimport\s+tax\s+rate\s*(?:is|=|:)?\s*([0-9][0-9,]*(?:\.[0-9]+)?)\s*(?:percent|%)\b",
+            r"\btax\s+rate\s*(?:is|=|:)?\s*([0-9][0-9,]*(?:\.[0-9]+)?)\s*(?:percent|%)\b",
+        ],
+    }
+
+    for field, patterns in numeric_patterns.items():
+        for pattern in patterns:
+            match = re.search(pattern, text, flags=re.IGNORECASE)
+            if match:
+                parsed = _parse_float_from_text(match.group(1))
+                if parsed is not None:
+                    fields[field] = parsed
+                    break
+
+    return fields
+
+
+def _copy_partner_payload_optional_fields(
+    payload: dict[str, Any],
+    *sources: dict[str, Any],
+) -> None:
+    aliases = {
+        "incoterm": ("incoterm", "trade_term"),
+        "freight_quote_usd": ("freight_quote_usd", "freight_quote", "freight_cost_usd"),
+        "insurance_premium_usd": (
+            "insurance_premium_usd",
+            "insurance_premium",
+            "insurance_cost_usd",
+        ),
+        "duty_rate_percent": ("duty_rate_percent", "duty_rate"),
+        "import_tax_rate_percent": ("import_tax_rate_percent", "import_tax_rate"),
+    }
+
+    for output_key, input_keys in aliases.items():
+        if _has_partner_payload_value(payload.get(output_key)):
+            continue
+
+        for source in sources:
+            if not isinstance(source, dict):
+                continue
+
+            for input_key in input_keys:
+                value = source.get(input_key)
+                if _has_partner_payload_value(value):
+                    payload[output_key] = value
+                    break
+
+            if _has_partner_payload_value(payload.get(output_key)):
+                break
+
+
 def _build_partner_review_payload(
     logistics_input: dict[str, Any],
     logistics_handoff: dict[str, Any],
     source_handoff: dict[str, Any],
+    original_text: str | None = None,
 ) -> dict[str, Any]:
+    extract_route = globals().get("_extract_route_from_text")
+    route_from_text = (
+        extract_route(original_text)
+        if callable(extract_route)
+        else {"country_from": None, "country_to": None}
+    )
+
+    origin = _first_partner_payload_value(
+        source_handoff.get("origin_country"),
+        source_handoff.get("origin"),
+        logistics_input.get("origin_country"),
+        logistics_input.get("origin"),
+        logistics_handoff.get("origin_country"),
+        logistics_handoff.get("origin"),
+        route_from_text.get("country_from"),
+    )
+
+    destination = _first_partner_payload_value(
+        source_handoff.get("destination_country"),
+        source_handoff.get("destination"),
+        logistics_input.get("destination_country"),
+        logistics_input.get("destination"),
+        logistics_handoff.get("destination_country"),
+        logistics_handoff.get("destination"),
+        route_from_text.get("country_to"),
+    )
+
+    normalizer = globals().get("_normalize_country_name")
+    if callable(normalizer):
+        if origin:
+            origin = normalizer(str(origin))
+        if destination:
+            destination = normalizer(str(destination))
+
     payload = {
         "request_id": (
             source_handoff.get("request_id")
             or logistics_input.get("shipment_id")
             or logistics_handoff.get("shipment_id")
         ),
-        "origin": (
-            source_handoff.get("origin_country")
-            or logistics_input.get("origin")
-            or logistics_handoff.get("origin")
+        "origin": origin,
+        "origin_country": origin,
+        "destination": destination,
+        "destination_country": destination,
+        "total_cbm": _first_partner_payload_value(
+            logistics_handoff.get("total_cbm"),
+            logistics_input.get("total_cbm"),
+            source_handoff.get("total_cbm"),
         ),
-        "destination": (
-            source_handoff.get("destination_country")
-            or logistics_input.get("destination")
-            or logistics_handoff.get("destination")
+        "total_weight_kg": _first_partner_payload_value(
+            logistics_handoff.get("total_weight_kg"),
+            logistics_input.get("total_weight_kg"),
+            source_handoff.get("total_weight_kg"),
         ),
-        "total_cbm": logistics_handoff.get("total_cbm"),
-        "total_weight_kg": logistics_handoff.get("total_weight_kg"),
-        "declared_value_usd": (
-            source_handoff.get("total_value")
-            or source_handoff.get("estimated_total_procurement_cost_usd")
-            or logistics_handoff.get("declared_value_usd")
+        "declared_value_usd": _first_partner_payload_value(
+            source_handoff.get("total_value"),
+            source_handoff.get("estimated_total_procurement_cost_usd"),
+            logistics_input.get("declared_value_usd"),
+            logistics_handoff.get("declared_value_usd"),
         ),
     }
 
-    if source_handoff.get("selected_items"):
-        payload["selected_items"] = source_handoff["selected_items"]
+    selected_items = _first_partner_payload_value(
+        source_handoff.get("selected_items"),
+        logistics_input.get("selected_items"),
+    )
+
+    if selected_items:
+        payload["selected_items"] = selected_items
     else:
-        payload["items"] = logistics_input.get("items", source_handoff.get("items", []))
+        payload["items"] = _first_partner_payload_value(
+            logistics_input.get("items"),
+            source_handoff.get("items"),
+            logistics_handoff.get("items"),
+            [],
+        )
+
+    _copy_partner_payload_optional_fields(
+        payload,
+        source_handoff,
+        logistics_input,
+        logistics_handoff,
+    )
+
+    payload.update(_extract_trade_cost_fields_from_text(original_text))
 
     return payload
 
@@ -253,11 +426,13 @@ def _attach_partner_review(
     logistics_input: dict[str, Any],
     logistics_handoff: dict[str, Any],
     source_handoff: dict[str, Any],
+    original_text: str | None = None,
 ) -> dict[str, Any]:
     partner_payload = _build_partner_review_payload(
         logistics_input=logistics_input,
         logistics_handoff=logistics_handoff,
         source_handoff=source_handoff,
+        original_text=original_text,
     )
 
     partner_review = run_partner_review(
@@ -550,6 +725,7 @@ def _build_shopping_to_logistics_response(
         logistics_input=logistics_input,
         logistics_handoff=logistics_response.get("handoff_payload", {}),
         source_handoff=shopping_response.get("handoff_payload", {}),
+        original_text=original_text,
     )
 
 
