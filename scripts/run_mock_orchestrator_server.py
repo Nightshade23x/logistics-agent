@@ -11,28 +11,7 @@ PORT = 8010
 
 class MockOrchestratorHandler(BaseHTTPRequestHandler):
     def _send_json(self, status_code: int, payload: dict[str, Any]) -> None:
-        body = json.dumps(payload,/Logistics → Partner Review → Mock Orchestrator
-```
-
-Run this one block:
-
-````powershell
-cd C:\Users\Samar\Desktop\logistics-agent
-& "G:\venvs\logistics-training\Scripts\Activate.ps1"
-
-@'
-from __future__ import annotations
-
-import json
-from http.server import BaseHTTPRequestHandler, HTTPServer
-from typing import Any
-
-
-HOST = "127.0.0.1"
-PORT = 8010
-
-
-class MockOr indent=2).encode("utf-8")
+        body = json.dumps(payload, indent=2).encode("utf-8")
         self.send_response(status_code)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
@@ -62,7 +41,8 @@ class MockOr indent=2).encode("utf-8")
         except json.JSONDecodeError:
             parsed_body = {"raw_body": raw_body}
 
-        print("\n" + "=" * 80)
+        print()
+        print("=" * 80)
         print("MOCK ORCHESTRATOR RECEIVED REQUEST")
         print("=" * 80)
         print("Path:", self.path)
@@ -78,7 +58,10 @@ class MockOr indent=2).encode("utf-8")
                 "request_id": "mock-live-ui-review",
                 "status": "review_required",
                 "verdict": "review_required",
-                "summary": "Mock live partner review completed successfully. This proves the frontend/backend live partner path is wired.",
+                "summary": (
+                    "Mock live partner review completed successfully. "
+                    "This proves the frontend/backend live partner path is wired."
+                ),
                 "blockers": [],
                 "warnings": [
                     "Mock warning: confirm HS code before final customs filing.",
@@ -123,7 +106,8 @@ def main() -> None:
     try:
         server.serve_forever()
     except KeyboardInterrupt:
-        print("\nStopping mock orchestrator.")
+        print()
+        print("Stopping mock orchestrator.")
     finally:
         server.server_close()
 
