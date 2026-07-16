@@ -110,6 +110,15 @@ def main() -> int:
                 "TRADE_ORCHESTRATOR_BASE_URL": None,
             },
         ),
+        (
+            "Partner payload contract across entry paths",
+            [sys.executable, "scripts/test_partner_payload_contract.py"],
+            {
+                "USE_TRAINED_ROUTER": "1",
+                "ENABLE_TRADER_AGENT": "1",
+                "TRADE_ORCHESTRATOR_BASE_URL": None,
+            },
+        ),
     ]
 
     for name, command, env_updates in checks:
