@@ -453,7 +453,7 @@ def _attach_partner_review(
 
     response["final_answer"] = (
         response["final_answer"]
-        + "\n\nPARTNER REVIEW PLACEHOLDER\n"
+        + "\n\nPARTNER REVIEW\n"
         + "------------------------------\n"
         + f"Status: {partner_review.get('status')}\n"
         + f"{partner_review.get('summary')}"
@@ -615,6 +615,28 @@ def _build_trader_input_from_handoffs(
     }
 
 
+
+def _apply_text_route_to_logistics_input(logistics_input: dict[str, Any], original_text: str | None) -> dict[str, Any]:
+    """Fill origin/destination in logistics input from original user text when available."""
+    if not isinstance(logistics_input, dict):
+        return logistics_input
+
+    route = _extract_route_from_text(original_text or "")
+    country_from = route.get("country_from")
+    country_to = route.get("country_to")
+
+    if country_from and not logistics_input.get("origin"):
+        logistics_input["origin"] = country_from
+    if country_from and not logistics_input.get("origin_country"):
+        logistics_input["origin_country"] = country_from
+
+    if country_to and not logistics_input.get("destination"):
+        logistics_input["destination"] = country_to
+    if country_to and not logistics_input.get("destination_country"):
+        logistics_input["destination_country"] = country_to
+
+    return logistics_input
+
 def _build_shopping_to_logistics_response(
     shopping_response: dict[str, Any],
     detected_intent: str,
@@ -636,6 +658,7 @@ def _build_shopping_to_logistics_response(
     logistics_input = _shopping_handoff_to_logistics_input(
         shopping_response.get("handoff_payload", {})
     )
+    logistics_input = _apply_text_route_to_logistics_input(logistics_input, original_text)
     logistics_response = run_logistics_agent(logistics_input)
 
     agents_called = ["shopping_agent", "logistics_agent"]
