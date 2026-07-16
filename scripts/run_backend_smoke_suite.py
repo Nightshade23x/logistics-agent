@@ -66,6 +66,7 @@ def main() -> int:
             {
                 "USE_TRAINED_ROUTER": "1",
                 "ENABLE_TRADER_AGENT": None,
+                "TRADE_ORCHESTRATOR_BASE_URL": None,
             },
         ),
         (
@@ -116,6 +117,15 @@ def main() -> int:
             {
                 "USE_TRAINED_ROUTER": "1",
                 "ENABLE_TRADER_AGENT": "1",
+                "TRADE_ORCHESTRATOR_BASE_URL": None,
+            },
+        ),
+        (
+            "Mock live orchestrator pipeline",
+            [sys.executable, "scripts/test_mock_live_orchestrator_pipeline.py"],
+            {
+                "USE_TRAINED_ROUTER": "1",
+                "ENABLE_TRADER_AGENT": None,
                 "TRADE_ORCHESTRATOR_BASE_URL": None,
             },
         ),
