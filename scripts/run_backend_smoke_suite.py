@@ -92,6 +92,15 @@ def main() -> int:
                 "ENABLE_TRADER_AGENT": "1",
             },
         ),
+        (
+            "Partner review observability fields",
+            [sys.executable, "scripts/test_partner_review_observability.py"],
+            {
+                "USE_TRAINED_ROUTER": "1",
+                "ENABLE_TRADER_AGENT": None,
+                "TRADE_ORCHESTRATOR_BASE_URL": None,
+            },
+        ),
     ]
 
     for name, command, env_updates in checks:
