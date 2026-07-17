@@ -2541,8 +2541,8 @@ def main() -> None:
 
         if st.session_state.use_live_partner:
             st.warning(
-                "Live partner mode is enabled. Risk/compliance/finance should answer through the orchestrator. "
-                "Trader may still fail until Avishi fixes the trader agent provider setup."
+                "Live partner mode is enabled. Risk/compliance/finance/trader should answer through the orchestrator. "
+                
             )
 
         render_agent_connection_summary(
@@ -2603,7 +2603,6 @@ def main() -> None:
         with check_col2:
             st.caption(
                 "Live partner mode needs the local finance service and orchestrator service running. "
-                "Trader may still fail until Avishi fixes that agent."
             )
 
         if st.session_state.get("partner_health_check"):
