@@ -4,7 +4,7 @@ from ..clients.mcp_client import McpAgentClient
 from ..clients.finance_client import FinanceClient
 from .shipment_parser_service import ShipmentParserService
 from .synthesis_service import SynthesisService
-from ..schemas.orchestrated_response import OrchestratedResponse
+from ..schemas.orchestrated_response import OrchestratedResponse, Verdict
 import time
 import uuid
 from ..logging_config import get_logger
@@ -35,7 +35,24 @@ class OrchestratorService:
         logger.info(f"[{request_id}] Received query: {query!r}")
 
         start = time.monotonic()
-        shipment = self._parser_service.parse(query)
+        try:
+            shipment = self._parser_service.parse(query)
+        except Exception as exc:
+            logger.error(f"[{request_id}] Parser LLM failed: {exc}")
+            return OrchestratedResponse(
+                request_id=request_id,
+                parsed_shipment={},
+                compliance_report={}, trader_report={}, finance_report={}, risk_report={},
+                agent_errors={"parser": f"Gemini unavailable: {exc}"},
+                verdict=Verdict(
+                    status="review_required",
+                    headline="Unable to process request automatically -- Gemini quota exhausted.",
+                    blockers=[],
+                    warnings=["The AI parsing service is temporarily unavailable. Manual review required."],
+                    next_steps=["Retry once Gemini quota resets, or submit shipment details in structured form."],
+                ),
+                synthesis="Automatic parsing is temporarily unavailable due to quota limits. Please retry shortly.",
+            )        
         logger.info(
             f"[{request_id}] Parsed shipment: {shipment.product_description} "
             f"{shipment.country_from} -> {shipment.country_to} "
@@ -124,9 +141,16 @@ class OrchestratorService:
         )
         logger.info(f"[{request_id}] Verdict: {verdict.status}")
 
-        synthesis = self._synthesis_service.synthesize(
-            compliance_report, trader_report, finance_report, risk_report, agent_errors
-        )
+        try:
+            synthesis = self._synthesis_service.synthesize(
+                compliance_report, trader_report, finance_report, risk_report, agent_errors
+            )
+        except Exception as exc:
+            logger.error(f"[{request_id}] Synthesis LLM failed: {exc}")
+            synthesis = (
+                f"Automatic summary unavailable (AI service quota exhausted). "
+                f"Verdict: {verdict.status}. See individual agent reports for details."
+            )
 
         total_time = time.monotonic() - start
         logger.info(f"[{request_id}] Completed in {total_time:.2f}s")
