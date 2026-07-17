@@ -9,9 +9,12 @@ Python interpreter, with cwd set to the outer package folder so
 
 import asyncio
 import json
+import os
+import sys
+from pathlib import Path
+
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
-import os
 from dotenv import load_dotenv
 
 
@@ -40,13 +43,48 @@ _GH_ROOT = r"C:\Users\avish\OneDrive\Desktop\GitHub Projects"
 
 load_dotenv()
 
-_RISK_CWD = os.environ["RISK_AGENT_DIR"] + r"\risk_agent"
-_COMPLIANCE_CWD = os.environ["COMPLIANCE_AGENT_DIR"] + r"\compliance_agent"
-_TRADER_CWD = os.environ["TRADER_AGENT_DIR"] + r"\trader_agent"
 
-_RISK_PYTHON = os.environ["RISK_AGENT_DIR"] + r"\.venv\Scripts\python.exe"
-_COMPLIANCE_PYTHON = os.environ["COMPLIANCE_AGENT_DIR"] + r"\.venv\Scripts\python.exe"
-_TRADER_PYTHON = os.environ["TRADER_AGENT_DIR"] + r"\.venv\Scripts\python.exe"
+def _resolve_agent_cwd(env_name: str, package_name: str) -> str:
+    """Resolve agent cwd for both separate worktree and combined-repo layouts."""
+    root = Path(os.environ[env_name]).resolve()
+
+    # Combined repo layout:
+    #   <repo>/risk_agent/risk_agent/server.py
+    # env points to <repo>/risk_agent, cwd should be <repo>/risk_agent.
+    if (root / package_name / "server.py").exists():
+        return str(root)
+
+    # Separate worktree layout:
+    #   <worktree>/risk_agent/risk_agent/server.py
+    # env points to <worktree>, cwd should be <worktree>/risk_agent.
+    if (root / package_name / package_name / "server.py").exists():
+        return str(root / package_name)
+
+    # Backward-compatible fallback.
+    return str(root / package_name)
+
+
+def _resolve_agent_python(env_name: str, python_env_name: str) -> str:
+    """Use explicit env python, per-agent venv python, or current Python as fallback."""
+    explicit_python = os.environ.get(python_env_name)
+    if explicit_python and Path(explicit_python).exists():
+        return explicit_python
+
+    root = Path(os.environ[env_name]).resolve()
+    venv_python = root / ".venv" / "Scripts" / "python.exe"
+    if venv_python.exists():
+        return str(venv_python)
+
+    return sys.executable
+
+
+_RISK_CWD = _resolve_agent_cwd("RISK_AGENT_DIR", "risk_agent")
+_COMPLIANCE_CWD = _resolve_agent_cwd("COMPLIANCE_AGENT_DIR", "compliance_agent")
+_TRADER_CWD = _resolve_agent_cwd("TRADER_AGENT_DIR", "trader_agent")
+
+_RISK_PYTHON = _resolve_agent_python("RISK_AGENT_DIR", "RISK_AGENT_PYTHON")
+_COMPLIANCE_PYTHON = _resolve_agent_python("COMPLIANCE_AGENT_DIR", "COMPLIANCE_AGENT_PYTHON")
+_TRADER_PYTHON = _resolve_agent_python("TRADER_AGENT_DIR", "TRADER_AGENT_PYTHON")
 
 
 def build_risk_client() -> McpAgentClient:
