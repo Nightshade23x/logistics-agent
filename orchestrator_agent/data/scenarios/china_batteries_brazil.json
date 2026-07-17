@@ -1,0 +1,17 @@
+{
+  "name": "china_batteries_brazil",
+  "description": "Unclassified product, high country risk, no FTA -- review_required case",
+  "query": "ship 200 e-bike batteries from China to Brazil",
+  "input": {
+    "product_description": "e-bike batteries",
+    "country_from": "China",
+    "country_to": "Brazil",
+    "target_market": "Brazil",
+    "quantity": 200,
+    "cargo_value": 70000,
+    "weight_kg": 700,
+    "volume_m3": 3.0,
+    "currency": "USD"
+  },
+  "expected_verdict_status": "review_required"
+}

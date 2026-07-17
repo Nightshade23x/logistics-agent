@@ -1,0 +1,34 @@
+[
+  {
+    "country": "Iran",
+    "comprehensive_restriction": true,
+    "restriction_note": "Comprehensive US/EU/UN sanctions apply to most trade with Iran. Nearly all exports require OFAC or equivalent licensing regardless of product category.",
+    "restricted_hazard_classes": [],
+    "restricted_keywords": [],
+    "requires_license_for_all": true
+  },
+  {
+    "country": "North Korea",
+    "comprehensive_restriction": true,
+    "restriction_note": "Comprehensive UN Security Council sanctions. Virtually all trade is prohibited without a specific UN Security Council exemption.",
+    "restricted_hazard_classes": [],
+    "restricted_keywords": [],
+    "requires_license_for_all": true
+  },
+  {
+    "country": "Russia",
+    "comprehensive_restriction": false,
+    "restriction_note": "Sectoral sanctions on dual-use goods, defense-related items, and technology. Not a comprehensive embargo.",
+    "restricted_hazard_classes": ["1", "9"],
+    "restricted_keywords": ["lithium batter", "drone", "semiconductor"],
+    "requires_license_for_all": false
+  },
+  {
+    "country": "Cuba",
+    "comprehensive_restriction": true,
+    "restriction_note": "US comprehensive embargo. Most exports from the US require OFAC licensing.",
+    "restricted_hazard_classes": [],
+    "restricted_keywords": [],
+    "requires_license_for_all": true
+  }
+]

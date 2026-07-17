@@ -1,0 +1,17 @@
+{
+  "name": "widgets_to_iran",
+  "description": "Comprehensive-sanctions destination -- blocked case",
+  "query": "ship 500 plastic widgets from Germany to Iran",
+  "input": {
+    "product_description": "plastic widgets",
+    "country_from": "Germany",
+    "country_to": "Iran",
+    "target_market": "Iran",
+    "quantity": 500,
+    "cargo_value": 15000,
+    "weight_kg": 400,
+    "volume_m3": 2.0,
+    "currency": "USD"
+  },
+  "expected_verdict_status": "blocked"
+}

@@ -1,0 +1,62 @@
+[
+  {
+    "country": "Cuba",
+    "sanctions_status": "comprehensive_embargo",
+    "programs": ["OFAC - Cuban Assets Control Regulations (CACR)"],
+    "notes": "Comprehensive U.S. trade embargo in place since 1963; virtually all unlicensed transactions prohibited."
+  },
+  {
+    "country": "Iran",
+    "sanctions_status": "comprehensive_embargo",
+    "programs": ["OFAC - Iranian Transactions and Sanctions Regulations"],
+    "notes": "Broad U.S. embargo; active enforcement continues under a 'maximum pressure' policy."
+  },
+  {
+    "country": "North Korea",
+    "sanctions_status": "comprehensive_embargo",
+    "programs": ["OFAC - North Korea Sanctions Regulations", "UN Security Council sanctions"],
+    "notes": "Comprehensive U.S. and UN sanctions due to nuclear weapons proliferation concerns."
+  },
+  {
+    "country": "Russia",
+    "sanctions_status": "targeted_sanctions",
+    "programs": ["OFAC - Russia Harmful Foreign Activities Sanctions", "EU sanctions", "UK OFSI sanctions"],
+    "notes": "Not a comprehensive embargo, but extensive sectoral sanctions (finance, energy, defense, technology) since the 2022 invasion of Ukraine. Many individual entities and banks are separately blocked."
+  },
+  {
+    "country": "Belarus",
+    "sanctions_status": "targeted_sanctions",
+    "programs": ["OFAC - Belarus Sanctions Regulations", "EU sanctions"],
+    "notes": "Targeted sanctions related to human rights concerns and support for Russia's actions in Ukraine."
+  },
+  {
+    "country": "Venezuela",
+    "sanctions_status": "targeted_sanctions",
+    "programs": ["OFAC - Venezuela Sanctions Regulations"],
+    "notes": "Restrictions primarily target government-owned entities, including state oil company PDVSA and government-linked banks."
+  },
+  {
+    "country": "Myanmar",
+    "sanctions_status": "targeted_sanctions",
+    "programs": ["OFAC - Burma Sanctions Regulations", "EU sanctions"],
+    "notes": "Targeted sanctions on military-linked individuals and entities following the 2021 military coup."
+  },
+  {
+    "country": "Syria",
+    "sanctions_status": "targeted_sanctions",
+    "programs": ["OFAC - Syrian Sanctions Regulations"],
+    "notes": "Sanctions status has been actively evolving since the 2024 change in government; some general licenses have eased restrictions, but export licensing requirements still commonly apply. Verify current status directly with OFAC before proceeding."
+  },
+  {
+    "country": "Sudan",
+    "sanctions_status": "targeted_sanctions",
+    "programs": ["OFAC - Sudan Sanctions Regulations"],
+    "notes": "Targeted sanctions related to the ongoing armed conflict and human rights concerns."
+  },
+  {
+    "country": "Nicaragua",
+    "sanctions_status": "targeted_sanctions",
+    "programs": ["OFAC - Nicaragua Sanctions"],
+    "notes": "Targeted sanctions on government officials and entities related to human rights and democratic governance concerns."
+  }
+]

@@ -1,0 +1,11 @@
+{
+  "1": {"name": "Explosives", "description": "Substances or articles with an explosion hazard, including mass explosion, projection, or fire hazards.", "examples": ["Fireworks", "Ammunition", "Blasting caps", "Flares"]},
+  "2": {"name": "Gases", "description": "Compressed, liquefied, or dissolved gases that may be flammable, toxic, or displace oxygen.", "examples": ["Aerosols", "Fire extinguishers", "Propane", "Oxygen cylinders"]},
+  "3": {"name": "Flammable Liquids", "description": "Liquids or liquid mixtures that give off flammable vapor at or below 60-65°C flash point.", "examples": ["Gasoline", "Diesel", "Paints", "Alcohol-based products"]},
+  "4": {"name": "Flammable Solids", "description": "Solids readily combustible or liable to spontaneous combustion, including substances dangerous when wet.", "examples": ["Matches", "Sulfur", "Metal powders", "Calcium carbide"]},
+  "5": {"name": "Oxidizing Substances and Organic Peroxides", "description": "Substances that may cause or intensify combustion by yielding oxygen, or are thermally unstable.", "examples": ["Hydrogen peroxide", "Ammonium nitrate fertilizers", "Pool chlorine"]},
+  "6": {"name": "Toxic and Infectious Substances", "description": "Substances that can cause harm by ingestion, inhalation, or skin contact, or that contain pathogens.", "examples": ["Pesticides", "Arsenic", "Medical waste", "Lab cultures"]},
+  "7": {"name": "Radioactive Material", "description": "Materials containing radionuclides that exceed specified activity concentration and total activity values.", "examples": ["Uranium", "Medical isotopes", "Density gauges"]},
+  "8": {"name": "Corrosive Substances", "description": "Substances that degrade or disintegrate other materials, or cause severe damage to living tissue on contact.", "examples": ["Sulfuric acid", "Sodium hydroxide", "Battery fluids"]},
+  "9": {"name": "Miscellaneous Dangerous Substances and Articles", "description": "Hazardous substances presenting transport risks that don't fit the other eight classes.", "examples": ["Lithium batteries", "Dry ice", "Asbestos", "Airbag modules"]}
+}
