@@ -64,6 +64,42 @@ def _looks_like_shopping_plus_logistics_request(text: str) -> bool:
     )
 
 def _route_text_request(text: str) -> dict[str, Any]:
+    if _looks_like_shopping_plus_logistics_request(text):
+        decision = {
+            "intent": "shopping",
+            "agents_to_call": ["shopping_agent", "logistics_agent"],
+            "input_type": "text",
+            "confidence": "high",
+            "reason": (
+                "Deterministic guardrail: request includes both supplier sourcing "
+                "and shipping/logistics intent."
+            ),
+        }
+        return {
+            "detected_intent": "shopping",
+            "scores": {},
+            "source": "deterministic_guardrail",
+            "trained_router_decision": decision,
+        }
+
+    if _looks_like_direct_trader_request(text):
+        decision = {
+            "intent": "trader",
+            "agents_to_call": ["trader_agent"],
+            "input_type": "text",
+            "confidence": "high",
+            "reason": (
+                "Deterministic guardrail: request asks for trade, tariff, duty, "
+                "FTA, HS code, customs, or export strategy assessment."
+            ),
+        }
+        return {
+            "detected_intent": "trader",
+            "scores": {},
+            "source": "deterministic_guardrail",
+            "trained_router_decision": decision,
+        }
+
     if not _use_trained_router():
         return detect_text_intent(text)
 
@@ -99,19 +135,36 @@ def _route_text_request(text: str) -> dict[str, Any]:
             "source": "trained_router",
             "trained_router_decision": decision,
         }
-
-    except Exception as error:
-        fallback = detect_text_intent(text)
-        fallback["source"] = "rule_based_fallback"
-        fallback["trained_router_error"] = str(error)
-        return fallback
+    except Exception:
+        return detect_text_intent(text)
 
 
-def _build_final_answer(agent_response: dict[str, Any]) -> str:
-    return (
-        f"{agent_response['summary']}\n\n"
-        f"{agent_response['report']}"
-    )
+
+def _build_final_answer(specialist_response: dict[str, Any] | None) -> str:
+    """Build a compact user-facing answer from a specialist response."""
+    if not isinstance(specialist_response, dict):
+        return "No specialist response was available."
+
+    summary = specialist_response.get("summary")
+    if isinstance(summary, str) and summary.strip():
+        return summary.strip()
+
+    report = specialist_response.get("report")
+    if isinstance(report, str) and report.strip():
+        return report.strip()
+
+    if isinstance(report, dict):
+        report_summary = report.get("summary") or report.get("message")
+        if isinstance(report_summary, str) and report_summary.strip():
+            return report_summary.strip()
+
+    status = specialist_response.get("status")
+    agent_name = specialist_response.get("agent_name", "specialist agent")
+    if status:
+        return f"{agent_name} returned status: {status}."
+
+    return "The specialist agent returned a response for review."
+
 
 
 def _build_user_agent_response(
