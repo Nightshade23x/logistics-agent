@@ -1,0 +1,30 @@
+﻿{
+  "shipment_id": "SCENARIO-OVERSIZED-001",
+  "customer": "Oversized Cargo Demo",
+  "origin": "India",
+  "destination": "USA",
+  "notes": "Large shipment that may require container alternatives or multi-container planning.",
+  "items": [
+    {
+      "name": "Ceramic tiles",
+      "quantity": 2000,
+      "length_m": 0.6,
+      "width_m": 0.6,
+      "height_m": 0.08,
+      "weight_kg": 12,
+      "fragile": true,
+      "stackable": true,
+      "unload_priority": 3
+    },
+    {
+      "name": "Scooter",
+      "quantity": 20,
+      "length_m": 1.8,
+      "width_m": 0.7,
+      "height_m": 1.1,
+      "weight_kg": 90,
+      "stackable": false,
+      "unload_priority": 3
+    }
+  ]
+}

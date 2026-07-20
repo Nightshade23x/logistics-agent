@@ -1,0 +1,17 @@
+{
+  "name": "textiles_india_japan",
+  "description": "Real FTA on file (India-Japan CEPA), clean product, no restrictions -- clear case",
+  "query": "ship 800 cotton t-shirts from India to Japan",
+  "input": {
+    "product_description": "cotton t-shirt",
+    "country_from": "India",
+    "country_to": "Japan",
+    "target_market": "Japan",
+    "quantity": 800,
+    "cargo_value": 16000,
+    "weight_kg": 400,
+    "volume_m3": 3.0,
+    "currency": "USD"
+  },
+  "expected_verdict_status": "clear"
+}

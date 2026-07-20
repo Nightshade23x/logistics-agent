@@ -1,0 +1,33 @@
+﻿{
+  "shipment_id": "SHIP-SIMPLE-001",
+  "customer": "Simple Demo Customer",
+  "origin": "India",
+  "destination": "USA",
+  "notes": "Simple shipment where the user only gives item names and quantities.",
+  "items": [
+    {
+      "name": "tiles",
+      "quantity": 100
+    },
+    {
+      "name": "TVs",
+      "quantity": 50
+    },
+    {
+      "name": "scooters",
+      "quantity": 5
+    },
+    {
+      "name": "pillows",
+      "quantity": 100
+    },
+    {
+      "name": "mattresses",
+      "quantity": 5
+    },
+    {
+      "name": "glass bottles",
+      "quantity": 20
+    }
+  ]
+}

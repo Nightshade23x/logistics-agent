@@ -1,0 +1,20 @@
+﻿{
+  "shipment_id": "SCENARIO-PERISHABLE-001",
+  "customer": "Perishable Cargo Demo",
+  "origin": "India",
+  "destination": "UAE",
+  "notes": "Temperature-sensitive cargo example.",
+  "items": [
+    {
+      "name": "Fresh fruit boxes",
+      "quantity": 100,
+      "length_m": 0.5,
+      "width_m": 0.4,
+      "height_m": 0.3,
+      "weight_kg": 8,
+      "perishable": true,
+      "stackable": true,
+      "unload_priority": 1
+    }
+  ]
+}

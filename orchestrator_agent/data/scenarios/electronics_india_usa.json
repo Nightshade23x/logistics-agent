@@ -1,0 +1,17 @@
+{
+  "name": "electronics_india_usa",
+  "description": "Known route, no FTA on file -- still triggers review despite no compliance/risk flags",
+  "query": "ship 1000 cotton t-shirts from India to USA",
+  "input": {
+    "product_description": "cotton t-shirt",
+    "country_from": "India",
+    "country_to": "USA",
+    "target_market": "USA",
+    "quantity": 1000,
+    "cargo_value": 20000,
+    "weight_kg": 500,
+    "volume_m3": 4.0,
+    "currency": "USD"
+  },
+  "expected_verdict_status": "review_required"
+}

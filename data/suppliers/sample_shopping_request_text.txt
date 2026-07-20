@@ -1,0 +1,12 @@
+Request ID: SHOP-TEXT-001
+Customer: Demo Customer
+Destination: USA
+Currency: USD
+
+I need 50 TVs, 5 scooters, and 100 ceramic tiles.
+
+Prefer suppliers from India.
+Avoid China.
+Maximum lead time 20 days.
+Minimum quality score 8.
+Budget 13000 USD.

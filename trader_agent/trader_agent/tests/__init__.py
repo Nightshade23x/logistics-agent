@@ -1,0 +1,1 @@
+"""Test suite for the Trader Agent MCP server."""

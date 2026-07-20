@@ -1,0 +1,3 @@
+mcp[cli]
+pydantic
+python-dotenvgoogle-generativeai

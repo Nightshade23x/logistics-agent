@@ -1,0 +1,31 @@
+﻿Hey, backend integration tests are now passing.
+
+I added these notes/files for frontend integration:
+
+docs/frontend_partner_review_sample.json
+docs/integration_merge_readiness.md
+docs/live_orchestrator_external_blocker.md
+
+Important UI point:
+agents_called only shows internal backend agents like Shopping and Logistics.
+The orchestrator/partner call should be displayed from review_services_called and partner_review fields.
+
+So the frontend should show:
+
+review_services_called
+partner_review_status
+partner_review_mode
+partner_review_attempted
+partner_review_service_called
+live_orchestrator_configured
+partner_review
+partner_review_payload
+
+Also, I tested your live orchestrator locally. /health works and the backend can reach it, but /orchestrate currently fails with HTTP 500 because Gemini quota is exhausted:
+
+ResourceExhausted 429
+generate_content_free_tier_requests
+limit: 20
+model: gemini-2.5-flash
+
+So the remaining live issue looks partner-side/provider-side, not backend routing. Ideally the orchestrator should catch Gemini quota/rate-limit errors and return a structured review_required response instead of HTTP 500.
