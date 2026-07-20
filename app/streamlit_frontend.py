@@ -445,7 +445,7 @@ def get_partner_review_mode(payload: dict) -> str | None:
     if not isinstance(payload, dict):
         return None
 
-    direct = get_partner_review_mode(payload)
+    direct = payload.get("partner_review_mode")
     if direct:
         return direct
 
@@ -454,6 +454,9 @@ def get_partner_review_mode(payload: dict) -> str | None:
         raw_direct = raw.get("partner_review_mode")
         if raw_direct:
             return raw_direct
+
+        if raw.get("live_orchestrator_configured") is True:
+            return "live_orchestrator"
 
         partner_review = raw.get("partner_review")
         if isinstance(partner_review, dict):
@@ -482,11 +485,8 @@ def get_partner_review_mode(payload: dict) -> str | None:
     if payload.get("live_orchestrator_configured") is True:
         return "live_orchestrator"
 
-    raw = payload.get("_raw_user_agent_response")
-    if isinstance(raw, dict) and raw.get("live_orchestrator_configured") is True:
-        return "live_orchestrator"
-
     return None
+
 
 def render_chip(label: str, value: Any) -> str:
     if is_empty(value):
