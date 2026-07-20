@@ -438,6 +438,56 @@ def chip_class(value: Any) -> str:
     return ""
 
 
+
+# FRONTEND_PARTNER_MODE_FALLBACK_PATCH
+def get_partner_review_mode(payload: dict) -> str | None:
+    """Return partner review mode even if compact payload dropped it."""
+    if not isinstance(payload, dict):
+        return None
+
+    direct = payload.get("partner_review_mode")
+    if direct:
+        return direct
+
+    raw = payload.get("_raw_user_agent_response")
+    if isinstance(raw, dict):
+        raw_direct = raw.get("partner_review_mode")
+        if raw_direct:
+            return raw_direct
+
+        if raw.get("live_orchestrator_configured") is True:
+            return "live_orchestrator"
+
+        partner_review = raw.get("partner_review")
+        if isinstance(partner_review, dict):
+            nested_mode = partner_review.get("partner_review_mode") or partner_review.get("mode")
+            if nested_mode:
+                return nested_mode
+
+            handoff = partner_review.get("handoff_payload")
+            if isinstance(handoff, dict):
+                handoff_mode = handoff.get("partner_review_mode") or handoff.get("mode")
+                if handoff_mode:
+                    return handoff_mode
+
+    partner_review = payload.get("partner_review")
+    if isinstance(partner_review, dict):
+        nested_mode = partner_review.get("partner_review_mode") or partner_review.get("mode")
+        if nested_mode:
+            return nested_mode
+
+        handoff = partner_review.get("handoff_payload")
+        if isinstance(handoff, dict):
+            handoff_mode = handoff.get("partner_review_mode") or handoff.get("mode")
+            if handoff_mode:
+                return handoff_mode
+
+    if payload.get("live_orchestrator_configured") is True:
+        return "live_orchestrator"
+
+    return None
+
+
 def render_chip(label: str, value: Any) -> str:
     if is_empty(value):
         value = "Not available"
@@ -455,6 +505,7 @@ def render_app_header(payload: dict[str, Any]) -> None:
             render_chip("Decision", payload.get("decision")),
             render_chip("Intent", payload.get("detected_intent")),
             render_chip("Partner", payload.get("partner_review_status")),
+            render_chip("Partner Mode", get_partner_review_mode(payload)),
         ]
     )
 
