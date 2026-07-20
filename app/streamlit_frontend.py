@@ -1220,8 +1220,9 @@ def get_text_payload(
     if is_empty(compact_payload.get("detected_intent")):
         compact_payload["detected_intent"] = "shopping"
 
-    if not compact_get_display_agents_called(payload):
-        compact_payload["agents_called"] = ["shopping_agent"]
+    # Preserve backend agents_called exactly; [] is meaningful for booking_information.
+    if compact_payload.get("agents_called") is None:
+        compact_payload["agents_called"] = []
 
     if is_empty(compact_payload.get("partner_review_status")):
         compact_payload["partner_review_status"] = "not_run"
