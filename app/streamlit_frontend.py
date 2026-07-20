@@ -440,6 +440,63 @@ def chip_class(value: Any) -> str:
 
 
 # FRONTEND_PARTNER_MODE_FALLBACK_PATCH
+def get_display_agents_called(payload: dict) -> list[str]:
+    """Return only agents actually called by the backend.
+
+    Important: an empty list is meaningful for booking_information / needs_more_information.
+    Do not replace [] with Shopping Agent or any fallback.
+    """
+    if not isinstance(payload, dict):
+        return []
+
+    agents = payload.get("agents_called")
+    if isinstance(agents, list):
+        return agents
+
+    raw = payload.get("_raw_user_agent_response")
+    if isinstance(raw, dict):
+        raw_agents = raw.get("agents_called")
+        if isinstance(raw_agents, list):
+            return raw_agents
+
+    return []
+
+
+def get_display_decision(payload: dict) -> str:
+    """Return the user-facing decision without converting missing-info cases to review_required."""
+    if not isinstance(payload, dict):
+        return "review_required"
+
+    status = payload.get("status")
+    intent = payload.get("detected_intent")
+
+    if status == "needs_more_information" or intent == "booking_information":
+        return "needs_more_information"
+
+    decision = payload.get("decision")
+    if decision:
+        return decision
+
+    raw = payload.get("_raw_user_agent_response")
+    if isinstance(raw, dict):
+        raw_status = raw.get("status")
+        raw_intent = raw.get("detected_intent")
+        if raw_status == "needs_more_information" or raw_intent == "booking_information":
+            return "needs_more_information"
+
+        final_verdict = raw.get("final_verdict")
+        if isinstance(final_verdict, dict) and final_verdict.get("verdict"):
+            return final_verdict.get("verdict")
+
+        if raw_status:
+            return raw_status
+
+    if status:
+        return status
+
+    return "review_required"
+
+
 def get_partner_review_mode(payload: dict) -> str | None:
     """Return partner review mode even if compact payload dropped it."""
     if not isinstance(payload, dict):
@@ -563,7 +620,7 @@ def render_stage_tracker(payload: dict[str, Any]) -> None:
 
     procurement_done = bool(
         payload.get("detected_intent") == "shopping"
-        or payload.get("agents_called")
+        or get_display_agents_called(payload)
         or parsed_report
     )
 
@@ -1163,7 +1220,7 @@ def get_text_payload(
     if is_empty(compact_payload.get("detected_intent")):
         compact_payload["detected_intent"] = "shopping"
 
-    if not compact_payload.get("agents_called"):
+    if not compact_get_display_agents_called(payload):
         compact_payload["agents_called"] = ["shopping_agent"]
 
     if is_empty(compact_payload.get("partner_review_status")):
@@ -1195,7 +1252,7 @@ def get_document_payload() -> dict[str, Any]:
 
 
 def get_clean_headline(payload: dict[str, Any]) -> str:
-    decision = humanize(payload.get("decision") or payload.get("status") or "review_required")
+    decision = humanize(get_display_decision(payload))
     intent = humanize(payload.get("detected_intent") or "request")
 
     lowered_decision = decision.lower()
@@ -1296,7 +1353,7 @@ def build_structured_run_answer(payload: dict[str, Any]) -> str:
     logistics = payload.get("logistics_metrics", {}) or {}
     booking = payload.get("booking_readiness", {}) if isinstance(payload.get("booking_readiness"), dict) else {}
     partner_status = payload.get("partner_review_status")
-    agents = payload.get("agents_called", []) or []
+    agents = payload.get("agents_called") or []
 
     parts = []
 
@@ -1538,7 +1595,7 @@ def render_agent_answer(payload: dict[str, Any]) -> None:
             with st.expander("Smart answer error details", expanded=False):
                 st.code(str(smart_answer.get("error")))
 
-    agents_called = payload.get("agents_called", []) or []
+    agents_called = get_display_agents_called(payload) or []
 
     render_metric_cards(
         {
@@ -2175,7 +2232,7 @@ def run_frontend_flow(
     st.session_state.active_source = source
     st.session_state.active_question = question
     st.session_state.last_run_message = f"{source} completed at {started_at}"
-    st.session_state.last_run_agents = payload.get("agents_called", []) or []
+    st.session_state.last_run_agents = payload.get("agents_called") or []
     st.session_state.last_run_decision = payload.get("decision")
     st.session_state.last_run_partner_status = payload.get("partner_review_status")
     st.session_state.last_run_gemini_status = (payload.get("_smart_answer", {}) or {}).get("status")
@@ -2497,7 +2554,7 @@ def infer_booking_status(payload: dict[str, Any]) -> str:
 def render_frontend_action_center(payload: dict[str, Any]) -> None:
     st.markdown('<div class="section-title">Action Center</div>', unsafe_allow_html=True)
 
-    agents = payload.get("agents_called") or []
+    agents = payload.get("agents_called")
     missing_items = frontend_collect_missing_items(payload)
     booking = payload.get("booking_readiness") if isinstance(payload.get("booking_readiness"), dict) else {}
     smart_answer = payload.get("_smart_answer") if isinstance(payload.get("_smart_answer"), dict) else {}
