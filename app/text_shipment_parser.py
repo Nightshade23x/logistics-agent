@@ -207,74 +207,203 @@ def _looks_like_metadata_chunk(chunk: str) -> bool:
 
 
 def parse_shipment_text(text: str) -> dict[str, Any]:
-    """
-    Parses simple shipment text into item dictionaries and optional shipment
-    metadata.
+    """Parse natural-language shipment text into items plus metadata."""
+    import re
 
-    Examples:
-    - "10 cubic meters of tiles, 50 TVs, 5 scooters"
-    - "estimate freight and find supplier for 100 ceramic tiles from India to USA.
-       Use CIF incoterm. Freight quote is 1200 USD. Duty rate is 5 percent."
-    """
-    metadata = _extract_metadata(text)
-    item_text = _remove_metadata_phrases(text)
+    raw_text = text or ""
 
-    chunks = [
-        chunk.strip()
-        for chunk in _SPLIT_PATTERN.split(item_text)
-        if chunk.strip()
+    try:
+        metadata = _extract_metadata(raw_text)
+    except Exception:
+        metadata = {}
+
+    route_match = re.search(
+        r"\bfrom\s+([A-Za-z][A-Za-z\s]+?)\s+to\s+([A-Za-z][A-Za-z\s]+?)(?=\.|,|\s+use\b|\s+with\b|\s+the\b|\s+and\b|$)",
+        raw_text,
+        flags=re.IGNORECASE,
+    )
+
+    if route_match:
+        origin = route_match.group(1).strip()
+        destination = route_match.group(2).strip()
+        for key in ["country_from", "origin", "origin_country"]:
+            if not metadata.get(key):
+                metadata[key] = origin
+        for key in ["country_to", "destination", "destination_country", "target_market"]:
+            if not metadata.get(key):
+                metadata[key] = destination
+
+    incoterm_match = re.search(r"\b(EXW|FOB|CIF|DAP|DDP|FCA|CFR)\b", raw_text, flags=re.IGNORECASE)
+    if incoterm_match:
+        metadata["incoterm"] = incoterm_match.group(1).upper()
+        metadata["trade_term"] = incoterm_match.group(1).upper()
+
+    numeric_fields = {
+        "freight_quote_usd": r"\bfreight(?:\s+quote)?\s+(?:is\s+)?(?P<value>\d+(?:\.\d+)?)\s*(?:usd|dollars?)?",
+        "insurance_premium_usd": r"\binsurance(?:\s+premium)?\s+(?:is\s+)?(?P<value>\d+(?:\.\d+)?)\s*(?:usd|dollars?)?",
+        "duty_rate_percent": r"\bduty(?:\s+rate)?\s+(?:is\s+)?(?P<value>\d+(?:\.\d+)?)\s*(?:percent|%)?",
+        "import_tax_rate_percent": r"\bimport\s+tax(?:\s+rate)?\s+(?:is\s+)?(?P<value>\d+(?:\.\d+)?)\s*(?:percent|%)?",
+    }
+
+    for key, pattern in numeric_fields.items():
+        match = re.search(pattern, raw_text, flags=re.IGNORECASE)
+        if match:
+            metadata[key] = float(match.group("value"))
+
+    try:
+        item_text = _remove_metadata_phrases(raw_text)
+    except Exception:
+        item_text = raw_text
+
+    item_text = re.sub(
+        r"\b(?:freight quote|freight|insurance premium|insurance|duty rate|duty|import tax rate|import tax|tax rate|budget|cost)\s+(?:is\s+)?\d+(?:\.\d+)?\s*(?:usd|dollars?|percent|%)?",
+        " ",
+        item_text,
+        flags=re.IGNORECASE,
+    )
+    item_text = re.sub(r"\buse\s+(?:EXW|FOB|CIF|DAP|DDP|FCA|CFR)(?:\s+incoterm)?", " ", item_text, flags=re.IGNORECASE)
+
+    leading_noise = [
+        r"^i\s+want\s+to\s+ship\s+",
+        r"^i\s+need\s+to\s+ship\s+",
+        r"^please\s+ship\s+",
+        r"^ship\s+",
+        r"^shipping\s+plan\s+for\s+",
+        r"^find\s+suppliers?\s+and\s+shipping\s+plan\s+for\s+",
+        r"^find\s+suppliers?\s+for\s+",
+        r"^find\s+supplier\s+for\s+",
+        r"^estimate\s+freight\s+and\s+find\s+supplier\s+for\s+",
+        r"^estimate\s+freight\s+for\s+",
+        r"^source\s+",
+        r"^procure\s+",
     ]
 
-    items: list[dict[str, Any]] = []
-    issues: list[str] = []
+    trailing_noise = [
+        r"\s+from\s+[A-Za-z][A-Za-z\s]+?\s+to\s+[A-Za-z][A-Za-z\s]+.*$",
+        r"\s+use\s+(EXW|FOB|CIF|DAP|DDP|FCA|CFR).*$",
+        r"\s+with\s+(EXW|FOB|CIF|DAP|DDP|FCA|CFR).*$",
+        r"\s+are\s+fragile.*$",
+        r"\s+is\s+fragile.*$",
+        r"\s+have\s+batteries.*$",
+        r"\s+has\s+batteries.*$",
+        r"\s+with\s+batteries.*$",
+    ]
 
-    for chunk in chunks:
-        if _looks_like_metadata_chunk(chunk):
-            continue
-
-        cbm_match = _CBM_PATTERN.match(chunk)
-
-        if cbm_match:
-            item_name = _clean_item_name(cbm_match.group("name"))
-            if not item_name or item_name.lower() in _RATE_ONLY_NAMES:
-                continue
-
-            items.append(
-                {
-                    "name": item_name,
-                    "quantity": 1,
-                    "total_cbm": float(cbm_match.group("cbm")),
-                    "volume_unit": cbm_match.group("unit"),
-                }
-            )
-            continue
-
-        quantity_match = _QUANTITY_PATTERN.match(chunk)
-
-        if quantity_match:
-            item_name = _clean_item_name(quantity_match.group("name"))
-            if not item_name or item_name.lower() in _RATE_ONLY_NAMES:
-                continue
-
-            items.append(
-                {
-                    "name": item_name,
-                    "quantity": int(quantity_match.group("quantity")),
-                }
-            )
-            continue
-
-        # Ignore connector/action fragments common in natural language prompts.
-        lowered = chunk.lower().strip(" .,:;")
-        if lowered in {"estimate freight", "find supplier", "find suppliers", "source supplier"}:
-            continue
-
-        issues.append(
-            f"Could not parse item phrase: '{chunk}'. Use a pattern like '50 TVs' or '10 CBM of tiles'."
-        )
-
-    return {
-        "items": items,
-        "issues": issues,
-        **metadata,
+    blocked_items = {
+        "percent", "percentage", "usd", "eur", "gbp", "dollars", "dollar",
+        "freight", "quote", "insurance", "premium", "duty", "rate", "tax", "budget", "cost",
     }
+
+    def clean_name(value: str) -> str:
+        name = (value or "").strip(" .,;:-").lower()
+
+        for pattern in leading_noise:
+            name = re.sub(pattern, "", name, flags=re.IGNORECASE).strip()
+
+        for pattern in trailing_noise:
+            name = re.sub(pattern, "", name, flags=re.IGNORECASE).strip()
+
+        name = re.sub(r"\b(and|with|use)\s*$", "", name, flags=re.IGNORECASE).strip()
+        name = re.sub(r"\s+", " ", name).strip(" .,;:-")
+        return name
+
+    def flags_for(name: str) -> dict[str, Any]:
+        lowered_text = raw_text.lower()
+        lowered_name = name.lower()
+        flags: dict[str, Any] = {}
+
+        if any(marker in lowered_name for marker in ["tv", "television", "glass", "bottle", "bottles", "ceramic", "tile", "tiles"]):
+            flags["fragile"] = True
+
+        if ("scooter" in lowered_name or "electric" in lowered_name) and ("battery" in lowered_text or "batteries" in lowered_text):
+            flags["hazardous"] = True
+            flags["notes"] = "Battery-powered item; confirm lithium battery details, UN number, packing instruction, and carrier acceptance."
+
+        if "radioactive" in lowered_text or "radioactive" in lowered_name:
+            flags["hazardous"] = True
+            flags["radioactive"] = True
+            flags["notes"] = "Radioactive or regulated cargo; specialist compliance and carrier acceptance required."
+
+        return flags
+
+    items: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+
+    def add_item(name: str, quantity: Any, extra: dict[str, Any] | None = None) -> None:
+        cleaned = clean_name(name)
+
+        if not cleaned:
+            return
+        if cleaned in blocked_items:
+            return
+        if any(word in blocked_items for word in cleaned.split()):
+            return
+        if len(cleaned) > 80:
+            return
+
+        key = (str(quantity), cleaned)
+        if key in seen:
+            return
+
+        seen.add(key)
+
+        item = {"name": cleaned, "quantity": quantity}
+        item.update(flags_for(cleaned))
+
+        if extra:
+            item.update(extra)
+
+        items.append(item)
+
+    volume_pattern = re.compile(
+        r"\b(?P<volume>\d+(?:\.\d+)?)\s*(?:cbm|cubic\s+meters?|m3)\s+(?:of\s+)?(?P<name>[A-Za-z][A-Za-z0-9 /-]*?)(?=,|\.|\band\b|\bfrom\b|\bto\b|$)",
+        flags=re.IGNORECASE,
+    )
+
+    volume_spans = []
+
+    for match in volume_pattern.finditer(item_text):
+        volume = float(match.group("volume"))
+        add_item(
+            match.group("name"),
+            1,
+            {
+                "total_cbm": volume,
+                "notes": f"Cargo volume was provided as {volume:g} CBM; unit quantity was not specified.",
+            },
+        )
+        volume_spans.append(match.span())
+
+    if volume_spans:
+        chars = list(item_text)
+        for start, end in volume_spans:
+            for index in range(start, end):
+                chars[index] = " "
+        item_text = "".join(chars)
+
+    list_text = re.sub(r"\s+\band\b\s+", ", ", item_text, flags=re.IGNORECASE)
+
+    quantity_pattern = re.compile(
+        r"\b(?P<quantity>\d+(?:\.\d+)?)\s+(?!percent\b|percentage\b|usd\b|eur\b|gbp\b|cbm\b|cubic\b|m3\b)(?P<name>[A-Za-z][A-Za-z0-9 /-]*?)(?=,|\.|\bfrom\b|\bto\b|$)",
+        flags=re.IGNORECASE,
+    )
+
+    for match in quantity_pattern.finditer(list_text):
+        value = float(match.group("quantity"))
+        quantity = int(value) if value.is_integer() else value
+        add_item(match.group("name"), quantity)
+
+    if not items:
+        maybe_match = re.search(r"\b(?:maybe|such as|including)\s+(.+?)(?:,?\s+but\b|\.|$)", raw_text, flags=re.IGNORECASE)
+        if maybe_match:
+            for candidate in re.split(r",|\band\b", maybe_match.group(1), flags=re.IGNORECASE):
+                if clean_name(candidate):
+                    add_item(candidate, 1, {"needs_quantity_confirmation": True})
+
+    result: dict[str, Any] = {"items": items, "issues": []}
+    result.update(metadata)
+
+    if not items:
+        result["issues"].append("No requested items were provided.")
+
+    return result
