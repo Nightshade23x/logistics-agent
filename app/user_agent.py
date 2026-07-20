@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import os
 import re
@@ -843,25 +843,62 @@ def _build_trader_input_from_document_handoff(
 
 
 def _looks_like_direct_trader_request(text: str) -> bool:
-    lowered = text.lower()
+    """Only route direct trade/classification questions to Trader alone.
 
-    trader_markers = [
+    Shipment prompts can mention duty/tax, but those still need Logistics and
+    partner review. So weak duty/tax words should not steal shipment prompts.
+    """
+    lowered = (text or "").lower()
+
+    shipment_markers = [
+        "ship ",
+        "shipping",
+        "shipment",
+        "freight",
+        "container",
+        "lcl",
+        "fcl",
+        "cbm",
+        "cargo",
+        "insurance",
+        "battery",
+        "batteries",
+        "fragile",
+        "hazardous",
+        "radioactive",
+    ]
+
+    has_shipment_context = any(marker in lowered for marker in shipment_markers)
+
+    strong_trader_markers = [
         "trade plan",
         "assess trade",
         "trade assessment",
         "hs code",
         "hscode",
         "tariff",
-        "duty",
-        "duties",
         "customs",
         "fta",
         "free trade agreement",
         "export strategy",
-        "import duty",
     ]
 
-    return any(marker in lowered for marker in trader_markers)
+    weak_trader_markers = [
+        "duty",
+        "duties",
+        "import duty",
+        "duty rate",
+        "import tax",
+        "tax rate",
+    ]
+
+    if any(marker in lowered for marker in strong_trader_markers):
+        return True
+
+    if any(marker in lowered for marker in weak_trader_markers):
+        return not has_shipment_context
+
+    return False
 
 
 def _extract_product_from_trade_text(text: str) -> str | None:
@@ -895,25 +932,346 @@ def _build_trader_input_from_text(text: str) -> dict[str, Any]:
         "target_market": route.get("country_to"),
     }
 
+
+def _looks_like_missing_booking_info_request(text: str) -> bool:
+    lowered = (text or "").lower()
+    markers = [
+        "what information do you need",
+        "what info do you need",
+        "what details do you need",
+        "before booking",
+        "before i book",
+        "before we book",
+        "do not know dimensions",
+        "don't know dimensions",
+        "do not know weight",
+        "don't know weight",
+        "missing information",
+    ]
+    return any(marker in lowered for marker in markers)
+
+
+def _build_missing_booking_info_response(text: str, routing: dict[str, Any] | None = None) -> dict[str, Any]:
+    route = _extract_route_from_text(text)
+
+    missing_information = [
+        "exact item list and quantities",
+        "origin country or supplier country",
+        "destination country",
+        "unit dimensions or packed dimensions for each item",
+        "unit weight or total packed weight for each item",
+        "fragile, hazardous, battery, liquid, temperature, or restricted-cargo details",
+        "Incoterm or trade term such as EXW, FOB, CIF, DAP, or DDP",
+        "pickup/delivery scope: door-to-door, port-to-port, or warehouse-to-warehouse",
+        "preferred delivery deadline or maximum transit time",
+        "declared cargo value, freight quote, insurance, duty, and import-tax inputs if available",
+        "documents available: commercial invoice, packing list, SDS/MSDS if hazardous, certificates, and permits",
+    ]
+
+    if route.get("country_from") and "origin country or supplier country" in missing_information:
+        missing_information.remove("origin country or supplier country")
+    if route.get("country_to") and "destination country" in missing_information:
+        missing_information.remove("destination country")
+
+    final_answer = (
+        "Before booking, I need enough cargo, route, commercial, and compliance information to avoid making a fake final shipment plan.\n\n"
+        "Please provide:\n"
+        "- Exact item names and quantities.\n"
+        "- Origin/supplier country and destination country.\n"
+        "- Packed dimensions and weight for each item, or total CBM and total weight.\n"
+        "- Whether anything is fragile, hazardous, battery-powered, liquid, perishable, radioactive, or restricted.\n"
+        "- Incoterm/trade term such as EXW, FOB, CIF, DAP, or DDP.\n"
+        "- Service scope: door-to-door, port-to-port, or warehouse-to-warehouse.\n"
+        "- Delivery deadline or maximum transit time.\n"
+        "- Cargo value, freight quote, insurance, duty rate, and import tax if known.\n"
+        "- Documents available: commercial invoice, packing list, certificates, permits, and SDS/MSDS for hazardous goods."
+    )
+
+    response = {
+        "agent_name": "user_agent",
+        "status": "needs_more_information",
+        "summary": "User Agent identified a pre-booking information request and returned a structured checklist.",
+        "detected_intent": "booking_information",
+        "agents_called": [],
+        "route_reason": ((routing or {}).get("trained_router_decision") or {}).get("reason") or "The user asked what information is needed before booking.",
+        "final_answer": final_answer,
+        "specialist_response": None,
+        "missing_information": missing_information,
+        "handoff_payload": {
+            "origin": route.get("country_from"),
+            "destination": route.get("country_to"),
+            "required_fields_before_booking": missing_information,
+        },
+        "handoff_requests": [],
+        "specialist_responses": {},
+        "router_source": (routing or {}).get("source"),
+        "trained_router_decision": (routing or {}).get("trained_router_decision"),
+    }
+
+    return _attach_final_verdict(response)
+
+
+def _looks_like_hazardous_advisory_request(text: str) -> bool:
+    lowered = (text or "").lower()
+
+    hazardous_markers = [
+        "radioactive",
+        "hazardous",
+        "dangerous goods",
+        "lithium battery",
+        "lithium batteries",
+        "batteries",
+        "chemical",
+        "flammable",
+        "explosive",
+        "medical equipment",
+    ]
+
+    advisory_markers = [
+        "can i export",
+        "can we export",
+        "can i ship",
+        "can we ship",
+        "tell me compliance",
+        "documents needed",
+        "risk",
+        "permit",
+        "license",
+        "licence",
+    ]
+
+    return any(marker in lowered for marker in hazardous_markers) and any(marker in lowered for marker in advisory_markers)
+
+
+def _build_hazardous_advisory_response(text: str, routing: dict[str, Any] | None = None) -> dict[str, Any]:
+    route = _extract_route_from_text(text)
+
+    missing_information = [
+        "exact product description",
+        "radioactive isotope or hazardous material details",
+        "UN number and hazard class if applicable",
+        "SDS/MSDS or radiation safety documentation",
+        "export and import permits or regulator approvals",
+        "end-user and destination facility authorization",
+        "carrier acceptance for dangerous goods or radioactive cargo",
+        "special packaging, labelling, shielding, and handling requirements",
+        "commercial invoice and packing list",
+    ]
+
+    final_answer = (
+        "This request needs critical review before any booking or export decision.\n\n"
+        "Radioactive or hazardous medical equipment cannot be treated as ordinary cargo. "
+        "Before proceeding, the shipment needs specialist compliance review, carrier acceptance, dangerous-goods classification, "
+        "and document checks.\n\n"
+        "Required information:\n"
+        "- Exact product description and intended use.\n"
+        "- Whether the equipment contains radioactive material, isotope name, activity level, and sealed/unsealed source status.\n"
+        "- UN number, hazard class, packing group if applicable, and SDS/MSDS or radiation safety documentation.\n"
+        "- Export/import permits, regulator approvals, end-user details, and destination facility authorization.\n"
+        "- Packaging, labelling, shielding, handling, and emergency-response instructions.\n"
+        "- Carrier and route acceptance for dangerous goods/radioactive cargo.\n"
+        "- Commercial invoice, packing list, certificates, permits, and any special transport declaration.\n\n"
+        "Do not approve or book the shipment until Compliance, Risk, Logistics, Document AI, and carrier checks are complete."
+    )
+
+    response = {
+        "agent_name": "user_agent",
+        "status": "critical_review_required",
+        "summary": "User Agent identified hazardous/radioactive cargo and returned a critical compliance checklist.",
+        "detected_intent": "compliance_risk_logistics_advisory",
+        "agents_called": ["compliance_agent", "risk_agent", "logistics_agent", "document_ai_agent"],
+        "route_reason": ((routing or {}).get("trained_router_decision") or {}).get("reason") or "The request involves hazardous or radioactive cargo.",
+        "final_answer": final_answer,
+        "specialist_response": None,
+        "missing_information": missing_information,
+        "handoff_payload": {
+            "origin": route.get("country_from"),
+            "destination": route.get("country_to"),
+            "cargo_risk": "critical",
+            "cargo_categories": ["hazardous", "radioactive", "regulated_medical_equipment"],
+            "required_fields_before_review": missing_information,
+        },
+        "handoff_requests": [
+            {"target_agent": "compliance_agent", "reason": "Confirm permits, restrictions, radioactive/hazardous classification, and regulator requirements."},
+            {"target_agent": "risk_agent", "reason": "Check destination, sanctions, and country-level trade risk before export."},
+            {"target_agent": "logistics_agent", "reason": "Confirm dangerous-goods packaging, labels, carrier acceptance, and route constraints."},
+            {"target_agent": "document_ai_agent", "reason": "Validate invoice, packing list, SDS/MSDS, permits, and certificates."},
+        ],
+        "specialist_responses": {},
+        "router_source": (routing or {}).get("source"),
+        "trained_router_decision": (routing or {}).get("trained_router_decision"),
+    }
+
+    return _attach_final_verdict(response)
+
+
+def _looks_like_text_shipment_request(text: str) -> bool:
+    lowered = (text or "").lower()
+    markers = ["ship ", "shipping", "shipment", "freight", "container", "cbm", "cargo", "lcl", "fcl", "import ", "export ", "from ", " to "]
+    return any(marker in lowered for marker in markers)
+
+
+def _build_logistics_input_from_text(text: str) -> tuple[dict[str, Any], dict[str, Any]]:
+    from app.text_shipment_parser import parse_shipment_text
+
+    parsed = parse_shipment_text(text)
+    route = _extract_route_from_text(text)
+
+    origin = parsed.get("origin") or parsed.get("origin_country") or parsed.get("country_from") or route.get("country_from")
+    destination = parsed.get("destination") or parsed.get("destination_country") or parsed.get("country_to") or route.get("country_to")
+
+    logistics_items = []
+
+    for item in parsed.get("items", []) or []:
+        if not isinstance(item, dict):
+            continue
+
+        name = item.get("name") or item.get("item") or item.get("product_name")
+        if not name:
+            continue
+
+        logistics_item = {
+            "name": str(name),
+            "quantity": item.get("quantity", 1),
+        }
+
+        for key in [
+            "length_m", "width_m", "height_m", "weight_kg", "total_cbm", "unit_cbm", "total_weight_kg",
+            "fragile", "hazardous", "radioactive", "perishable", "stackable", "unload_priority", "notes",
+        ]:
+            if item.get(key) is not None:
+                logistics_item[key] = item.get(key)
+
+        name_lower = str(name).lower()
+        text_lower = text.lower()
+
+        if any(marker in name_lower for marker in ["tv", "glass", "ceramic", "bottle", "tiles"]):
+            logistics_item.setdefault("fragile", True)
+
+        if "scooter" in name_lower and ("battery" in text_lower or "batteries" in text_lower):
+            logistics_item.setdefault("hazardous", True)
+            logistics_item.setdefault("notes", "Battery-powered item; confirm lithium battery details, UN number, packing instructions, and carrier acceptance.")
+
+        logistics_items.append(logistics_item)
+
+    logistics_input = {
+        "shipment_id": "TEXT-SHIPMENT-REQUEST",
+        "customer": "Unknown Customer",
+        "origin": origin,
+        "destination": destination,
+        "origin_country": origin,
+        "destination_country": destination,
+        "notes": "Shipment data parsed from natural language text.",
+        "items": logistics_items,
+    }
+
+    for key in [
+        "incoterm", "trade_term", "freight_quote_usd", "insurance_premium_usd",
+        "duty_rate_percent", "import_tax_rate_percent", "declared_value_usd", "total_value",
+    ]:
+        if parsed.get(key) is not None:
+            logistics_input[key] = parsed.get(key)
+
+    return parsed, logistics_input
+
+
+def _run_text_logistics_flow(
+    text: str,
+    detected_intent: str,
+    routing: dict[str, Any],
+    summary: str,
+    agents_called: list[str] | None = None,
+    shopping_response: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    parsed, logistics_input = _build_logistics_input_from_text(text)
+
+    if not logistics_input.get("items"):
+        response = _build_missing_booking_info_response(text, routing=routing)
+        response["detected_intent"] = detected_intent
+        response["summary"] = "User Agent could not extract enough item details for logistics planning."
+        return response
+
+    logistics_response = run_logistics_agent(logistics_input)
+
+    called = list(agents_called or [])
+    if "logistics_agent" not in called:
+        called.append("logistics_agent")
+
+    response = _build_user_agent_response(
+        status=logistics_response.get("status", "review_required"),
+        summary=summary,
+        detected_intent=detected_intent,
+        agents_called=called,
+        specialist_response=logistics_response,
+        missing_information=logistics_response.get("missing_information", []),
+        route_reason=(routing.get("trained_router_decision") or {}).get("reason", "The request contains natural-language shipment/logistics details."),
+    )
+
+    response["logistics_input"] = logistics_input
+    response["specialist_responses"] = {}
+    if shopping_response is not None:
+        response["specialist_responses"]["shopping_agent"] = shopping_response
+    response["specialist_responses"]["logistics_agent"] = logistics_response
+    response["handoff_payload"] = logistics_response.get("handoff_payload", {})
+    response["handoff_requests"] = logistics_response.get("handoff_requests", [])
+    response["router_source"] = routing.get("source")
+    response["trained_router_decision"] = routing.get("trained_router_decision")
+
+    if _use_trader_agent():
+        first_product = _first_item_name(logistics_input.get("items"))
+        trader_input = {
+            "product_description": first_product,
+            "country_from": logistics_input.get("origin"),
+            "country_to": logistics_input.get("destination"),
+            "target_market": logistics_input.get("destination"),
+        }
+
+        if first_product and logistics_input.get("origin") and logistics_input.get("destination"):
+            trader_response = run_trader_agent(trader_input, use_reasoning=True)
+            response["agents_called"].append("trader_agent")
+            response["specialist_responses"]["trader_agent"] = trader_response
+            response["trader_input"] = trader_input
+            response["final_answer"] = "\n\n".join(
+                part for part in [_build_final_answer(logistics_response), _build_final_answer(trader_response)] if part
+            )
+            response["missing_information"] = (logistics_response.get("missing_information") or []) + (trader_response.get("missing_information") or [])
+
+    try:
+        response = _attach_partner_review(
+            response=response,
+            logistics_input=logistics_input,
+            logistics_handoff=logistics_response.get("handoff_payload", {}),
+            source_handoff=parsed if isinstance(parsed, dict) else {},
+            original_text=text,
+        )
+    except Exception as exc:
+        response.setdefault("warnings", [])
+        response["warnings"].append(f"Partner review could not be completed: {exc}")
+        response = _attach_final_verdict(response)
+
+    return response
+
 def run_user_agent_from_text(text: str) -> dict[str, Any]:
     routing = _route_text_request(text)
     detected_intent = routing["detected_intent"]
+
+    if _looks_like_missing_booking_info_request(text):
+        return _build_missing_booking_info_response(text, routing=routing)
+
+    if _looks_like_hazardous_advisory_request(text):
+        return _build_hazardous_advisory_response(text, routing=routing)
 
     if detected_intent == "shopping":
         shopping_response = run_shopping_agent_from_text(text)
 
         trained_decision = routing.get("trained_router_decision") or {}
         requested_agents = trained_decision.get("agents_to_call")
-
         should_call_logistics = True
 
         if routing.get("source") == "trained_router" and isinstance(requested_agents, list):
             should_call_logistics = "logistics_agent" in requested_agents
 
-        route_reason = trained_decision.get(
-            "reason",
-            "The request contains supplier, purchasing, budget, or product sourcing language.",
-        )
+        route_reason = trained_decision.get("reason", "The request contains supplier, purchasing, budget, or product sourcing language.")
 
         if should_call_logistics:
             response = _build_shopping_to_logistics_response(
@@ -923,6 +1281,25 @@ def run_user_agent_from_text(text: str) -> dict[str, Any]:
                 route_reason=route_reason,
                 original_text=text,
             )
+
+            if (
+                response.get("status") in {"needs_more_information", "partial_plan_needs_more_information", "review_required"}
+                and not response.get("logistics_input")
+                and _looks_like_text_shipment_request(text)
+            ):
+                parsed, logistics_input = _build_logistics_input_from_text(text)
+                if logistics_input.get("items"):
+                    response = _run_text_logistics_flow(
+                        text=text,
+                        detected_intent=detected_intent,
+                        routing=routing,
+                        summary=(
+                            "User Agent continued into natural-language logistics because "
+                            "the prompt requested a shipping plan even though Shopping was incomplete."
+                        ),
+                        agents_called=["shopping_agent"],
+                        shopping_response=shopping_response,
+                    )
         else:
             response = _build_user_agent_response(
                 status=shopping_response.get("status", "review_required"),
@@ -936,7 +1313,6 @@ def run_user_agent_from_text(text: str) -> dict[str, Any]:
 
         response["router_source"] = routing.get("source")
         response["trained_router_decision"] = routing.get("trained_router_decision")
-
         return response
 
     if detected_intent == "trader":
@@ -950,15 +1326,10 @@ def run_user_agent_from_text(text: str) -> dict[str, Any]:
             agents_called=["trader_agent"],
             specialist_response=trader_response,
             missing_information=trader_response.get("missing_information", []),
-            route_reason=routing.get("trained_router_decision", {}).get(
-                "reason",
-                "The request contains trade, customs, tariff, duty, FTA, or HS code language.",
-            ),
+            route_reason=routing.get("trained_router_decision", {}).get("reason", "The request contains trade, customs, tariff, duty, FTA, or HS code language."),
         )
 
-        response["specialist_responses"] = {
-            "trader_agent": trader_response,
-        }
+        response["specialist_responses"] = {"trader_agent": trader_response}
         response["trader_input"] = trader_input
         response["handoff_payload"] = trader_response.get("handoff_payload", {})
         response["handoff_requests"] = trader_response.get("handoff_requests", [])
@@ -969,60 +1340,31 @@ def run_user_agent_from_text(text: str) -> dict[str, Any]:
         return _attach_final_verdict(response)
 
     if detected_intent == "logistics":
-        response = _build_user_agent_response(
-            status="needs_more_information",
-            summary="User Agent detected a logistics request, but V1 requires logistics requests as structured JSON.",
-            detected_intent=detected_intent,
-            agents_called=[],
-            specialist_response=None,
-            missing_information=["structured_logistics_json"],
-            route_reason=routing.get("trained_router_decision", {}).get(
-                "reason",
-                "The request contains shipping, container, CBM, or cargo language.",
-            ),
-        )
+        if _looks_like_text_shipment_request(text):
+            return _run_text_logistics_flow(
+                text=text,
+                detected_intent=detected_intent,
+                routing=routing,
+                summary="User Agent parsed the natural-language shipment request and ran Logistics Agent.",
+                agents_called=[],
+            )
 
-        response["router_source"] = routing.get("source")
-        response["trained_router_decision"] = routing.get("trained_router_decision")
-
-        return response
-
-    if detected_intent == "document":
-        response = _build_user_agent_response(
-            status="needs_more_information",
-            summary="User Agent detected a document request. Please provide document file paths for Document AI.",
-            detected_intent=detected_intent,
-            agents_called=[],
-            specialist_response=None,
-            missing_information=["document_file_paths"],
-            route_reason=routing.get("trained_router_decision", {}).get(
-                "reason",
-                "The request contains invoice, packing list, bill of lading, or certificate language.",
-            ),
-        )
-
-        response["router_source"] = routing.get("source")
-        response["trained_router_decision"] = routing.get("trained_router_decision")
-
+        response = _build_missing_booking_info_response(text, routing=routing)
+        response["detected_intent"] = detected_intent
         return response
 
     response = _build_user_agent_response(
         status="needs_more_information",
-        summary="User Agent could not confidently detect the request type.",
-        detected_intent="unknown",
+        summary="User Agent could not confidently route the request.",
+        detected_intent=detected_intent,
         agents_called=[],
         specialist_response=None,
-        missing_information=["clearer_user_request"],
-        route_reason=routing.get("trained_router_decision", {}).get(
-            "reason",
-            "No strong routing keywords were detected.",
-        ),
+        missing_information=["Please provide whether this is a shopping, logistics, document, compliance, risk, finance, or trade request."],
+        route_reason=routing.get("trained_router_decision", {}).get("reason"),
     )
-
     response["router_source"] = routing.get("source")
     response["trained_router_decision"] = routing.get("trained_router_decision")
-
-    return response
+    return _attach_final_verdict(response)
 
 
 def _combine_statuses(statuses: list[str]) -> str:

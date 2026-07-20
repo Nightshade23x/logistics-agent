@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import json
 from pathlib import Path
@@ -313,9 +313,45 @@ def run_shopping_agent_from_file(path: str | Path) -> dict[str, Any]:
 
 def run_shopping_agent_from_text(text: str) -> dict[str, Any]:
     request_data = parse_shopping_request_text(text)
+
+    existing_items = request_data.get("items") or request_data.get("requested_items") or []
+
+    if not existing_items:
+        try:
+            from app.text_shipment_parser import parse_shipment_text
+
+            parsed = parse_shipment_text(text)
+            parsed_items = parsed.get("items", []) if isinstance(parsed, dict) else []
+
+            if parsed_items:
+                request_data["items"] = [
+                    {
+                        "name": item.get("name") or item.get("item") or item.get("product_name"),
+                        "quantity": item.get("quantity", 1),
+                    }
+                    for item in parsed_items
+                    if isinstance(item, dict) and (item.get("name") or item.get("item") or item.get("product_name"))
+                ]
+
+                request_data["destination_country"] = (
+                    parsed.get("destination_country")
+                    or parsed.get("destination")
+                    or parsed.get("country_to")
+                    or request_data.get("destination_country")
+                )
+
+                request_data["preferred_currency"] = request_data.get("preferred_currency") or "USD"
+                request_data["text_parser_fallback_used"] = True
+        except Exception:
+            pass
+
     response = run_shopping_agent(request_data)
     response["input_resolution"]["source"] = "natural_language_text"
     response["input_resolution"]["input_type"] = "text"
+
+    if request_data.get("text_parser_fallback_used"):
+        response["input_resolution"]["text_parser_fallback_used"] = True
+
     return response
 
 
