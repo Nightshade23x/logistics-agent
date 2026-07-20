@@ -455,6 +455,7 @@ def render_app_header(payload: dict[str, Any]) -> None:
             render_chip("Decision", payload.get("decision")),
             render_chip("Intent", payload.get("detected_intent")),
             render_chip("Partner", payload.get("partner_review_status")),
+            render_chip("Partner Mode", payload.get("partner_review_mode")),
         ]
     )
 
