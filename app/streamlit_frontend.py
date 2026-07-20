@@ -761,60 +761,104 @@ def get_raw_report_text(raw_response: Any) -> str:
 
 
 def extract_requested_items(question: str) -> list[dict[str, str]]:
-    currency_words = {
+    """Extract item quantities for frontend debug display.
+
+    Prefer the shared shipment text parser so frontend debug output matches the
+    backend payload. Fall back to a guarded regex if the shared parser cannot
+    produce items.
+    """
+    text = question or ""
+
+    blocked_item_words = {
         "usd",
         "eur",
         "gbp",
+        "$",
         "dollar",
         "dollars",
         "budget",
         "cost",
-        "price",
-        "k",
-        "kwacha",
+        "quote",
+        "rate",
+        "percent",
+        "percentage",
+        "per cent",
+        "tax",
+        "duty",
+        "insurance",
+        "premium",
+        "freight",
     }
 
-    stop_words = {
-        "from",
-        "under",
-        "below",
-        "within",
-        "with",
-        "budget",
-        "avoid",
-        "prefer",
-        "preferred",
-    }
+    try:
+        from app.text_shipment_parser import parse_shipment_text
 
-    # Handles phrases like:
-    # "20 laptops and 10 tablets from India under 12000 USD"
-    # without incorrectly treating "12000 USD" as an item.
+        parsed = parse_shipment_text(text)
+        parsed_items = parsed.get("items", []) if isinstance(parsed, dict) else []
+
+        cleaned_items: list[dict[str, str]] = []
+        seen = set()
+
+        for parsed_item in parsed_items:
+            if not isinstance(parsed_item, dict):
+                continue
+
+            quantity = parsed_item.get("quantity")
+            name = (
+                parsed_item.get("name")
+                or parsed_item.get("item")
+                or parsed_item.get("product_name")
+            )
+
+            if quantity is None or not name:
+                continue
+
+            item_name = str(name).strip(" .,").lower()
+            words = item_name.split()
+
+            if not item_name:
+                continue
+
+            if item_name in blocked_item_words:
+                continue
+
+            if any(word in blocked_item_words for word in words):
+                continue
+
+            key = (str(quantity), item_name)
+            if key in seen:
+                continue
+
+            seen.add(key)
+            cleaned_items.append({"quantity": str(quantity), "item": item_name})
+
+        if cleaned_items:
+            return cleaned_items
+    except Exception:
+        pass
+
+    # Regex fallback for older/simple prompts.
     pattern = re.compile(
-        r"\b(?P<quantity>\d+)\s+(?P<item>[A-Za-z][A-Za-z0-9 /-]*?)(?=\s+and\s+\d+\s+[A-Za-z]|\s+\d+\s+[A-Za-z]|,|\.| from | under | below | within | with | budget | avoid | prefer |$)",
+        r"\b(?P<quantity>\d+)\s+(?P<item>[A-Za-z][A-Za-z0-9 /-]*?)"
+        r"(?=\s+and\s+\d+\s+[A-Za-z]|\s+\d+\s+[A-Za-z]|,|\.| from | under | below | within | with | budget | avoid | prefer |$)",
         re.IGNORECASE,
     )
 
     items: list[dict[str, str]] = []
 
-    for match in pattern.finditer(question or ""):
+    for match in pattern.finditer(text):
         quantity = match.group("quantity").strip()
         item = match.group("item").strip(" .,").lower()
-
-        # Clean list joins such as "laptops and" if the regex stops before the next quantity.
         item = re.sub(r"\s+and\s*$", "", item, flags=re.IGNORECASE).strip()
-
         words = item.split()
 
         if not item:
             continue
 
-        if item in currency_words:
+        if item in blocked_item_words:
             continue
 
-        if any(word in currency_words for word in words):
-            continue
-
-        if any(word in stop_words for word in words):
+        if any(word in blocked_item_words for word in words):
             continue
 
         if len(item) > 45:
@@ -822,7 +866,6 @@ def extract_requested_items(question: str) -> list[dict[str, str]]:
 
         items.append({"quantity": quantity, "item": item})
 
-    # De-duplicate while preserving order.
     deduped: list[dict[str, str]] = []
     seen = set()
 
@@ -840,14 +883,23 @@ def extract_requested_items(question: str) -> list[dict[str, str]]:
 
 
 def extract_budget(question: str) -> dict[str, Any]:
+    """Extract explicit budget only.
+
+    Do not treat arbitrary USD amounts as budget because custom trade prompts
+    often contain freight quotes, insurance premiums, cargo values, duty rates,
+    and tax rates.
+    """
     text = question or ""
 
     patterns = [
         # under 12000 USD / below 12000 USD / within 12000 USD
-        r"\b(?:under|below|within|budget(?: is)?|budget(?: of)?|max(?:imum)?(?: budget)?(?: of)?|limit(?: of)?)\s*(?P<amount>\d+(?:\.\d+)?)\s*(?P<currency>usd|eur|gbp|\$)?\b",
+        r"\b(?:under|below|within)\s*(?P<amount>\d+(?:\.\d+)?)\s*(?P<currency>usd|eur|gbp|\$)\b",
 
-        # 12000 USD budget / 12000 USD
-        r"\b(?P<amount>\d+(?:\.\d+)?)\s*(?P<currency>usd|eur|gbp|\$)\b(?:\s*(?:budget|limit))?",
+        # budget is 12000 USD / budget of 12000 USD / max budget 12000 USD
+        r"\b(?:budget(?:\s+is)?|budget(?:\s+of)?|max(?:imum)?(?:\s+budget)?(?:\s+of)?|limit(?:\s+of)?)\s*(?P<amount>\d+(?:\.\d+)?)\s*(?P<currency>usd|eur|gbp|\$)?\b",
+
+        # 12000 USD budget / 12000 USD limit
+        r"\b(?P<amount>\d+(?:\.\d+)?)\s*(?P<currency>usd|eur|gbp|\$)\s*(?:budget|limit)\b",
     ]
 
     for pattern in patterns:
@@ -856,8 +908,9 @@ def extract_budget(question: str) -> dict[str, Any]:
         if not match:
             continue
 
-        currency = match.groupdict().get("currency") or "USD"
-        currency = "USD" if currency == "$" else currency.upper()
+        currency = (match.group("currency") or "USD").upper()
+        if currency == "$":
+            currency = "USD"
 
         return {
             "amount": float(match.group("amount")),
