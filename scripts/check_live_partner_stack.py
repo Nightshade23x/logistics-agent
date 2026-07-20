@@ -116,7 +116,10 @@ def main() -> None:
         print(f"Finance health: OK")
         print(f"Response: {finance_response}")
     else:
-        print(f"Finance health: OFFLINE / FAILED")
+        if "404" in str(finance_response) or "Not Found" in str(finance_response):
+            print(f"Finance health: UNREACHABLE (endpoint mismatch, not necessarily offline)")
+        else:
+            print(f"Finance health: OFFLINE / FAILED")
         print(f"Reason: {finance_response}")
 
     print_section("Trade Orchestrator")
@@ -126,7 +129,10 @@ def main() -> None:
         print("Orchestrator health: OK")
         print(f"Response: {orchestrator_health}")
     else:
-        print("Orchestrator health: OFFLINE / FAILED")
+        if "404" in str(orchestrator_health) or "Not Found" in str(orchestrator_health):
+            print(f"Orchestrator health: UNREACHABLE (endpoint mismatch, not necessarily offline)")
+        else:
+            print("Orchestrator health: OFFLINE / FAILED")
         print(f"Reason: {orchestrator_health}")
 
     print_section("Direct Orchestrator Review")

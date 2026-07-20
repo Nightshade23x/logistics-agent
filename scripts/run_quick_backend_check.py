@@ -11,6 +11,8 @@ def run_check(name: str, command: list[str], env_overrides: dict[str, str | None
     print("=" * 80)
 
     env = os.environ.copy()
+    env["PYTHONPATH"] = os.getcwd()
+
 
     repo_root = os.getcwd()
     existing_pythonpath = env.get("PYTHONPATH")
