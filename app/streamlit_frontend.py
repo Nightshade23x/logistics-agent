@@ -22,6 +22,7 @@ from app.frontend_workflow import (
 )
 
 import streamlit as st
+import streamlit.components.v1 as components
 
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
@@ -1695,6 +1696,92 @@ def render_procurement_summary(payload: dict[str, Any]) -> None:
             st.text(raw_report)
 
 
+
+
+def _get_nested_for_3d(payload: dict, *keys: str):
+    current = payload
+    for key in keys:
+        if not isinstance(current, dict):
+            return None
+        current = current.get(key)
+    return current
+
+
+def has_container_3d_visualizer_payload(payload: dict) -> bool:
+    """Return True when the response has real cargo for the 3D loading viewer."""
+    if not isinstance(payload, dict):
+        return False
+
+    if payload.get("detected_intent") == "booking_information":
+        return False
+
+    if payload.get("status") == "needs_more_information":
+        return False
+
+    visualizer = payload.get("logistics_visualizer")
+
+    if not isinstance(visualizer, dict):
+        visualizer = _get_nested_for_3d(payload, "_raw_user_agent_response", "logistics_visualizer")
+
+    if not isinstance(visualizer, dict):
+        visualizer = _get_nested_for_3d(
+            payload,
+            "_raw_user_agent_response",
+            "specialist_response",
+            "logistics_visualizer",
+        )
+
+    if not isinstance(visualizer, dict):
+        return False
+
+    cargo_mix = visualizer.get("cargo_mix")
+
+    if not isinstance(cargo_mix, list) or not cargo_mix:
+        return False
+
+    return any(isinstance(item, dict) for item in cargo_mix)
+
+
+def render_container_3d_section(payload: dict) -> None:
+    """Render the adaptive 3D container loading preview inside Streamlit."""
+    if not has_container_3d_visualizer_payload(payload):
+        return
+
+    try:
+        from app.container_3d_visualizer import build_container_3d_html, build_layout
+
+        layout = build_layout(payload)
+        html = build_container_3d_html(payload)
+
+        cargo_count = len(layout.get("cargo_mix", []))
+        box_count = len(layout.get("boxes", []))
+        utilization = layout.get("utilization", {}) or {}
+
+        st.markdown("### 3D Container Loading Preview")
+        st.caption(
+            "Interactive advisory loading view. Drag to rotate, scroll to zoom, and use it to understand the suggested cargo arrangement."
+        )
+
+        col_a, col_b, col_c = st.columns(3)
+
+        with col_a:
+            st.metric("Cargo types shown", cargo_count)
+
+        with col_b:
+            st.metric("Visual units shown", box_count)
+
+        with col_c:
+            remaining = utilization.get("remaining_cbm")
+            if isinstance(remaining, (int, float)):
+                st.metric("Space remaining", f"{remaining:.2f} CBM")
+            else:
+                st.metric("Space remaining", "N/A")
+
+        components.html(html, height=760, scrolling=False)
+
+    except Exception as exc:
+        st.warning(f"3D container preview could not be rendered: {exc}")
+
 def render_logistics_visualizer(visualizer: dict[str, Any]) -> None:
     if not isinstance(visualizer, dict) or not visualizer:
         st.info("No logistics visualizer payload available.")
@@ -2107,6 +2194,7 @@ def render_payload(payload: dict[str, Any]) -> None:
             render_metric_cards(logistics_metrics, columns=4)
             st.divider()
             render_logistics_visualizer(logistics_visualizer)
+            render_container_3d_section(payload)
         else:
             render_empty_state(
                 "Logistics has not run for this custom question",
@@ -2123,6 +2211,7 @@ def render_payload(payload: dict[str, Any]) -> None:
                 st.divider()
                 render_logistics_visualizer(logistics_visualizer)
 
+                render_container_3d_section(payload)
     with review_tab:
         render_ui_sections(payload)
 
