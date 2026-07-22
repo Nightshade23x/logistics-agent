@@ -438,6 +438,113 @@ def chip_class(value: Any) -> str:
     return ""
 
 
+
+# FRONTEND_PARTNER_MODE_FALLBACK_PATCH
+def get_display_agents_called(payload: dict) -> list[str]:
+    """Return only agents actually called by the backend.
+
+    Important: an empty list is meaningful for booking_information / needs_more_information.
+    Do not replace [] with Shopping Agent or any fallback.
+    """
+    if not isinstance(payload, dict):
+        return []
+
+    agents = payload.get("agents_called")
+    if isinstance(agents, list):
+        return agents
+
+    raw = payload.get("_raw_user_agent_response")
+    if isinstance(raw, dict):
+        raw_agents = raw.get("agents_called")
+        if isinstance(raw_agents, list):
+            return raw_agents
+
+    return []
+
+
+def get_display_decision(payload: dict) -> str:
+    """Return the user-facing decision without converting missing-info cases to review_required."""
+    if not isinstance(payload, dict):
+        return "review_required"
+
+    status = payload.get("status")
+    intent = payload.get("detected_intent")
+
+    if status == "needs_more_information" or intent == "booking_information":
+        return "needs_more_information"
+
+    decision = payload.get("decision")
+    if decision:
+        return decision
+
+    raw = payload.get("_raw_user_agent_response")
+    if isinstance(raw, dict):
+        raw_status = raw.get("status")
+        raw_intent = raw.get("detected_intent")
+        if raw_status == "needs_more_information" or raw_intent == "booking_information":
+            return "needs_more_information"
+
+        final_verdict = raw.get("final_verdict")
+        if isinstance(final_verdict, dict) and final_verdict.get("verdict"):
+            return final_verdict.get("verdict")
+
+        if raw_status:
+            return raw_status
+
+    if status:
+        return status
+
+    return "review_required"
+
+
+def get_partner_review_mode(payload: dict) -> str | None:
+    """Return partner review mode even if compact payload dropped it."""
+    if not isinstance(payload, dict):
+        return None
+
+    direct = payload.get("partner_review_mode")
+    if direct:
+        return direct
+
+    raw = payload.get("_raw_user_agent_response")
+    if isinstance(raw, dict):
+        raw_direct = raw.get("partner_review_mode")
+        if raw_direct:
+            return raw_direct
+
+        if raw.get("live_orchestrator_configured") is True:
+            return "live_orchestrator"
+
+        partner_review = raw.get("partner_review")
+        if isinstance(partner_review, dict):
+            nested_mode = partner_review.get("partner_review_mode") or partner_review.get("mode")
+            if nested_mode:
+                return nested_mode
+
+            handoff = partner_review.get("handoff_payload")
+            if isinstance(handoff, dict):
+                handoff_mode = handoff.get("partner_review_mode") or handoff.get("mode")
+                if handoff_mode:
+                    return handoff_mode
+
+    partner_review = payload.get("partner_review")
+    if isinstance(partner_review, dict):
+        nested_mode = partner_review.get("partner_review_mode") or partner_review.get("mode")
+        if nested_mode:
+            return nested_mode
+
+        handoff = partner_review.get("handoff_payload")
+        if isinstance(handoff, dict):
+            handoff_mode = handoff.get("partner_review_mode") or handoff.get("mode")
+            if handoff_mode:
+                return handoff_mode
+
+    if payload.get("live_orchestrator_configured") is True:
+        return "live_orchestrator"
+
+    return None
+
+
 def render_chip(label: str, value: Any) -> str:
     if is_empty(value):
         value = "Not available"
@@ -455,6 +562,7 @@ def render_app_header(payload: dict[str, Any]) -> None:
             render_chip("Decision", payload.get("decision")),
             render_chip("Intent", payload.get("detected_intent")),
             render_chip("Partner", payload.get("partner_review_status")),
+            render_chip("Partner Mode", get_partner_review_mode(payload)),
         ]
     )
 
@@ -512,7 +620,7 @@ def render_stage_tracker(payload: dict[str, Any]) -> None:
 
     procurement_done = bool(
         payload.get("detected_intent") == "shopping"
-        or payload.get("agents_called")
+        or get_display_agents_called(payload)
         or parsed_report
     )
 
@@ -761,60 +869,104 @@ def get_raw_report_text(raw_response: Any) -> str:
 
 
 def extract_requested_items(question: str) -> list[dict[str, str]]:
-    currency_words = {
+    """Extract item quantities for frontend debug display.
+
+    Prefer the shared shipment text parser so frontend debug output matches the
+    backend payload. Fall back to a guarded regex if the shared parser cannot
+    produce items.
+    """
+    text = question or ""
+
+    blocked_item_words = {
         "usd",
         "eur",
         "gbp",
+        "$",
         "dollar",
         "dollars",
         "budget",
         "cost",
-        "price",
-        "k",
-        "kwacha",
+        "quote",
+        "rate",
+        "percent",
+        "percentage",
+        "per cent",
+        "tax",
+        "duty",
+        "insurance",
+        "premium",
+        "freight",
     }
 
-    stop_words = {
-        "from",
-        "under",
-        "below",
-        "within",
-        "with",
-        "budget",
-        "avoid",
-        "prefer",
-        "preferred",
-    }
+    try:
+        from app.text_shipment_parser import parse_shipment_text
 
-    # Handles phrases like:
-    # "20 laptops and 10 tablets from India under 12000 USD"
-    # without incorrectly treating "12000 USD" as an item.
+        parsed = parse_shipment_text(text)
+        parsed_items = parsed.get("items", []) if isinstance(parsed, dict) else []
+
+        cleaned_items: list[dict[str, str]] = []
+        seen = set()
+
+        for parsed_item in parsed_items:
+            if not isinstance(parsed_item, dict):
+                continue
+
+            quantity = parsed_item.get("quantity")
+            name = (
+                parsed_item.get("name")
+                or parsed_item.get("item")
+                or parsed_item.get("product_name")
+            )
+
+            if quantity is None or not name:
+                continue
+
+            item_name = str(name).strip(" .,").lower()
+            words = item_name.split()
+
+            if not item_name:
+                continue
+
+            if item_name in blocked_item_words:
+                continue
+
+            if any(word in blocked_item_words for word in words):
+                continue
+
+            key = (str(quantity), item_name)
+            if key in seen:
+                continue
+
+            seen.add(key)
+            cleaned_items.append({"quantity": str(quantity), "item": item_name})
+
+        if cleaned_items:
+            return cleaned_items
+    except Exception:
+        pass
+
+    # Regex fallback for older/simple prompts.
     pattern = re.compile(
-        r"\b(?P<quantity>\d+)\s+(?P<item>[A-Za-z][A-Za-z0-9 /-]*?)(?=\s+and\s+\d+\s+[A-Za-z]|\s+\d+\s+[A-Za-z]|,|\.| from | under | below | within | with | budget | avoid | prefer |$)",
+        r"\b(?P<quantity>\d+)\s+(?P<item>[A-Za-z][A-Za-z0-9 /-]*?)"
+        r"(?=\s+and\s+\d+\s+[A-Za-z]|\s+\d+\s+[A-Za-z]|,|\.| from | under | below | within | with | budget | avoid | prefer |$)",
         re.IGNORECASE,
     )
 
     items: list[dict[str, str]] = []
 
-    for match in pattern.finditer(question or ""):
+    for match in pattern.finditer(text):
         quantity = match.group("quantity").strip()
         item = match.group("item").strip(" .,").lower()
-
-        # Clean list joins such as "laptops and" if the regex stops before the next quantity.
         item = re.sub(r"\s+and\s*$", "", item, flags=re.IGNORECASE).strip()
-
         words = item.split()
 
         if not item:
             continue
 
-        if item in currency_words:
+        if item in blocked_item_words:
             continue
 
-        if any(word in currency_words for word in words):
-            continue
-
-        if any(word in stop_words for word in words):
+        if any(word in blocked_item_words for word in words):
             continue
 
         if len(item) > 45:
@@ -822,7 +974,6 @@ def extract_requested_items(question: str) -> list[dict[str, str]]:
 
         items.append({"quantity": quantity, "item": item})
 
-    # De-duplicate while preserving order.
     deduped: list[dict[str, str]] = []
     seen = set()
 
@@ -840,14 +991,23 @@ def extract_requested_items(question: str) -> list[dict[str, str]]:
 
 
 def extract_budget(question: str) -> dict[str, Any]:
+    """Extract explicit budget only.
+
+    Do not treat arbitrary USD amounts as budget because custom trade prompts
+    often contain freight quotes, insurance premiums, cargo values, duty rates,
+    and tax rates.
+    """
     text = question or ""
 
     patterns = [
         # under 12000 USD / below 12000 USD / within 12000 USD
-        r"\b(?:under|below|within|budget(?: is)?|budget(?: of)?|max(?:imum)?(?: budget)?(?: of)?|limit(?: of)?)\s*(?P<amount>\d+(?:\.\d+)?)\s*(?P<currency>usd|eur|gbp|\$)?\b",
+        r"\b(?:under|below|within)\s*(?P<amount>\d+(?:\.\d+)?)\s*(?P<currency>usd|eur|gbp|\$)\b",
 
-        # 12000 USD budget / 12000 USD
-        r"\b(?P<amount>\d+(?:\.\d+)?)\s*(?P<currency>usd|eur|gbp|\$)\b(?:\s*(?:budget|limit))?",
+        # budget is 12000 USD / budget of 12000 USD / max budget 12000 USD
+        r"\b(?:budget(?:\s+is)?|budget(?:\s+of)?|max(?:imum)?(?:\s+budget)?(?:\s+of)?|limit(?:\s+of)?)\s*(?P<amount>\d+(?:\.\d+)?)\s*(?P<currency>usd|eur|gbp|\$)?\b",
+
+        # 12000 USD budget / 12000 USD limit
+        r"\b(?P<amount>\d+(?:\.\d+)?)\s*(?P<currency>usd|eur|gbp|\$)\s*(?:budget|limit)\b",
     ]
 
     for pattern in patterns:
@@ -856,8 +1016,9 @@ def extract_budget(question: str) -> dict[str, Any]:
         if not match:
             continue
 
-        currency = match.groupdict().get("currency") or "USD"
-        currency = "USD" if currency == "$" else currency.upper()
+        currency = (match.group("currency") or "USD").upper()
+        if currency == "$":
+            currency = "USD"
 
         return {
             "amount": float(match.group("amount")),
@@ -1059,8 +1220,9 @@ def get_text_payload(
     if is_empty(compact_payload.get("detected_intent")):
         compact_payload["detected_intent"] = "shopping"
 
-    if not compact_payload.get("agents_called"):
-        compact_payload["agents_called"] = ["shopping_agent"]
+    # Preserve backend agents_called exactly; [] is meaningful for booking_information.
+    if compact_payload.get("agents_called") is None:
+        compact_payload["agents_called"] = []
 
     if is_empty(compact_payload.get("partner_review_status")):
         compact_payload["partner_review_status"] = "not_run"
@@ -1091,7 +1253,7 @@ def get_document_payload() -> dict[str, Any]:
 
 
 def get_clean_headline(payload: dict[str, Any]) -> str:
-    decision = humanize(payload.get("decision") or payload.get("status") or "review_required")
+    decision = humanize(get_display_decision(payload))
     intent = humanize(payload.get("detected_intent") or "request")
 
     lowered_decision = decision.lower()
@@ -1192,7 +1354,7 @@ def build_structured_run_answer(payload: dict[str, Any]) -> str:
     logistics = payload.get("logistics_metrics", {}) or {}
     booking = payload.get("booking_readiness", {}) if isinstance(payload.get("booking_readiness"), dict) else {}
     partner_status = payload.get("partner_review_status")
-    agents = payload.get("agents_called", []) or []
+    agents = payload.get("agents_called") or []
 
     parts = []
 
@@ -1434,7 +1596,7 @@ def render_agent_answer(payload: dict[str, Any]) -> None:
             with st.expander("Smart answer error details", expanded=False):
                 st.code(str(smart_answer.get("error")))
 
-    agents_called = payload.get("agents_called", []) or []
+    agents_called = get_display_agents_called(payload) or []
 
     render_metric_cards(
         {
@@ -2071,7 +2233,7 @@ def run_frontend_flow(
     st.session_state.active_source = source
     st.session_state.active_question = question
     st.session_state.last_run_message = f"{source} completed at {started_at}"
-    st.session_state.last_run_agents = payload.get("agents_called", []) or []
+    st.session_state.last_run_agents = payload.get("agents_called") or []
     st.session_state.last_run_decision = payload.get("decision")
     st.session_state.last_run_partner_status = payload.get("partner_review_status")
     st.session_state.last_run_gemini_status = (payload.get("_smart_answer", {}) or {}).get("status")
@@ -2393,7 +2555,7 @@ def infer_booking_status(payload: dict[str, Any]) -> str:
 def render_frontend_action_center(payload: dict[str, Any]) -> None:
     st.markdown('<div class="section-title">Action Center</div>', unsafe_allow_html=True)
 
-    agents = payload.get("agents_called") or []
+    agents = payload.get("agents_called")
     missing_items = frontend_collect_missing_items(payload)
     booking = payload.get("booking_readiness") if isinstance(payload.get("booking_readiness"), dict) else {}
     smart_answer = payload.get("_smart_answer") if isinstance(payload.get("_smart_answer"), dict) else {}

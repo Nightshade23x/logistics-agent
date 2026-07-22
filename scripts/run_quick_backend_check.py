@@ -14,6 +14,14 @@ def run_check(name: str, command: list[str], env_overrides: dict[str, str | None
     env["PYTHONPATH"] = os.getcwd()
 
 
+    repo_root = os.getcwd()
+    existing_pythonpath = env.get("PYTHONPATH")
+    env["PYTHONPATH"] = (
+        repo_root
+        if not existing_pythonpath
+        else repo_root + os.pathsep + existing_pythonpath
+    )
+
     # Quick checks should never accidentally hit the real live orchestrator.
     env.pop("TRADE_ORCHESTRATOR_BASE_URL", None)
 
