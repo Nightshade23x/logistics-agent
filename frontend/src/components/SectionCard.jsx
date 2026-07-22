@@ -8,6 +8,11 @@ function prettyValue(value) {
   if (value === null || value === undefined || value === "") return "—";
   if (Array.isArray(value)) return value.length ? value.join(", ") : "—";
   if (typeof value === "boolean") return value ? "Yes" : "No";
+  if (typeof value === "object") {
+    const entries = Object.entries(value);
+    if (!entries.length) return "—";
+    return entries.map(([k, v]) => `${prettyKey(k)}: ${prettyValue(v)}`).join(", ");
+  }
   return String(value);
 }
 

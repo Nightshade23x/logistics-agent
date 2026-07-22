@@ -35,6 +35,7 @@ export function StoreProvider({ children }) {
         requestType: payload?.request_metadata?.request_type || "unknown",
         label: meta?.label || payload?.request_metadata?.input_source || "request",
         decision: payload?.decision,
+        status: payload?.status,
         detectedIntent: payload?.detected_intent,
         payload,
       };

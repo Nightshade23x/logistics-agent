@@ -210,7 +210,7 @@ export default function Dashboard() {
                   <div className="shipment-id">{String(h.label).slice(0, 48)}</div>
                   <div className="shipment-route">{h.requestType}</div>
                   <div className="shipment-route">{h.detectedIntent}</div>
-                  <div><Badge status={h.decision} /></div>
+                  <div><Badge status={h.status ?? h.decision} /></div>
                   <div className="shipment-route">{new Date(h.timestamp).toLocaleTimeString()}</div>
                   <div>→</div>
                 </div>
