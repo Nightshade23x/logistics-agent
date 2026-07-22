@@ -105,6 +105,20 @@ Flow 2 — Plain-English shopping request
   free text --> User Agent (intent = shopping) --> Shopping Agent --> Logistics Agent --> Partner Review Service --> Final Verdict --> Frontend Payload
   (if required fields such as destination_country are missing, the backend asks clarifying questions instead of guessing)
 
+Flow 2b — Plain-English logistics-only request (added post-merge, `improve-text-routing-and-parser`)
+  free text describing a shipment directly (e.g. "ship 12 cbm of furniture from India to USA")
+  --> User Agent (intent = logistics, routed via `_looks_like_text_shipment_request` + `_build_logistics_input_from_text`)
+  --> Logistics Agent (skips Shopping Agent entirely)
+  --> Partner Review Service --> Final Verdict --> Frontend Payload
+  raw_response gains a `logistics_input` key holding the dict built from the parsed text.
+
+Flow 2c — Direct trader / trade-advisory text requests (deterministic guardrails)
+  Certain free-text patterns are now intercepted before generic keyword routing and forced to a specific intent + response builder, bypassing the specialist-agent pipeline:
+  - `detected_intent = "trader"` — routed straight to `trader_agent` (see existing §5.1 trader handling); raw_response gains a `trader_input` key.
+  - `detected_intent = "booking_information"` — matched by `_looks_like_missing_booking_info_request`; returns a fixed `status: "needs_more_information"` structured checklist via `_build_missing_booking_info_response`, without calling any specialist agent.
+  - `detected_intent = "compliance_risk_logistics_advisory"` — matched by `_looks_like_hazardous_advisory_request`; returns a structured hazardous-cargo advisory via `_build_hazardous_advisory_response`, also without calling a specialist agent.
+  These three are short-circuit paths — useful for callers to know the pipeline doesn't always touch Shopping/Logistics/Partner Review, even for text input.
+
 Flow 3 — Document upload
   invoice + packing list (+ BOL / certificate of origin) --> User Agent (intent = document) --> Document AI Agent --> Logistics Agent --> Partner Review Service --> Final Verdict --> Frontend Payload
 
@@ -193,11 +207,15 @@ The **User Agent's** top-level `raw_response` must include:
 agent_name           str   e.g. "user_agent"
 status               str   e.g. "review_required"
 summary              str   human-readable summary
-detected_intent       str   "shopping" | "logistics" | "document" | "unknown"
-agents_called         list  which specialist agents ran, e.g. ["shopping_agent", "logistics_agent", "partner_review_service"]
+detected_intent       str   "shopping" | "logistics" | "document" | "trader" | "booking_information" | "compliance_risk_logistics_advisory" | "unknown"
+agents_called         list  which specialist agents ran, e.g. ["shopping_agent", "logistics_agent", "partner_review_service"] (empty for the two short-circuit advisory intents below)
 specialist_responses  dict  each specialist agent's own {agent_name, status, summary, ...} block
 final_verdict         dict  {verdict, agent_statuses, blockers, warnings, missing_information_count, partner_review_status}
+logistics_input        dict  OPTIONAL — present only when routed via the direct text→logistics path (Flow 2b); the parsed shipment dict handed to the Logistics Agent
+trader_input           dict  OPTIONAL — present only when detected_intent == "trader"; the parsed input handed to the Trader Agent
 ```
+
+Two `detected_intent` values are short-circuit paths that skip the specialist pipeline entirely: `booking_information` and `compliance_risk_logistics_advisory` return a fixed structured response (checklist / advisory) directly from `app/user_agent.py`, with `agents_called` empty and no `final_verdict` produced the normal way. Don't assume every response has gone through Shopping/Logistics/Partner Review just because it came back successfully — check `detected_intent` first.
 
 `app/response_contract_validator.py` checks this shape; the result becomes the caller-visible `backend_validation` field. This is the internal contract — most external callers should not consume `raw_response` directly, they should consume the enriched payload in §5 (unless `include_raw_response=True` is explicitly passed for debugging).
 
@@ -284,7 +302,7 @@ This is the **compact/enriched frontend payload** — the thing a UI or another 
   "agent_name": "user_agent",
   "status": "review_required",
   "decision": "review_required",                 // "clear" | "review_required" | "blocked"
-  "detected_intent": "shopping",                 // "shopping" | "logistics" | "document" | "unknown"
+  "detected_intent": "shopping",                 // "shopping" | "logistics" | "document" | "trader" | "booking_information" | "compliance_risk_logistics_advisory" | "unknown"
   "agents_called": ["shopping_agent", "logistics_agent", "partner_review_service"],
   "short_answer": "...",
 
