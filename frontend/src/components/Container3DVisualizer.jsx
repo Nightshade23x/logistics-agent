@@ -2,6 +2,29 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 
+const UNIQUE_CARGO_COLORS = [
+  "#ff6b4a",
+  "#4cc9f0",
+  "#ffd166",
+  "#80ed99",
+  "#b388ff",
+  "#f72585",
+  "#43aa8b",
+  "#f8961e",
+  "#90be6d",
+  "#577590",
+  "#e76f51",
+  "#2a9d8f",
+  "#e9c46a",
+  "#a78bfa",
+  "#06b6d4",
+  "#f43f5e",
+];
+
+function cargoColorForItem(name, index) {
+  return UNIQUE_CARGO_COLORS[index % UNIQUE_CARGO_COLORS.length];
+}
+
 const CONTAINER_SPECS = {
   "20ft": {
     name: "20ft Standard Container",
@@ -255,7 +278,7 @@ function normalizeCargoMix(result) {
         width_m: Math.max(0.05, width_m),
         height_m: Math.max(0.05, height_m),
         tags,
-        color: categoryColor(tags, name),
+        color: cargoColorForItem(name, idx),
         stackable,
         dimension_source,
         original_index: idx,
