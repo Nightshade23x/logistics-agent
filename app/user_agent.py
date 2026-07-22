@@ -1677,3 +1677,1205 @@ try:
 except NameError:
     pass
 
+
+# Safety override for free-text route extraction.
+# The original extractor can over-capture destination phrases when punctuation is missing.
+def _extract_route_from_text(text: str | None) -> dict[str, str | None]:
+    try:
+        from app.text_shipment_parser import _extract_route_pair_from_text
+        return _extract_route_pair_from_text(text or "")
+    except Exception:
+        return {"country_from": None, "country_to": None}
+
+
+# Final response cleanup for text-route/cost fields.
+# This protects UI payloads from noisy handoff fragments and makes known text costs visible.
+try:
+    _run_user_agent_from_text_before_final_cleanup = run_user_agent_from_text
+
+    def _final_cleanup_cost_fields(user_text: str | None) -> dict[str, Any]:
+        extractor = globals().get("_extract_trade_cost_fields_from_text")
+        if callable(extractor):
+            try:
+                return extractor(user_text or {}) if isinstance(user_text, dict) else extractor(user_text or "")
+            except Exception:
+                return {}
+        return {}
+
+    def _clean_route_string_value(value: Any, clean_origin: str | None, clean_destination: str | None) -> Any:
+        if not isinstance(value, str):
+            return value
+
+        result = value
+
+        if clean_destination:
+            noisy_destination_patterns = [
+                r"\bUSA(?:\?|\.|,)?\s+(?:Glass|Give|Tell|Use|The|They|compliance|risk|logistics|HS|code|duty|FTA)[^.,;]*",
+                r"\bUnited States\s+(?:using|Use|They|The|Give|Tell)[^.,;]*",
+            ]
+            for pattern in noisy_destination_patterns:
+                result = re.sub(pattern, clean_destination, result, flags=re.IGNORECASE)
+
+        return result
+
+    def _cleanup_route_and_costs(response: Any, user_text: str | None) -> Any:
+        if not isinstance(response, dict):
+            return response
+
+        try:
+            route = _extract_route_from_text(user_text or "")
+        except Exception:
+            route = {"country_from": None, "country_to": None}
+
+        clean_origin = route.get("country_from")
+        clean_destination = route.get("country_to")
+        cost_fields = _final_cleanup_cost_fields(user_text)
+
+        def visit(obj: Any, path: str = "") -> Any:
+            if isinstance(obj, dict):
+                for key, value in list(obj.items()):
+                    lower_key = str(key).lower()
+
+                    if clean_origin and lower_key in {"origin", "origin_country", "country_from"}:
+                        obj[key] = clean_origin
+                        continue
+
+                    if clean_destination and lower_key in {"destination", "destination_country", "country_to", "target_market"}:
+                        obj[key] = clean_destination
+                        continue
+
+                    if path.endswith("request_metadata") and lower_key == "input_source":
+                        continue
+
+                    obj[key] = visit(value, f"{path}.{key}" if path else str(key))
+
+                return obj
+
+            if isinstance(obj, list):
+                return [visit(value, f"{path}[]") for value in obj]
+
+            return _clean_route_string_value(obj, clean_origin, clean_destination)
+
+        response = visit(response)
+
+        if cost_fields:
+            response.setdefault("text_cost_inputs", {}).update(cost_fields)
+
+            landed = response.get("landed_cost_advice")
+            if isinstance(landed, dict):
+                known = landed.setdefault("known_inputs", {})
+                if isinstance(known, dict):
+                    known.update(cost_fields)
+
+                missing = landed.get("missing_cost_inputs")
+                if isinstance(missing, list):
+                    landed["missing_cost_inputs"] = [
+                        item for item in missing
+                        if str(item) not in cost_fields
+                    ]
+
+            executive = response.get("executive_summary")
+            if isinstance(executive, dict):
+                costs = executive.get("costs_and_insurance")
+                if isinstance(costs, dict):
+                    known = costs.setdefault("known_inputs", {})
+                    if isinstance(known, dict):
+                        known.update(cost_fields)
+
+        visualizer = response.get("logistics_visualizer")
+        if isinstance(visualizer, dict) and not visualizer.get("cargo_mix"):
+            visualizer["status"] = "unavailable"
+
+        return response
+
+    def run_user_agent_from_text(user_text: str):
+        response = _run_user_agent_from_text_before_final_cleanup(user_text)
+        return _cleanup_route_and_costs(response, user_text)
+
+except Exception:
+    pass
+
+
+# Safety override for text cost extraction.
+# Supports compact phrases like:
+# "freight quote 3500 USD, insurance 600 USD, duty 8 percent, import tax 6 percent"
+def _extract_trade_cost_fields_from_text(text: str | None) -> dict[str, Any]:
+    raw = str(text or "")
+    fields: dict[str, Any] = {}
+
+    def parse_number(value: str | None) -> float | None:
+        if value is None:
+            return None
+        try:
+            return float(str(value).replace(",", "").strip())
+        except Exception:
+            return None
+
+    patterns = {
+        "freight_quote_usd": [
+            r"\bfreight\s+quote\s*(?:is|=|:)?\s*(?:USD\s*)?[$]?([0-9][0-9,.]*)\s*(?:USD|dollars?)?\b",
+            r"\bfreight\s*(?:cost|charge)?\s*(?:is|=|:)?\s*(?:USD\s*)?[$]?([0-9][0-9,.]*)\s*(?:USD|dollars?)?\b",
+        ],
+        "insurance_premium_usd": [
+            r"\binsurance\s+premium\s*(?:is|=|:)?\s*(?:USD\s*)?[$]?([0-9][0-9,.]*)\s*(?:USD|dollars?)?\b",
+            r"\binsurance\s*(?:cost|quote|premium)?\s*(?:is|=|:)?\s*(?:USD\s*)?[$]?([0-9][0-9,.]*)\s*(?:USD|dollars?)?\b",
+        ],
+        "duty_rate_percent": [
+            r"\bduty\s+rate\s*(?:is|=|:)?\s*([0-9][0-9,.]*)\s*(?:%|percent|per\s+cent)?\b",
+            r"\bduty\s*(?:is|=|:)?\s*([0-9][0-9,.]*)\s*(?:%|percent|per\s+cent)\b",
+        ],
+        "import_tax_rate_percent": [
+            r"\bimport\s+tax\s+rate\s*(?:is|=|:)?\s*([0-9][0-9,.]*)\s*(?:%|percent|per\s+cent)?\b",
+            r"\bimport\s+tax\s*(?:is|=|:)?\s*([0-9][0-9,.]*)\s*(?:%|percent|per\s+cent)\b",
+            r"\btax\s+rate\s*(?:is|=|:)?\s*([0-9][0-9,.]*)\s*(?:%|percent|per\s+cent)\b",
+        ],
+        "procurement_value_usd": [
+            r"\bprocurement\s+value\s*(?:is|=|:)?\s*(?:USD\s*)?[$]?([0-9][0-9,.]*)\s*(?:USD|dollars?)?\b",
+        ],
+        "declared_value_usd": [
+            r"\bdeclared\s+(?:cargo\s+)?value\s*(?:is|=|:)?\s*(?:USD\s*)?[$]?([0-9][0-9,.]*)\s*(?:USD|dollars?)?\b",
+            r"\bcargo\s+value\s*(?:is|=|:)?\s*(?:USD\s*)?[$]?([0-9][0-9,.]*)\s*(?:USD|dollars?)?\b",
+        ],
+        "customs_brokerage_usd": [
+            r"\bcustoms\s+brokerage\s*(?:is|=|:)?\s*(?:USD\s*)?[$]?([0-9][0-9,.]*)\s*(?:USD|dollars?)?\b",
+            r"\bbrokerage\s*(?:fee|cost)?\s*(?:is|=|:)?\s*(?:USD\s*)?[$]?([0-9][0-9,.]*)\s*(?:USD|dollars?)?\b",
+        ],
+        "local_delivery_usd": [
+            r"\blocal\s+delivery\s*(?:is|=|:)?\s*(?:USD\s*)?[$]?([0-9][0-9,.]*)\s*(?:USD|dollars?)?\b",
+            r"\blast[-\s]?mile\s+delivery\s*(?:is|=|:)?\s*(?:USD\s*)?[$]?([0-9][0-9,.]*)\s*(?:USD|dollars?)?\b",
+        ],
+    }
+
+    for key, pattern_list in patterns.items():
+        for pattern in pattern_list:
+            match = re.search(pattern, raw, flags=re.IGNORECASE)
+            if match:
+                number = parse_number(match.group(1))
+                if number is not None:
+                    fields[key] = number
+                    break
+
+    if fields.get("declared_value_usd") is not None and fields.get("total_value") is None:
+        fields["total_value"] = fields["declared_value_usd"]
+
+    return fields
+
+
+# Safety override v2 for text trade/cost extraction.
+# Preserves Incoterm plus compact cost phrases:
+# "use CIF, freight quote 3500 USD, insurance 600 USD, duty 8 percent, import tax 6 percent"
+def _extract_trade_cost_fields_from_text(text: str | None) -> dict[str, Any]:
+    raw = str(text or "")
+    fields: dict[str, Any] = {}
+
+    incoterm_codes = "EXW|FCA|FAS|FOB|CFR|CIF|CPT|CIP|DAP|DPU|DDP"
+    incoterm_patterns = [
+        rf"\buse\s+(?:the\s+)?(?:incoterm\s+)?({incoterm_codes})\b",
+        rf"\busing\s+(?:the\s+)?(?:incoterm\s+)?({incoterm_codes})\b",
+        rf"\bwith\s+(?:the\s+)?(?:incoterm\s+)?({incoterm_codes})\b",
+        rf"\bunder\s+(?:the\s+)?(?:incoterm\s+)?({incoterm_codes})\b",
+        rf"\bincoterm\s*(?:is|=|:)?\s*({incoterm_codes})\b",
+        rf"\b({incoterm_codes})\s+incoterm\b",
+    ]
+
+    for pattern in incoterm_patterns:
+        match = re.search(pattern, raw, flags=re.IGNORECASE)
+        if match:
+            fields["incoterm"] = match.group(1).upper()
+            fields["trade_term"] = match.group(1).upper()
+            break
+
+    def parse_number(value: str | None) -> float | None:
+        if value is None:
+            return None
+        try:
+            return float(str(value).replace(",", "").strip())
+        except Exception:
+            return None
+
+    patterns = {
+        "freight_quote_usd": [
+            r"\bfreight\s+quote\s*(?:is|=|:)?\s*(?:USD\s*)?[$]?([0-9][0-9,.]*)\s*(?:USD|dollars?)?\b",
+            r"\bfreight\s*(?:cost|charge)?\s*(?:is|=|:)?\s*(?:USD\s*)?[$]?([0-9][0-9,.]*)\s*(?:USD|dollars?)?\b",
+        ],
+        "insurance_premium_usd": [
+            r"\binsurance\s+premium\s*(?:is|=|:)?\s*(?:USD\s*)?[$]?([0-9][0-9,.]*)\s*(?:USD|dollars?)?\b",
+            r"\binsurance\s*(?:cost|quote|premium)?\s*(?:is|=|:)?\s*(?:USD\s*)?[$]?([0-9][0-9,.]*)\s*(?:USD|dollars?)?\b",
+        ],
+        "duty_rate_percent": [
+            r"\bduty\s+rate\s*(?:is|=|:)?\s*([0-9][0-9,.]*)\s*(?:%|percent|per\s+cent)?\b",
+            r"\bduty\s*(?:is|=|:)?\s*([0-9][0-9,.]*)\s*(?:%|percent|per\s+cent)\b",
+        ],
+        "import_tax_rate_percent": [
+            r"\bimport\s+tax\s+rate\s*(?:is|=|:)?\s*([0-9][0-9,.]*)\s*(?:%|percent|per\s+cent)?\b",
+            r"\bimport\s+tax\s*(?:is|=|:)?\s*([0-9][0-9,.]*)\s*(?:%|percent|per\s+cent)\b",
+            r"\btax\s+rate\s*(?:is|=|:)?\s*([0-9][0-9,.]*)\s*(?:%|percent|per\s+cent)\b",
+        ],
+        "procurement_value_usd": [
+            r"\bprocurement\s+value\s*(?:is|=|:)?\s*(?:USD\s*)?[$]?([0-9][0-9,.]*)\s*(?:USD|dollars?)?\b",
+        ],
+        "declared_value_usd": [
+            r"\bdeclared\s+(?:cargo\s+)?value\s*(?:is|=|:)?\s*(?:USD\s*)?[$]?([0-9][0-9,.]*)\s*(?:USD|dollars?)?\b",
+            r"\bcargo\s+value\s*(?:is|=|:)?\s*(?:USD\s*)?[$]?([0-9][0-9,.]*)\s*(?:USD|dollars?)?\b",
+        ],
+        "customs_brokerage_usd": [
+            r"\bcustoms\s+brokerage\s*(?:is|=|:)?\s*(?:USD\s*)?[$]?([0-9][0-9,.]*)\s*(?:USD|dollars?)?\b",
+            r"\bbrokerage\s*(?:fee|cost)?\s*(?:is|=|:)?\s*(?:USD\s*)?[$]?([0-9][0-9,.]*)\s*(?:USD|dollars?)?\b",
+        ],
+        "local_delivery_usd": [
+            r"\blocal\s+delivery\s*(?:is|=|:)?\s*(?:USD\s*)?[$]?([0-9][0-9,.]*)\s*(?:USD|dollars?)?\b",
+            r"\blast[-\s]?mile\s+delivery\s*(?:is|=|:)?\s*(?:USD\s*)?[$]?([0-9][0-9,.]*)\s*(?:USD|dollars?)?\b",
+        ],
+    }
+
+    for key, pattern_list in patterns.items():
+        for pattern in pattern_list:
+            match = re.search(pattern, raw, flags=re.IGNORECASE)
+            if match:
+                number = parse_number(match.group(1))
+                if number is not None:
+                    fields[key] = number
+                    break
+
+    if fields.get("declared_value_usd") is not None and fields.get("total_value") is None:
+        fields["total_value"] = fields["declared_value_usd"]
+
+    return fields
+
+
+
+# Final backend export cleanup v3.
+# This is intentionally placed at the end of user_agent.py so every text response
+# exported to the frontend is cleaned after all agent/advice wrappers finish.
+try:
+    _build_logistics_input_from_text_before_total_fix_v3 = _build_logistics_input_from_text
+
+    def _build_logistics_input_from_text(text):
+        parsed, logistics_input = _build_logistics_input_from_text_before_total_fix_v3(text)
+
+        try:
+            from app.text_shipment_parser import _extract_total_cargo_totals
+
+            totals = _extract_total_cargo_totals(text or "")
+            items = logistics_input.get("items") if isinstance(logistics_input, dict) else None
+
+            if isinstance(items, list) and items:
+                primary = items[0]
+                quantity = primary.get("quantity") or 1
+
+                try:
+                    quantity_number = float(quantity)
+                except Exception:
+                    quantity_number = 1.0
+
+                if totals.get("total_cbm") is not None:
+                    total_cbm = float(totals["total_cbm"])
+                    logistics_input["total_cbm"] = total_cbm
+                    primary["total_cbm"] = total_cbm
+                    if quantity_number:
+                        primary["unit_cbm"] = round(total_cbm / quantity_number, 6)
+
+                if totals.get("total_weight_kg") is not None:
+                    total_weight = float(totals["total_weight_kg"])
+                    logistics_input["total_weight_kg"] = total_weight
+                    primary["total_weight_kg"] = total_weight
+
+                    if quantity_number:
+                        unit_weight = round(total_weight / quantity_number, 6)
+                        primary["unit_weight_kg"] = unit_weight
+                        primary["weight_kg"] = unit_weight
+
+        except Exception:
+            pass
+
+        return parsed, logistics_input
+
+except Exception:
+    pass
+
+
+try:
+    _run_user_agent_from_text_before_final_export_cleanup_v3 = run_user_agent_from_text
+
+    def _hard_route_from_text_v3(user_text):
+        try:
+            from app.text_shipment_parser import _extract_route_pair_from_text
+            route = _extract_route_pair_from_text(user_text or "")
+        except Exception:
+            route = {"country_from": None, "country_to": None}
+
+        raw = str(user_text or "")
+
+        if not route.get("country_to"):
+            destination_patterns = [
+                r"\b(?:import|export|ship|send)\s+.+?\s+to\s+(.+?)(?=,|;|\.|\?|\bmaybe\b|\bbut\b|\buse\b|\busing\b|\bwith\b|\btell\b|\bgive\b|$)",
+                r"\bto\s+(USA|US|United States|United States of America|India|Germany|UK|United Kingdom|China|Turkey|Turkiye|UAE|Iran|Zambia|Finland|Spain|Portugal|France|Italy|Canada|Mexico|Japan|Singapore|Australia)\b",
+            ]
+
+            for pattern in destination_patterns:
+                match = re.search(pattern, raw, flags=re.IGNORECASE)
+                if match:
+                    try:
+                        from app.text_shipment_parser import _clean_route_country
+                        country = _clean_route_country(match.group(1))
+                    except Exception:
+                        country = match.group(1).strip(" .,:;?")
+
+                    if country:
+                        route["country_to"] = country
+                        break
+
+        return route
+
+    def _hard_trade_fields_v3(user_text):
+        fields = {}
+
+        try:
+            extracted = _extract_trade_cost_fields_from_text(user_text or "")
+            if isinstance(extracted, dict):
+                fields.update(extracted)
+        except Exception:
+            pass
+
+        raw = str(user_text or "")
+
+        if not fields.get("incoterm"):
+            incoterm_codes = "EXW|FCA|FAS|FOB|CFR|CIF|CPT|CIP|DAP|DPU|DDP"
+            incoterm_patterns = [
+                rf"\buse\s+(?:the\s+)?(?:incoterm\s+)?({incoterm_codes})\b",
+                rf"\busing\s+(?:the\s+)?(?:incoterm\s+)?({incoterm_codes})\b",
+                rf"\bwith\s+(?:the\s+)?(?:incoterm\s+)?({incoterm_codes})\b",
+                rf"\bunder\s+(?:the\s+)?(?:incoterm\s+)?({incoterm_codes})\b",
+                rf"\bincoterm\s*(?:is|=|:)?\s*({incoterm_codes})\b",
+                rf"\b({incoterm_codes})\s+incoterm\b",
+            ]
+
+            for pattern in incoterm_patterns:
+                match = re.search(pattern, raw, flags=re.IGNORECASE)
+                if match:
+                    fields["incoterm"] = match.group(1).upper()
+                    fields["trade_term"] = match.group(1).upper()
+                    break
+
+        def number(pattern):
+            match = re.search(pattern, raw, flags=re.IGNORECASE)
+            if not match:
+                return None
+            try:
+                return float(match.group(1).replace(",", ""))
+            except Exception:
+                return None
+
+        fallback_patterns = {
+            "freight_quote_usd": r"\bfreight\s+quote\s*(?:is|=|:)?\s*(?:USD\s*)?[$]?([0-9][0-9,.]*)\s*(?:USD|dollars?)?\b",
+            "insurance_premium_usd": r"\binsurance\s*(?:premium|cost|quote)?\s*(?:is|=|:)?\s*(?:USD\s*)?[$]?([0-9][0-9,.]*)\s*(?:USD|dollars?)?\b",
+            "duty_rate_percent": r"\bduty\s*(?:rate)?\s*(?:is|=|:)?\s*([0-9][0-9,.]*)\s*(?:%|percent|per\s+cent)\b",
+            "import_tax_rate_percent": r"\bimport\s+tax\s*(?:rate)?\s*(?:is|=|:)?\s*([0-9][0-9,.]*)\s*(?:%|percent|per\s+cent)\b",
+        }
+
+        for key, pattern in fallback_patterns.items():
+            if key not in fields:
+                value = number(pattern)
+                if value is not None:
+                    fields[key] = value
+
+        return fields
+
+    def _clean_route_string_v3(value, clean_destination):
+        if not isinstance(value, str):
+            return value
+
+        result = value
+
+        if clean_destination:
+            patterns = [
+                r"\bUSA(?:\?|\.|,)?\s+(?:Glass|Give|Tell|Use|The|They|compliance|risk|logistics|HS|code|duty|FTA)[^.,;]*",
+                r"\bUnited States\s+(?:using|Use|They|The|Give|Tell)[^.,;]*",
+            ]
+
+            for pattern in patterns:
+                result = re.sub(pattern, clean_destination, result, flags=re.IGNORECASE)
+
+        return result
+
+    def _remove_known_missing_items_v3(items, trade_fields, clean_destination):
+        if not isinstance(items, list):
+            return items
+
+        known_cost_keys = {
+            "freight_quote_usd",
+            "insurance_premium_usd",
+            "duty_rate_percent",
+            "import_tax_rate_percent",
+            "incoterm",
+            "trade_term",
+        }
+
+        cleaned = []
+
+        for item in items:
+            text_item = str(item)
+
+            if clean_destination and text_item.strip().lower() == "destination country":
+                continue
+
+            should_remove = False
+
+            for key in known_cost_keys:
+                if key in trade_fields:
+                    if text_item == key or text_item == f"landed cost input: {key}":
+                        should_remove = True
+                        break
+
+            if not should_remove:
+                cleaned.append(item)
+
+        return cleaned
+
+    def _final_export_cleanup_v3(response, user_text):
+        if not isinstance(response, dict):
+            return response
+
+        route = _hard_route_from_text_v3(user_text)
+        clean_origin = route.get("country_from")
+        clean_destination = route.get("country_to")
+        trade_fields = _hard_trade_fields_v3(user_text)
+
+        def visit(obj, path=""):
+            if isinstance(obj, dict):
+                for key in list(obj.keys()):
+                    value = obj[key]
+                    lower_key = str(key).lower()
+
+                    if path.endswith("request_metadata") and lower_key == "input_source":
+                        continue
+
+                    if clean_origin and lower_key in {"origin", "origin_country", "country_from"}:
+                        obj[key] = clean_origin
+                        continue
+
+                    if clean_destination and lower_key in {"destination", "destination_country", "country_to", "target_market"}:
+                        obj[key] = clean_destination
+                        continue
+
+                    if lower_key in {"incoterm", "trade_term"} and trade_fields.get(lower_key):
+                        obj[key] = trade_fields[lower_key]
+                        continue
+
+                    obj[key] = visit(value, f"{path}.{key}" if path else str(key))
+
+                return obj
+
+            if isinstance(obj, list):
+                return _remove_known_missing_items_v3(
+                    [visit(value, f"{path}[]") for value in obj],
+                    trade_fields,
+                    clean_destination,
+                )
+
+            return _clean_route_string_v3(obj, clean_destination)
+
+        response = visit(response)
+
+        if clean_destination:
+            response.setdefault("handoff_payload", {})
+            if isinstance(response["handoff_payload"], dict):
+                response["handoff_payload"]["destination"] = clean_destination
+                response["handoff_payload"]["destination_country"] = clean_destination
+
+        if clean_origin:
+            response.setdefault("handoff_payload", {})
+            if isinstance(response["handoff_payload"], dict):
+                response["handoff_payload"]["origin"] = clean_origin
+                response["handoff_payload"]["origin_country"] = clean_origin
+
+        if trade_fields:
+            response.setdefault("text_cost_inputs", {})
+            if isinstance(response["text_cost_inputs"], dict):
+                response["text_cost_inputs"].update(trade_fields)
+
+            landed = response.get("landed_cost_advice")
+            if isinstance(landed, dict):
+                known = landed.setdefault("known_inputs", {})
+                if isinstance(known, dict):
+                    known.update(trade_fields)
+
+                if isinstance(landed.get("missing_cost_inputs"), list):
+                    landed["missing_cost_inputs"] = [
+                        item for item in landed["missing_cost_inputs"]
+                        if str(item) not in trade_fields
+                    ]
+
+            executive = response.get("executive_summary")
+            if isinstance(executive, dict):
+                for key in ["top_missing_items", "top_risks"]:
+                    if isinstance(executive.get(key), list):
+                        executive[key] = _remove_known_missing_items_v3(
+                            executive[key],
+                            trade_fields,
+                            clean_destination,
+                        )
+
+        for key in ["missing_information", "missing_information_preview"]:
+            if isinstance(response.get(key), list):
+                response[key] = _remove_known_missing_items_v3(
+                    response[key],
+                    trade_fields,
+                    clean_destination,
+                )
+
+        visualizer = response.get("logistics_visualizer")
+        if isinstance(visualizer, dict):
+            cargo_mix = visualizer.get("cargo_mix")
+            if not cargo_mix:
+                visualizer["status"] = "unavailable"
+
+        return response
+
+    def run_user_agent_from_text(user_text):
+        response = _run_user_agent_from_text_before_final_export_cleanup_v3(user_text)
+        return _final_export_cleanup_v3(response, user_text)
+
+except Exception:
+    pass
+
+
+
+# Final backend export cleanup v4.
+# Guarantees frontend-facing text responses expose clean route, cost, visualizer,
+# and logistics_metrics fields after all earlier wrappers have run.
+try:
+    _run_user_agent_from_text_before_final_export_cleanup_v4 = run_user_agent_from_text
+
+    def _route_v4(user_text):
+        try:
+            from app.text_shipment_parser import _extract_route_pair_from_text
+            route = _extract_route_pair_from_text(user_text or "")
+        except Exception:
+            route = {"country_from": None, "country_to": None}
+
+        raw = str(user_text or "")
+
+        if not route.get("country_to"):
+            match = re.search(
+                r"\bto\s+(USA|US|United States|United States of America|India|Germany|UK|United Kingdom|China|Turkey|Turkiye|UAE|Iran|Zambia|Finland|Spain|Portugal|France|Italy|Canada|Mexico|Japan|Singapore|Australia)\b",
+                raw,
+                flags=re.IGNORECASE,
+            )
+            if match:
+                value = match.group(1)
+                try:
+                    from app.text_shipment_parser import _clean_route_country
+                    value = _clean_route_country(value)
+                except Exception:
+                    value = value.strip()
+                route["country_to"] = value
+
+        return route
+
+    def _trade_fields_v4(user_text):
+        try:
+            fields = _extract_trade_cost_fields_from_text(user_text or "")
+            if isinstance(fields, dict):
+                return dict(fields)
+        except Exception:
+            pass
+        return {}
+
+    def _aggregate_totals_v4(user_text):
+        try:
+            from app.text_shipment_parser import _extract_total_cargo_totals
+            totals = _extract_total_cargo_totals(user_text or "")
+            return totals if isinstance(totals, dict) else {}
+        except Exception:
+            return {}
+
+    def _clean_route_string_v4(value, clean_destination):
+        if not isinstance(value, str):
+            return value
+
+        if not clean_destination:
+            return value
+
+        replacements = [
+            r"\bUSA(?:\?|\.|,)?\s+(?:Glass|Give|Tell|Use|The|They|compliance|risk|logistics|HS|code|duty|FTA)[^.,;]*",
+            r"\bUnited States\s+(?:using|Use|They|The|Give|Tell)[^.,;]*",
+        ]
+
+        result = value
+        for pattern in replacements:
+            result = re.sub(pattern, clean_destination, result, flags=re.IGNORECASE)
+
+        return result
+
+    def _remove_known_missing_v4(items, trade_fields, clean_destination):
+        if not isinstance(items, list):
+            return items
+
+        known = set(trade_fields.keys()) | {"trade_term"}
+
+        cleaned = []
+        for item in items:
+            text_item = str(item).strip()
+
+            if clean_destination and text_item.lower() == "destination country":
+                continue
+
+            if text_item in known:
+                continue
+
+            if text_item.startswith("landed cost input: "):
+                key = text_item.replace("landed cost input: ", "", 1)
+                if key in known:
+                    continue
+
+            cleaned.append(item)
+
+        return cleaned
+
+    def _apply_logistics_totals_v4(response, totals):
+        if not isinstance(response, dict) or not isinstance(totals, dict):
+            return response
+
+        has_cbm = totals.get("total_cbm") is not None
+        has_weight = totals.get("total_weight_kg") is not None
+
+        if not has_cbm and not has_weight:
+            return response
+
+        metrics = response.setdefault("logistics_metrics", {})
+        if isinstance(metrics, dict):
+            if has_cbm:
+                metrics["total_cbm"] = float(totals["total_cbm"])
+            if has_weight:
+                metrics["total_weight_kg"] = float(totals["total_weight_kg"])
+
+        visualizer = response.get("logistics_visualizer")
+        if isinstance(visualizer, dict):
+            container = visualizer.setdefault("container", {})
+            if isinstance(container, dict):
+                if has_cbm:
+                    container["total_cbm"] = float(totals["total_cbm"])
+                if has_weight:
+                    container["total_weight_kg"] = float(totals["total_weight_kg"])
+
+            cargo_mix = visualizer.get("cargo_mix")
+            if isinstance(cargo_mix, list) and cargo_mix:
+                primary = cargo_mix[0]
+                if isinstance(primary, dict):
+                    quantity = primary.get("quantity") or 1
+                    try:
+                        quantity_number = float(quantity)
+                    except Exception:
+                        quantity_number = 1.0
+
+                    if has_cbm:
+                        total_cbm = float(totals["total_cbm"])
+                        primary["total_cbm"] = total_cbm
+                        if quantity_number:
+                            primary["unit_cbm"] = round(total_cbm / quantity_number, 6)
+
+                    if has_weight:
+                        total_weight = float(totals["total_weight_kg"])
+                        primary["total_weight_kg"] = total_weight
+                        if quantity_number:
+                            primary["unit_weight_kg"] = round(total_weight / quantity_number, 6)
+
+        specialist = response.get("specialist_response")
+        if isinstance(specialist, dict):
+            handoff = specialist.get("handoff_payload")
+            if isinstance(handoff, dict):
+                if has_cbm:
+                    handoff["total_cbm"] = float(totals["total_cbm"])
+                if has_weight:
+                    handoff["total_weight_kg"] = float(totals["total_weight_kg"])
+
+        specialist_responses = response.get("specialist_responses")
+        if isinstance(specialist_responses, dict):
+            logistics = specialist_responses.get("logistics_agent")
+            if isinstance(logistics, dict):
+                handoff = logistics.get("handoff_payload")
+                if isinstance(handoff, dict):
+                    if has_cbm:
+                        handoff["total_cbm"] = float(totals["total_cbm"])
+                    if has_weight:
+                        handoff["total_weight_kg"] = float(totals["total_weight_kg"])
+
+        return response
+
+    def _final_cleanup_v4(response, user_text):
+        if not isinstance(response, dict):
+            return response
+
+        route = _route_v4(user_text)
+        clean_origin = route.get("country_from")
+        clean_destination = route.get("country_to")
+        trade_fields = _trade_fields_v4(user_text)
+        totals = _aggregate_totals_v4(user_text)
+
+        def visit(obj, path=""):
+            if isinstance(obj, dict):
+                for key in list(obj.keys()):
+                    value = obj[key]
+                    lower_key = str(key).lower()
+
+                    if path.endswith("request_metadata") and lower_key == "input_source":
+                        continue
+
+                    if clean_origin and lower_key in {"origin", "origin_country", "country_from"}:
+                        obj[key] = clean_origin
+                        continue
+
+                    if clean_destination and lower_key in {"destination", "destination_country", "country_to", "target_market"}:
+                        obj[key] = clean_destination
+                        continue
+
+                    if lower_key in {"incoterm", "trade_term"} and trade_fields.get(lower_key):
+                        obj[key] = trade_fields[lower_key]
+                        continue
+
+                    obj[key] = visit(value, f"{path}.{key}" if path else str(key))
+
+                return obj
+
+            if isinstance(obj, list):
+                return _remove_known_missing_v4(
+                    [visit(value, f"{path}[]") for value in obj],
+                    trade_fields,
+                    clean_destination,
+                )
+
+            return _clean_route_string_v4(obj, clean_destination)
+
+        response = visit(response)
+
+        if trade_fields:
+            response.setdefault("text_cost_inputs", {})
+            if isinstance(response["text_cost_inputs"], dict):
+                response["text_cost_inputs"].update(trade_fields)
+
+            landed = response.get("landed_cost_advice")
+            if isinstance(landed, dict):
+                response["text_cost_inputs"].update(trade_fields)
+
+            landed = response.get("landed_cost_advice")
+            if isinstance(landed, dict):
+                known = landed.setdefault("known_inputs", {})
+                if isinstance(known, dict):
+                    known.update(trade_fields)
+
+                if isinstance(landed.get("missing_cost_inputs"), list):
+                    landed["missing_cost_inputs"] = [
+                        item for item in landed["missing_cost_inputs"]
+                        if str(item) not in trade_fields
+                    ]
+
+        for key in ["missing_information", "missing_information_preview"]:
+            if isinstance(response.get(key), list):
+                response[key] = _remove_known_missing_v4(
+                    response[key],
+                    trade_fields,
+                    clean_destination,
+                )
+
+        visualizer = response.get("logistics_visualizer")
+        if isinstance(visualizer, dict) and not visualizer.get("cargo_mix"):
+            visualizer["status"] = "unavailable"
+
+        response = _apply_logistics_totals_v4(response, totals)
+
+        return response
+
+    def run_user_agent_from_text(user_text):
+        response = _run_user_agent_from_text_before_final_export_cleanup_v4(user_text)
+        return _final_cleanup_v4(response, user_text)
+
+except Exception:
+    pass
+
+
+
+# Final backend export cleanup v5.
+# Focused cleanup for frontend-facing text responses:
+# - clean noisy route fragments in every report section
+# - propagate known text cost inputs into landed-cost fields
+# - remove known cost inputs from missing lists
+# - preserve aggregate total cargo CBM/weight in visible metrics
+try:
+    _run_user_agent_from_text_before_final_backend_cleanup_v5 = run_user_agent_from_text
+
+    def _cleanup_v5_number(value):
+        try:
+            return float(str(value).replace(",", "").strip())
+        except Exception:
+            return None
+
+    def _cleanup_v5_route(user_text):
+        raw = str(user_text or "")
+        route = {"country_from": None, "country_to": None}
+
+        aliases = {
+            "usa": "USA",
+            "us": "USA",
+            "u.s.": "USA",
+            "u.s.a.": "USA",
+            "united states": "USA",
+            "united states of america": "USA",
+            "india": "India",
+            "china": "China",
+            "turkey": "Turkey",
+            "turkiye": "Turkey",
+            "uk": "UK",
+            "united kingdom": "UK",
+            "uae": "UAE",
+            "iran": "Iran",
+            "germany": "Germany",
+            "zambia": "Zambia",
+            "finland": "Finland",
+        }
+
+        def clean_country(value):
+            value = str(value or "").lower()
+            value = re.sub(r"[^a-z. ]+", " ", value)
+            value = re.sub(r"\s+", " ", value).strip()
+
+            for alias in sorted(aliases, key=len, reverse=True):
+                if value == alias or value.startswith(alias + " "):
+                    return aliases[alias]
+
+            return None
+
+        route_match = re.search(
+            r"\bfrom\s+(.+?)\s+to\s+(.+?)(?=\.|,|;|\?|\buse\b|\busing\b|\bwith\b|\bunder\b|\btell\b|\bgive\b|\bglass\b|\bthe\b|\bthey\b|$)",
+            raw,
+            flags=re.IGNORECASE,
+        )
+
+        if route_match:
+            route["country_from"] = clean_country(route_match.group(1))
+            route["country_to"] = clean_country(route_match.group(2))
+
+        if not route["country_to"]:
+            to_match = re.search(
+                r"\bto\s+(USA|US|U\.S\.|U\.S\.A\.|United States|United States of America|India|China|Turkey|Turkiye|UK|United Kingdom|UAE|Iran|Germany|Zambia|Finland)\b",
+                raw,
+                flags=re.IGNORECASE,
+            )
+            if to_match:
+                route["country_to"] = clean_country(to_match.group(1))
+
+        if not route["country_from"]:
+            from_match = re.search(
+                r"\bfrom\s+(USA|US|U\.S\.|U\.S\.A\.|United States|United States of America|India|China|Turkey|Turkiye|UK|United Kingdom|UAE|Iran|Germany|Zambia|Finland)\b",
+                raw,
+                flags=re.IGNORECASE,
+            )
+            if from_match:
+                route["country_from"] = clean_country(from_match.group(1))
+
+        return route
+
+    def _cleanup_v5_trade_fields(user_text):
+        raw = str(user_text or "")
+        fields = {}
+
+        try:
+            existing = _extract_trade_cost_fields_from_text(raw)
+            if isinstance(existing, dict):
+                fields.update(existing)
+        except Exception:
+            pass
+
+        incoterms = "EXW|FCA|FAS|FOB|CFR|CIF|CPT|CIP|DAP|DPU|DDP"
+
+        if not fields.get("incoterm"):
+            for pattern in [
+                rf"\buse\s+(?:the\s+)?(?:incoterm\s+)?({incoterms})\b",
+                rf"\busing\s+(?:the\s+)?(?:incoterm\s+)?({incoterms})\b",
+                rf"\bwith\s+(?:the\s+)?(?:incoterm\s+)?({incoterms})\b",
+                rf"\bunder\s+(?:the\s+)?(?:incoterm\s+)?({incoterms})\b",
+                rf"\bincoterm\s*(?:is|=|:)?\s*({incoterms})\b",
+            ]:
+                match = re.search(pattern, raw, flags=re.IGNORECASE)
+                if match:
+                    fields["incoterm"] = match.group(1).upper()
+                    fields["trade_term"] = match.group(1).upper()
+                    break
+
+        cost_patterns = {
+            "freight_quote_usd": r"\bfreight\s+quote\s*(?:is|=|:)?\s*(?:USD\s*)?[$]?([0-9][0-9,.]*)\s*(?:USD|dollars?)?\b",
+            "insurance_premium_usd": r"\binsurance\s*(?:premium|cost|quote)?\s*(?:is|=|:)?\s*(?:USD\s*)?[$]?([0-9][0-9,.]*)\s*(?:USD|dollars?)?\b",
+            "duty_rate_percent": r"\bduty\s*(?:rate)?\s*(?:is|=|:)?\s*([0-9][0-9,.]*)\s*(?:%|percent|per\s+cent)\b",
+            "import_tax_rate_percent": r"\bimport\s+tax\s*(?:rate)?\s*(?:is|=|:)?\s*([0-9][0-9,.]*)\s*(?:%|percent|per\s+cent)\b",
+        }
+
+        for key, pattern in cost_patterns.items():
+            if key not in fields:
+                match = re.search(pattern, raw, flags=re.IGNORECASE)
+                if match:
+                    number = _cleanup_v5_number(match.group(1))
+                    if number is not None:
+                        fields[key] = number
+
+        return fields
+
+    def _cleanup_v5_totals(user_text):
+        raw = str(user_text or "")
+        totals = {}
+
+        cbm_match = re.search(
+            r"\b(?:total\s+)?(?:cargo|shipment|load)\s*(?:is|=|:)?\s*([0-9][0-9,.]*)\s*(?:cbm|m3|cubic\s+meters?)\b",
+            raw,
+            flags=re.IGNORECASE,
+        )
+        if cbm_match:
+            value = _cleanup_v5_number(cbm_match.group(1))
+            if value is not None:
+                totals["total_cbm"] = value
+
+        kg_match = re.search(
+            r"\b(?:total\s+)?(?:cargo|shipment|load).*?([0-9][0-9,.]*)\s*(?:kg|kgs|kilograms?)\b",
+            raw,
+            flags=re.IGNORECASE,
+        )
+        if kg_match:
+            value = _cleanup_v5_number(kg_match.group(1))
+            if value is not None:
+                totals["total_weight_kg"] = value
+
+        return totals
+
+    def _cleanup_v5_clean_string(value, clean_destination):
+        if not isinstance(value, str):
+            return value
+
+        result = value
+
+        # These are the noisy fragments we actually observed in downloaded JSONs.
+        result = re.sub(
+            r"\bUSA\s+Glass bottles are fragile Use FOB\b",
+            "USA",
+            result,
+            flags=re.IGNORECASE,
+        )
+        result = re.sub(
+            r"\bUSA\s+Give HS code duty FTA\b",
+            "USA",
+            result,
+            flags=re.IGNORECASE,
+        )
+        result = re.sub(
+            r"\bUSA\?\s+Tell me compliance risk logistics\b",
+            "USA",
+            result,
+            flags=re.IGNORECASE,
+        )
+
+        # Broader fallback for similar noisy route fragments.
+        result = re.sub(
+            r"\bUSA(?:\?|\.|,)?\s+(?:Glass|Give|Tell|Use|The|They|compliance|risk|logistics|HS|code|duty|FTA)[^.,;]*",
+            "USA",
+            result,
+            flags=re.IGNORECASE,
+        )
+
+        if clean_destination:
+            result = re.sub(
+                r"\bUnited States\s+(?:using|Use|They|The|Give|Tell)[^.,;]*",
+                clean_destination,
+                result,
+                flags=re.IGNORECASE,
+            )
+
+        return result
+
+    def _cleanup_v5_filter_list(values, trade_fields, clean_destination):
+        if not isinstance(values, list):
+            return values
+
+        known_cost_keys = {
+            key for key in [
+                "freight_quote_usd",
+                "insurance_premium_usd",
+                "duty_rate_percent",
+                "import_tax_rate_percent",
+                "incoterm",
+                "trade_term",
+            ]
+            if key in trade_fields
+        }
+
+        cleaned = []
+
+        for value in values:
+            text_value = str(value).strip()
+            lower_value = text_value.lower()
+
+            if clean_destination and lower_value == "destination country":
+                continue
+
+            if trade_fields.get("incoterm") and (
+                "which incoterm" in lower_value
+                or "incoterm is missing" in lower_value
+                or "no incoterm" in lower_value
+                or lower_value == "trade_terms needs more information."
+            ):
+                continue
+
+            remove = False
+
+            for key in known_cost_keys:
+                if text_value == key:
+                    remove = True
+                    break
+                if text_value == f"landed cost input: {key}":
+                    remove = True
+                    break
+
+            if not remove:
+                cleaned.append(value)
+
+        return cleaned
+
+    def _cleanup_v5_apply_totals(response, totals):
+        if not isinstance(response, dict) or not totals:
+            return response
+
+        def apply_to_metrics(metrics):
+            if not isinstance(metrics, dict):
+                return
+
+            if "total_cbm" in totals:
+                metrics["total_cbm"] = totals["total_cbm"]
+
+            if "total_weight_kg" in totals:
+                metrics["total_weight_kg"] = totals["total_weight_kg"]
+
+        apply_to_metrics(response.setdefault("logistics_metrics", {}))
+
+        visualizer = response.get("logistics_visualizer")
+        if isinstance(visualizer, dict):
+            container = visualizer.setdefault("container", {})
+            apply_to_metrics(container)
+
+            cargo_mix = visualizer.get("cargo_mix")
+            if isinstance(cargo_mix, list) and cargo_mix:
+                first = cargo_mix[0]
+                if isinstance(first, dict):
+                    quantity = first.get("quantity") or 1
+                    try:
+                        quantity = float(quantity)
+                    except Exception:
+                        quantity = 1.0
+
+                    if "total_cbm" in totals:
+                        first["total_cbm"] = totals["total_cbm"]
+                        if quantity:
+                            first["unit_cbm"] = round(totals["total_cbm"] / quantity, 6)
+
+                    if "total_weight_kg" in totals:
+                        first["total_weight_kg"] = totals["total_weight_kg"]
+                        if quantity:
+                            first["unit_weight_kg"] = round(totals["total_weight_kg"] / quantity, 6)
+
+        return response
+
+    def _cleanup_v5_response(response, user_text):
+        if not isinstance(response, dict):
+            return response
+
+        route = _cleanup_v5_route(user_text)
+        clean_origin = route.get("country_from")
+        clean_destination = route.get("country_to")
+        trade_fields = _cleanup_v5_trade_fields(user_text)
+        totals = _cleanup_v5_totals(user_text)
+
+        def visit(obj, path=""):
+            if isinstance(obj, dict):
+                for key in list(obj.keys()):
+                    value = obj[key]
+                    lower_key = str(key).lower()
+
+                    if path.endswith("request_metadata") and lower_key == "input_source":
+                        continue
+
+                    if clean_origin and lower_key in {"origin", "origin_country", "country_from"}:
+                        obj[key] = clean_origin
+                        continue
+
+                    if clean_destination and lower_key in {"destination", "destination_country", "country_to", "target_market"}:
+                        obj[key] = clean_destination
+                        continue
+
+                    if lower_key in {"incoterm", "trade_term"} and trade_fields.get(lower_key):
+                        obj[key] = trade_fields[lower_key]
+                        continue
+
+                    obj[key] = visit(value, f"{path}.{key}" if path else str(key))
+
+                if isinstance(obj.get("known_inputs"), dict):
+                    if clean_origin:
+                        obj["known_inputs"]["origin_country"] = clean_origin
+                    if clean_destination:
+                        obj["known_inputs"]["destination_country"] = clean_destination
+                    obj["known_inputs"].update(trade_fields)
+
+                if isinstance(obj.get("missing_cost_inputs"), list):
+                    obj["missing_cost_inputs"] = _cleanup_v5_filter_list(
+                        obj["missing_cost_inputs"],
+                        trade_fields,
+                        clean_destination,
+                    )
+
+                if isinstance(obj.get("missing_information"), list):
+                    obj["missing_information"] = _cleanup_v5_filter_list(
+                        obj["missing_information"],
+                        trade_fields,
+                        clean_destination,
+                    )
+
+                if isinstance(obj.get("missing_information_preview"), list):
+                    obj["missing_information_preview"] = _cleanup_v5_filter_list(
+                        obj["missing_information_preview"],
+                        trade_fields,
+                        clean_destination,
+                    )
+
+                if isinstance(obj.get("user_questions"), list):
+                    obj["user_questions"] = _cleanup_v5_filter_list(
+                        obj["user_questions"],
+                        trade_fields,
+                        clean_destination,
+                    )
+
+                return obj
+
+            if isinstance(obj, list):
+                return [
+                    visit(item, f"{path}[]")
+                    for item in _cleanup_v5_filter_list(obj, trade_fields, clean_destination)
+                ]
+
+            return _cleanup_v5_clean_string(obj, clean_destination)
+
+        response = visit(response)
+
+        if trade_fields:
+            response.setdefault("text_cost_inputs", {})
+            if isinstance(response["text_cost_inputs"], dict):
+                response["text_cost_inputs"].update(trade_fields)
+
+        visualizer = response.get("logistics_visualizer")
+        if isinstance(visualizer, dict) and not visualizer.get("cargo_mix"):
+            visualizer["status"] = "unavailable"
+
+        response = _cleanup_v5_apply_totals(response, totals)
+
+        return response
+
+    def run_user_agent_from_text(user_text):
+        response = _run_user_agent_from_text_before_final_backend_cleanup_v5(user_text)
+        return _cleanup_v5_response(response, user_text)
+
+except Exception:
+    pass

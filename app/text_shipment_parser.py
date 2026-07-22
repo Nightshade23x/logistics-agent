@@ -40,6 +40,135 @@ _FIELD_REMOVAL_PATTERNS = [
 ]
 
 
+
+
+_COUNTRY_CANONICAL_NAMES = {
+    "usa": "USA",
+    "u s a": "USA",
+    "us": "USA",
+    "u s": "USA",
+    "america": "USA",
+    "united states": "USA",
+    "united states of america": "USA",
+    "india": "India",
+    "germany": "Germany",
+    "uk": "UK",
+    "u k": "UK",
+    "united kingdom": "UK",
+    "england": "UK",
+    "china": "China",
+    "turkey": "Turkey",
+    "turkiye": "Turkey",
+    "uae": "UAE",
+    "u a e": "UAE",
+    "united arab emirates": "UAE",
+    "iran": "Iran",
+    "zambia": "Zambia",
+    "finland": "Finland",
+    "spain": "Spain",
+    "portugal": "Portugal",
+    "france": "France",
+    "italy": "Italy",
+    "netherlands": "Netherlands",
+    "canada": "Canada",
+    "mexico": "Mexico",
+    "japan": "Japan",
+    "south korea": "South Korea",
+    "korea": "South Korea",
+    "singapore": "Singapore",
+    "australia": "Australia",
+}
+
+_ROUTE_STOP_WORDS = (
+    "glass", "bottle", "bottles", "fragile", "hazardous", "battery", "batteries",
+    "scooter", "scooters", "tv", "tvs", "television", "televisions",
+    "ceramic", "tile", "tiles", "pillow", "pillows", "mattress", "mattresses",
+    "use", "using", "with", "under", "freight", "insurance", "duty", "tax",
+    "import", "budget", "quote", "rate", "incoterm", "fob", "cif", "exw",
+    "dap", "ddp", "fca", "cfr", "and", "but",
+)
+
+
+def _route_normalized_text(value: str) -> str:
+    text = str(value or "").lower()
+    text = re.sub(r"[^a-z0-9]+", " ", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _clean_route_country(value: str | None) -> str | None:
+    """Return a clean country name from a noisy route fragment.
+
+    This protects cases like:
+    "USA Glass bottles are fragile Use FOB" -> "USA"
+    """
+    if not value:
+        return None
+
+    normalized = _route_normalized_text(value)
+
+    if not normalized:
+        return None
+
+    # Prefer known country aliases at the start of the route fragment.
+    for alias in sorted(_COUNTRY_CANONICAL_NAMES, key=len, reverse=True):
+        if normalized == alias or normalized.startswith(alias + " "):
+            return _COUNTRY_CANONICAL_NAMES[alias]
+
+    # If the known country appears after small filler words, still recover it.
+    for alias in sorted(_COUNTRY_CANONICAL_NAMES, key=len, reverse=True):
+        pattern = rf"(?:^|\b)(?:country\s+)?{re.escape(alias)}(?:\b|$)"
+        if re.search(pattern, normalized):
+            return _COUNTRY_CANONICAL_NAMES[alias]
+
+    # Generic fallback: stop before obvious cargo/metadata words.
+    stop_pattern = r"\b(?:" + "|".join(re.escape(word) for word in _ROUTE_STOP_WORDS) + r")\b"
+    cleaned = re.split(stop_pattern, normalized, maxsplit=1)[0].strip()
+
+    if not cleaned:
+        return None
+
+    # Keep short country-like phrases only.
+    words = cleaned.split()
+    if len(words) > 4:
+        words = words[:4]
+
+    return " ".join(word.capitalize() for word in words) if words else None
+
+
+def _extract_route_pair_from_text(text: str | None) -> dict[str, str | None]:
+    """Extract origin/destination countries from free text with cleanup."""
+    raw = text or ""
+    route: dict[str, str | None] = {"country_from": None, "country_to": None}
+
+    explicit_patterns = [
+        (
+            r"\b(?:origin|origin_country|country_from)\s*(?:is|=|:)\s*([A-Za-z .]+?)(?=,|;|\.|\b(?:destination|destination_country|country_to)\b|$)",
+            "country_from",
+        ),
+        (
+            r"\b(?:destination|destination_country|country_to)\s*(?:is|=|:)\s*([A-Za-z .]+?)(?=,|;|\.|\b(?:origin|origin_country|country_from)\b|$)",
+            "country_to",
+        ),
+    ]
+
+    for pattern, key in explicit_patterns:
+        match = re.search(pattern, raw, flags=re.IGNORECASE)
+        if match:
+            route[key] = _clean_route_country(match.group(1))
+
+    route_match = re.search(
+        r"\bfrom\s+(.+?)\s+to\s+(.+?)(?=\.|,|;|\buse\b|\busing\b|\bwith\b|\bunder\b|\bbudget\b|\bfreight\b|\binsurance\b|\bduty\b|\bimport\s+tax\b|\btax\b|$)",
+        raw,
+        flags=re.IGNORECASE,
+    )
+
+    if route_match:
+        route["country_from"] = route["country_from"] or _clean_route_country(route_match.group(1))
+        route["country_to"] = route["country_to"] or _clean_route_country(route_match.group(2))
+
+    return route
+
+
 def _clean_item_name(name: str) -> str:
     cleaned = name.strip().strip(".").strip()
 
@@ -84,24 +213,10 @@ def _first_text(patterns: list[str], text: str) -> str | None:
 
 def _extract_route(text: str) -> dict[str, str]:
     route: dict[str, str] = {}
+    extracted = _extract_route_pair_from_text(text)
 
-    country_from = _first_text(
-        [
-            r"\bcountry_from\s*(?:is|=|:)\s*([A-Za-z ]+)",
-            r"\borigin\s+country\s*(?:is|=|:)\s*([A-Za-z ]+)",
-            r"\bfrom\s+([A-Za-z ]+)\s+to\s+[A-Za-z ]+",
-        ],
-        text,
-    )
-
-    country_to = _first_text(
-        [
-            r"\bcountry_to\s*(?:is|=|:)\s*([A-Za-z ]+)",
-            r"\bdestination\s+country\s*(?:is|=|:)\s*([A-Za-z ]+)",
-            r"\bfrom\s+[A-Za-z ]+\s+to\s+([A-Za-z ]+)(?:\.|,|;|$)",
-        ],
-        text,
-    )
+    country_from = extracted.get("country_from")
+    country_to = extracted.get("country_to")
 
     if country_from:
         route["origin"] = country_from
@@ -181,6 +296,54 @@ def _extract_metadata(text: str) -> dict[str, Any]:
     return metadata
 
 
+
+
+def _extract_total_cargo_totals(text: str) -> dict[str, float]:
+    """Extract aggregate shipment totals such as 'Total cargo is 10 CBM and 1200 kg'."""
+    raw = text or ""
+    totals: dict[str, float] = {}
+
+    cbm_match = re.search(
+        r"\b(?:total\s+)?(?:cargo|shipment|load)\s*(?:is|=|:)?\s*"
+        r"(?P<cbm>\d+(?:\.\d+)?)\s*(?:cbm|m3|cubic\s+meters?)\b",
+        raw,
+        flags=re.IGNORECASE,
+    )
+    if cbm_match:
+        totals["total_cbm"] = float(cbm_match.group("cbm"))
+
+    weight_match = re.search(
+        r"\b(?:total\s+)?(?:cargo|shipment|load).*?"
+        r"(?P<weight>\d+(?:\.\d+)?)\s*(?:kg|kgs|kilograms?)\b",
+        raw,
+        flags=re.IGNORECASE,
+    )
+    if weight_match:
+        totals["total_weight_kg"] = float(weight_match.group("weight"))
+
+    return totals
+
+
+def _remove_total_cargo_phrase(text: str) -> str:
+    cleaned = text or ""
+    cleaned = re.sub(
+        r"\b(?:total\s+)?(?:cargo|shipment|load)\s*(?:is|=|:)?\s*"
+        r"\d+(?:\.\d+)?\s*(?:cbm|m3|cubic\s+meters?)"
+        r"(?:\s*(?:and|,)\s*\d+(?:\.\d+)?\s*(?:kg|kgs|kilograms?))?",
+        " ",
+        cleaned,
+        flags=re.IGNORECASE,
+    )
+    cleaned = re.sub(
+        r"\b(?:total\s+)?(?:cargo|shipment|load)\s*(?:weight\s*)?(?:is|=|:)?\s*"
+        r"\d+(?:\.\d+)?\s*(?:kg|kgs|kilograms?)",
+        " ",
+        cleaned,
+        flags=re.IGNORECASE,
+    )
+    return cleaned
+
+
 def _remove_metadata_phrases(text: str) -> str:
     cleaned = text
 
@@ -217,21 +380,17 @@ def parse_shipment_text(text: str) -> dict[str, Any]:
     except Exception:
         metadata = {}
 
-    route_match = re.search(
-        r"\bfrom\s+([A-Za-z][A-Za-z\s]+?)\s+to\s+([A-Za-z][A-Za-z\s]+?)(?=\.|,|\s+use\b|\s+with\b|\s+the\b|\s+and\b|$)",
-        raw_text,
-        flags=re.IGNORECASE,
-    )
+    route_pair = _extract_route_pair_from_text(raw_text)
+    origin = route_pair.get("country_from")
+    destination = route_pair.get("country_to")
 
-    if route_match:
-        origin = route_match.group(1).strip()
-        destination = route_match.group(2).strip()
+    if origin:
         for key in ["country_from", "origin", "origin_country"]:
-            if not metadata.get(key):
-                metadata[key] = origin
+            metadata[key] = origin
+
+    if destination:
         for key in ["country_to", "destination", "destination_country", "target_market"]:
-            if not metadata.get(key):
-                metadata[key] = destination
+            metadata[key] = destination
 
     incoterm_match = re.search(r"\b(EXW|FOB|CIF|DAP|DDP|FCA|CFR)\b", raw_text, flags=re.IGNORECASE)
     if incoterm_match:
@@ -250,10 +409,14 @@ def parse_shipment_text(text: str) -> dict[str, Any]:
         if match:
             metadata[key] = float(match.group("value"))
 
+    aggregate_totals = _extract_total_cargo_totals(raw_text)
+
     try:
         item_text = _remove_metadata_phrases(raw_text)
     except Exception:
         item_text = raw_text
+
+    item_text = _remove_total_cargo_phrase(item_text)
 
     item_text = re.sub(
         r"\b(?:freight quote|freight|insurance premium|insurance|duty rate|duty|import tax rate|import tax|tax rate|budget|cost)\s+(?:is\s+)?\d+(?:\.\d+)?\s*(?:usd|dollars?|percent|%)?",
@@ -334,6 +497,8 @@ def parse_shipment_text(text: str) -> dict[str, Any]:
 
         if not cleaned:
             return
+        if re.fullmatch(r"(?:and\s+)?\d+(?:\.\d+)?\s*(?:kg|kgs|kilograms?|cbm|m3|cubic\s+meters?)", cleaned, flags=re.IGNORECASE):
+            return
         if cleaned in blocked_items:
             return
         if any(word in blocked_items for word in cleaned.split()):
@@ -400,8 +565,33 @@ def parse_shipment_text(text: str) -> dict[str, Any]:
                 if clean_name(candidate):
                     add_item(candidate, 1, {"needs_quantity_confirmation": True})
 
+    if items and aggregate_totals:
+        primary_item = items[0]
+        quantity_value = primary_item.get("quantity") or 1
+        try:
+            quantity_number = float(quantity_value)
+        except Exception:
+            quantity_number = 1.0
+
+        if aggregate_totals.get("total_cbm") is not None:
+            primary_item["total_cbm"] = aggregate_totals["total_cbm"]
+            if quantity_number:
+                primary_item["unit_cbm"] = round(aggregate_totals["total_cbm"] / quantity_number, 6)
+
+        if aggregate_totals.get("total_weight_kg") is not None:
+            primary_item["total_weight_kg"] = aggregate_totals["total_weight_kg"]
+            if quantity_number:
+                primary_item["unit_weight_kg"] = round(aggregate_totals["total_weight_kg"] / quantity_number, 6)
+
+        note = "Aggregate shipment totals were provided in the user text and applied to this cargo line."
+        if primary_item.get("notes"):
+            primary_item["notes"] = str(primary_item["notes"]) + " " + note
+        else:
+            primary_item["notes"] = note
+
     result: dict[str, Any] = {"items": items, "issues": []}
     result.update(metadata)
+    result.update(aggregate_totals)
 
     if not items:
         result["issues"].append("No requested items were provided.")

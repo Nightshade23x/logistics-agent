@@ -18,6 +18,10 @@ Run with:
 """
 
 from __future__ import annotations
+import json as _json
+from starlette.requests import Request as _StarletteRequest
+from starlette.responses import Response as _StarletteResponse
+from app.frontend_response_cleanup import cleanup_frontend_response
 
 import shutil
 import tempfile
@@ -40,6 +44,74 @@ from app.partner_review_service import run_partner_review
 from app.agent_router import detect_text_intent
 
 app = FastAPI(title="Logistics Agent API", version="1.0.0")
+
+
+
+# Final API cleanup middleware.
+# This runs after the user-agent/compact-payload/report builders so React receives cleaned JSON.
+if not getattr(app.state, "frontend_response_cleanup_middleware_installed", False):
+    app.state.frontend_response_cleanup_middleware_installed = True
+
+    @app.middleware("http")
+    async def _frontend_response_cleanup_middleware(request: _StarletteRequest, call_next):
+        body_bytes = b""
+        original_text = None
+
+        if request.url.path.startswith("/api/request/"):
+            try:
+                body_bytes = await request.body()
+                if body_bytes:
+                    body_json = _json.loads(body_bytes.decode("utf-8"))
+                    if isinstance(body_json, dict):
+                        original_text = (
+                            body_json.get("user_text")
+                            or body_json.get("text")
+                            or body_json.get("prompt")
+                            or body_json.get("request_text")
+                        )
+            except Exception:
+                body_bytes = body_bytes or b""
+
+            async def _receive():
+                return {
+                    "type": "http.request",
+                    "body": body_bytes,
+                    "more_body": False,
+                }
+
+            request = _StarletteRequest(request.scope, _receive)
+
+        response = await call_next(request)
+
+        if not request.url.path.startswith("/api/request/"):
+            return response
+
+        content_type = response.headers.get("content-type", "")
+        if "application/json" not in content_type.lower():
+            return response
+
+        try:
+            response_body = b""
+            async for chunk in response.body_iterator:
+                response_body += chunk
+
+            payload = _json.loads(response_body.decode("utf-8"))
+            cleaned = cleanup_frontend_response(payload, original_text)
+
+            cleaned_body = _json.dumps(cleaned, default=str).encode("utf-8")
+
+            headers = dict(response.headers)
+            headers.pop("content-length", None)
+
+            return _StarletteResponse(
+                content=cleaned_body,
+                status_code=response.status_code,
+                headers=headers,
+                media_type="application/json",
+            )
+
+        except Exception:
+            return response
 
 app.add_middleware(
     CORSMiddleware,

@@ -138,3 +138,42 @@ def build_compact_frontend_payload(full_payload):
 
     return compact
 
+
+
+# Apply final frontend payload cleanup after compact payload builders run.
+try:
+    from app.frontend_response_cleanup import cleanup_frontend_response as _cleanup_frontend_response
+    import inspect as _inspect
+
+    def _install_compact_payload_cleanup():
+        _globals = globals()
+
+        for _name, _fn in list(_globals.items()):
+            if _name.startswith("_"):
+                continue
+
+            if not _inspect.isfunction(_fn):
+                continue
+
+            if getattr(_fn, "__module__", None) != __name__:
+                continue
+
+            _lower = _name.lower()
+            if not any(_token in _lower for _token in ["payload", "compact", "frontend", "response"]):
+                continue
+
+            def _wrapped(*args, __fn=_fn, **kwargs):
+                result = __fn(*args, **kwargs)
+                try:
+                    return _cleanup_frontend_response(result)
+                except Exception:
+                    return result
+
+            _wrapped.__name__ = getattr(_fn, "__name__", _name)
+            _wrapped.__doc__ = getattr(_fn, "__doc__", None)
+            _globals[_name] = _wrapped
+
+    _install_compact_payload_cleanup()
+
+except Exception:
+    pass
