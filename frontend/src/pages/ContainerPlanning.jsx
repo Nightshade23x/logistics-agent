@@ -1,6 +1,7 @@
 import Badge from "../components/Badge.jsx";
 import Kpi from "../components/Kpi.jsx";
 import ResultGate from "../components/ResultGate.jsx";
+import Container3DVisualizer from "../components/Container3DVisualizer.jsx";
 
 const ZONE_TONES = ["", "teal", "amber"];
 
@@ -82,7 +83,7 @@ export default function ContainerPlanning() {
                       <Badge status={lm.readiness_status} />
                     </div>
                     <div className="card-body">
-                      <ContainerViz container={c} zoneLayout={lv.zone_layout} />
+                      <Container3DVisualizer result={result} />
                     </div>
                   </div>
 
