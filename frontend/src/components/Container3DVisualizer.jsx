@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 
@@ -896,7 +896,14 @@ export default function Container3DVisualizer({ result }) {
         <div className="container3d-hint">Drag to rotate · Scroll to zoom · Right-click drag to pan</div>
       </div>
 
-      <aside className="container3d-panel">
+      <details className="container3d-panel">
+        <summary className="container3d-panel-summary">
+          <span>3D loading details</span>
+          <small>
+            {util.utilization_percent ?? 0}% used - {util.remaining_percent ?? 100}% free - {layout.boxes.length} visual units
+          </small>
+        </summary>
+        <div className="container3d-panel-content">
         <div className="container3d-title">3D Container Loading View</div>
         <div className="container3d-sub">Container: {layout.container.name}</div>
         <div className="container3d-sub">
@@ -962,7 +969,8 @@ export default function Container3DVisualizer({ result }) {
             ))}
           </div>
         </div>
-      </aside>
+        </div>
+      </details>
     </div>
   );
 }

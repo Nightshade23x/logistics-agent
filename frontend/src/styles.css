@@ -545,3 +545,121 @@ pre.json-view { background: var(--navy-900); color: #d9e2ec; padding: 14px; bord
   }
 }
 
+/* ===== COMPACT COLLAPSIBLE 3D PANEL OVERRIDE ===== */
+.container3d-card {
+  position: relative;
+  display: block;
+  height: 780px;
+  overflow: hidden;
+}
+
+.container3d-scene-wrap {
+  width: 100%;
+  height: 100%;
+}
+
+.container3d-scene {
+  width: 100%;
+  height: 780px;
+}
+
+.container3d-panel {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  z-index: 20;
+  width: min(380px, calc(100% - 28px));
+  max-height: calc(100% - 28px);
+  overflow: auto;
+  padding: 0;
+  border-left: 0;
+  border: 1px solid rgba(255,255,255,0.16);
+  border-radius: 16px;
+  background: rgba(8, 17, 31, 0.94);
+  box-shadow: 0 18px 45px rgba(0,0,0,0.35);
+  backdrop-filter: blur(10px);
+  color: #e9eef7;
+}
+
+.container3d-panel:not([open]) {
+  width: auto;
+  min-width: 280px;
+  max-width: calc(100% - 28px);
+  overflow: visible;
+}
+
+.container3d-panel-summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-weight: 850;
+  color: #f3f7ff;
+  user-select: none;
+}
+
+.container3d-panel-summary::-webkit-details-marker {
+  display: none;
+}
+
+.container3d-panel-summary::after {
+  content: "Click to open";
+  margin-top: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #80ed99;
+}
+
+.container3d-panel[open] .container3d-panel-summary::after {
+  content: "Click to close";
+  color: #ffd166;
+}
+
+.container3d-panel-summary small {
+  font-size: 12px;
+  font-weight: 650;
+  color: #9fb0c7;
+}
+
+.container3d-panel-content {
+  padding: 0 18px 18px;
+}
+
+.container3d-panel:not([open]) .container3d-panel-content {
+  display: none;
+}
+
+.container3d-title {
+  margin-top: 2px;
+}
+
+.container3d-hint {
+  z-index: 10;
+}
+
+@media (max-width: 1100px) {
+  .container3d-card {
+    display: block;
+    height: 760px;
+  }
+
+  .container3d-scene {
+    height: 760px;
+  }
+
+  .container3d-panel {
+    top: 12px;
+    right: 12px;
+    width: min(360px, calc(100% - 24px));
+    max-height: calc(100% - 24px);
+    border-left: 1px solid rgba(255,255,255,0.16);
+    border-top: 1px solid rgba(255,255,255,0.16);
+  }
+
+  .container3d-panel:not([open]) {
+    min-width: 250px;
+  }
+}
+
