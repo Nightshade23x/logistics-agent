@@ -792,3 +792,488 @@ try:
 except Exception:
     pass
 
+
+# Finance landed-cost text input cleanup v1.
+try:
+    import re as _finance_cleanup_re
+
+    _cleanup_frontend_response_before_finance_landed_cost_v1 = cleanup_frontend_response
+
+    def _finance_landed_cost_v1_number(value):
+        if value is None or value == "":
+            return None
+        try:
+            return float(str(value).replace(",", "").strip())
+        except Exception:
+            return None
+
+    def _finance_landed_cost_v1_extract(original_text):
+        text = str(original_text or "")
+        fields = {}
+
+        patterns = {
+            "procurement_value_usd": [
+                r"\bprocurement\s+value\s*(?:is|=|:)?\s*(?:USD\s*)?[$]?([0-9][0-9,.]*)\s*(?:USD|dollars?)?\b",
+                r"\bprocurement\s+cost\s*(?:is|=|:)?\s*(?:USD\s*)?[$]?([0-9][0-9,.]*)\s*(?:USD|dollars?)?\b",
+                r"\bdeclared\s+(?:cargo\s+)?value\s*(?:is|=|:)?\s*(?:USD\s*)?[$]?([0-9][0-9,.]*)\s*(?:USD|dollars?)?\b",
+                r"\bcargo\s+value\s*(?:is|=|:)?\s*(?:USD\s*)?[$]?([0-9][0-9,.]*)\s*(?:USD|dollars?)?\b",
+                r"\bcommercial\s+value\s*(?:is|=|:)?\s*(?:USD\s*)?[$]?([0-9][0-9,.]*)\s*(?:USD|dollars?)?\b",
+            ],
+            "freight_quote_usd": [
+                r"\bfreight\s+quote\s*(?:is|=|:)?\s*(?:USD\s*)?[$]?([0-9][0-9,.]*)\s*(?:USD|dollars?)?\b",
+                r"\bfreight\s+cost\s*(?:is|=|:)?\s*(?:USD\s*)?[$]?([0-9][0-9,.]*)\s*(?:USD|dollars?)?\b",
+            ],
+            "insurance_premium_usd": [
+                r"\binsurance\s*(?:premium|cost|quote)?\s*(?:is|=|:)?\s*(?:USD\s*)?[$]?([0-9][0-9,.]*)\s*(?:USD|dollars?)?\b",
+            ],
+            "duty_rate_percent": [
+                r"\bduty\s*(?:rate)?\s*(?:is|=|:)?\s*([0-9][0-9,.]*)\s*(?:%|percent|per\s+cent)\b",
+            ],
+            "import_tax_rate_percent": [
+                r"\bimport\s+tax\s*(?:rate)?\s*(?:is|=|:)?\s*([0-9][0-9,.]*)\s*(?:%|percent|per\s+cent)\b",
+                r"\bvat\s*(?:rate)?\s*(?:is|=|:)?\s*([0-9][0-9,.]*)\s*(?:%|percent|per\s+cent)\b",
+            ],
+            "customs_brokerage_usd": [
+                r"\bcustoms\s+brokerage\s*(?:fee|cost)?\s*(?:is|=|:)?\s*(?:USD\s*)?[$]?([0-9][0-9,.]*)\s*(?:USD|dollars?)?\b",
+                r"\bbrokerage\s*(?:fee|cost)?\s*(?:is|=|:)?\s*(?:USD\s*)?[$]?([0-9][0-9,.]*)\s*(?:USD|dollars?)?\b",
+                r"\bclearance\s*(?:fee|cost)?\s*(?:is|=|:)?\s*(?:USD\s*)?[$]?([0-9][0-9,.]*)\s*(?:USD|dollars?)?\b",
+            ],
+            "local_delivery_usd": [
+                r"\blocal\s+delivery\s*(?:fee|cost)?\s*(?:is|=|:)?\s*(?:USD\s*)?[$]?([0-9][0-9,.]*)\s*(?:USD|dollars?)?\b",
+                r"\blast[-\s]?mile\s+delivery\s*(?:fee|cost)?\s*(?:is|=|:)?\s*(?:USD\s*)?[$]?([0-9][0-9,.]*)\s*(?:USD|dollars?)?\b",
+                r"\bdestination\s+delivery\s*(?:fee|cost)?\s*(?:is|=|:)?\s*(?:USD\s*)?[$]?([0-9][0-9,.]*)\s*(?:USD|dollars?)?\b",
+            ],
+        }
+
+        for key, key_patterns in patterns.items():
+            for pattern in key_patterns:
+                match = _finance_cleanup_re.search(pattern, text, flags=_finance_cleanup_re.IGNORECASE)
+                if match:
+                    value = _finance_landed_cost_v1_number(match.group(1))
+                    if value is not None:
+                        fields[key] = value
+                        break
+
+        if fields.get("procurement_value_usd") is not None:
+            fields["declared_value_usd"] = fields["procurement_value_usd"]
+            fields["commercial_value_usd"] = fields["procurement_value_usd"]
+
+        return fields
+
+    def _finance_landed_cost_v1_filter_missing(items, known_fields):
+        if not isinstance(items, list):
+            return []
+
+        aliases = {
+            "procurement_value_usd": ["procurement value", "declared value", "cargo value", "commercial value"],
+            "customs_brokerage_usd": ["customs brokerage", "brokerage", "clearance"],
+            "local_delivery_usd": ["local delivery", "last-mile", "last mile", "destination delivery"],
+            "freight_quote_usd": ["freight"],
+            "insurance_premium_usd": ["insurance"],
+            "duty_rate_percent": ["duty"],
+            "import_tax_rate_percent": ["import tax", "vat"],
+        }
+
+        filtered = []
+        for item in items:
+            lowered = str(item or "").lower()
+            remove = False
+            for field, tokens in aliases.items():
+                if field in known_fields and any(token in lowered for token in tokens):
+                    remove = True
+                    break
+            if not remove:
+                filtered.append(item)
+
+        return filtered
+
+    def _finance_landed_cost_v1_calculate(known):
+        procurement = _finance_landed_cost_v1_number(known.get("procurement_value_usd"))
+        freight = _finance_landed_cost_v1_number(known.get("freight_quote_usd")) or 0.0
+        insurance = _finance_landed_cost_v1_number(known.get("insurance_premium_usd")) or 0.0
+        duty_rate = _finance_landed_cost_v1_number(known.get("duty_rate_percent")) or 0.0
+        tax_rate = _finance_landed_cost_v1_number(known.get("import_tax_rate_percent")) or 0.0
+        brokerage = _finance_landed_cost_v1_number(known.get("customs_brokerage_usd")) or 0.0
+        local_delivery = _finance_landed_cost_v1_number(known.get("local_delivery_usd")) or 0.0
+
+        if procurement is None:
+            return None
+
+        customs_value = procurement + freight + insurance
+        estimated_duty = customs_value * duty_rate / 100.0
+        import_tax_base = customs_value + estimated_duty
+        estimated_import_tax = import_tax_base * tax_rate / 100.0
+        landed_cost = procurement + freight + insurance + estimated_duty + estimated_import_tax + brokerage + local_delivery
+
+        return {
+            "customs_value_usd": round(customs_value, 2),
+            "estimated_duty_usd": round(estimated_duty, 2),
+            "import_tax_base_usd": round(import_tax_base, 2),
+            "estimated_import_tax_usd": round(estimated_import_tax, 2),
+            "estimated_subtotal_known_usd": round(landed_cost, 2),
+            "estimated_landed_cost_usd": round(landed_cost, 2),
+            "landed_cost_formula": [
+                "procurement_value_usd",
+                "freight_quote_usd",
+                "insurance_premium_usd",
+                "estimated_duty",
+                "estimated_import_tax_or_vat",
+                "customs_brokerage_usd",
+                "local_delivery_usd",
+            ],
+        }
+
+    def _finance_landed_cost_v1_apply(payload, original_text=None):
+        if not isinstance(payload, dict):
+            return payload
+
+        extracted = _finance_landed_cost_v1_extract(original_text)
+        if not extracted:
+            return payload
+
+        finance_payload = payload.get("finance_payload")
+        if not isinstance(finance_payload, dict):
+            finance_payload = {}
+
+        for key, value in extracted.items():
+            payload[key] = value
+            finance_payload[key] = value
+
+        payload["finance_payload"] = finance_payload
+
+        advice = payload.get("landed_cost_advice")
+        if not isinstance(advice, dict):
+            advice = {
+                "applicable": True,
+                "status": "review_required",
+                "summary": "Landed cost advice prepared from finance inputs.",
+                "known_inputs": {},
+                "missing_cost_inputs": [],
+                "blockers": [],
+                "warnings": [],
+                "recommendations": [],
+            }
+
+        known_inputs = advice.get("known_inputs")
+        if not isinstance(known_inputs, dict):
+            known_inputs = {}
+
+        for key, value in extracted.items():
+            if key in {"declared_value_usd", "commercial_value_usd"}:
+                continue
+            known_inputs[key] = value
+
+        advice["known_inputs"] = known_inputs
+
+        known_fields = {key for key, value in known_inputs.items() if value is not None}
+        advice["missing_cost_inputs"] = _finance_landed_cost_v1_filter_missing(
+            advice.get("missing_cost_inputs") or [],
+            known_fields,
+        )
+
+        blockers = []
+        for blocker in advice.get("blockers") or []:
+            lowered = str(blocker or "").lower()
+            if "procurement value" in lowered and "procurement_value_usd" in known_fields:
+                continue
+            if "declared value" in lowered and "procurement_value_usd" in known_fields:
+                continue
+            blockers.append(blocker)
+        advice["blockers"] = blockers
+
+        calculation = _finance_landed_cost_v1_calculate(known_inputs)
+        if calculation:
+            advice.update(calculation)
+
+        if not advice.get("missing_cost_inputs") and not advice.get("blockers"):
+            advice["status"] = "review_required"
+            advice["summary"] = "Landed cost advice prepared from the supplied finance inputs."
+            recommendations = advice.get("recommendations")
+            if not isinstance(recommendations, list):
+                recommendations = []
+            recommendations.append("Validate freight quote, insurance premium, duty rate, import tax, brokerage, and local delivery before final booking.")
+            advice["recommendations"] = list(dict.fromkeys(str(item) for item in recommendations if item))
+
+        payload["landed_cost_advice"] = advice
+
+        return payload
+
+    def cleanup_frontend_response(payload, original_text=None):
+        cleaned = _cleanup_frontend_response_before_finance_landed_cost_v1(payload, original_text)
+        try:
+            return _finance_landed_cost_v1_apply(cleaned, original_text)
+        except Exception:
+            return cleaned
+
+except Exception:
+    pass
+
+
+# Finance landed-cost text input cleanup v2.
+try:
+    import json as _finance_v2_json
+    import re as _finance_v2_re
+
+    _cleanup_frontend_response_before_finance_landed_cost_v2 = cleanup_frontend_response
+
+    def _finance_v2_as_number(value):
+        if value is None or value == "":
+            return None
+        try:
+            return float(str(value).replace(",", "").strip())
+        except Exception:
+            return None
+
+    def _finance_v2_source_text(payload, original_text=None):
+        parts = []
+
+        if original_text:
+            parts.append(str(original_text))
+
+        try:
+            from app.request_context import active_request_text
+            active_text = active_request_text()
+            if active_text:
+                parts.append(str(active_text))
+        except Exception:
+            pass
+
+        if isinstance(payload, dict):
+            for key in ["user_text", "request_text", "text", "prompt", "original_text"]:
+                value = payload.get(key)
+                if value:
+                    parts.append(str(value))
+
+            metadata = payload.get("request_metadata")
+            if isinstance(metadata, dict):
+                for key in ["user_text", "request_text", "text", "prompt", "original_text"]:
+                    value = metadata.get(key)
+                    if value:
+                        parts.append(str(value))
+
+            try:
+                parts.append(_finance_v2_json.dumps(payload, default=str))
+            except Exception:
+                pass
+
+        return "\n".join(part for part in parts if part)
+
+    def _finance_v2_extract_fields(payload, original_text=None):
+        source = _finance_v2_source_text(payload, original_text)
+        fields = {}
+
+        patterns = {
+            "procurement_value_usd": [
+                r"\bprocurement\s+value\s*(?:is|=|:)?\s*(?:USD\s*)?[$]?([0-9][0-9,.]*)\s*(?:USD|dollars?)?\b",
+                r"\bprocurement\s+cost\s*(?:is|=|:)?\s*(?:USD\s*)?[$]?([0-9][0-9,.]*)\s*(?:USD|dollars?)?\b",
+                r"\bdeclared\s+(?:cargo\s+)?value\s*(?:is|=|:)?\s*(?:USD\s*)?[$]?([0-9][0-9,.]*)\s*(?:USD|dollars?)?\b",
+                r"\bcargo\s+value\s*(?:is|=|:)?\s*(?:USD\s*)?[$]?([0-9][0-9,.]*)\s*(?:USD|dollars?)?\b",
+                r"\bcommercial\s+value\s*(?:is|=|:)?\s*(?:USD\s*)?[$]?([0-9][0-9,.]*)\s*(?:USD|dollars?)?\b",
+            ],
+            "freight_quote_usd": [
+                r"\bfreight\s+quote\s*(?:is|=|:)?\s*(?:USD\s*)?[$]?([0-9][0-9,.]*)\s*(?:USD|dollars?)?\b",
+                r"\bfreight\s+cost\s*(?:is|=|:)?\s*(?:USD\s*)?[$]?([0-9][0-9,.]*)\s*(?:USD|dollars?)?\b",
+            ],
+            "insurance_premium_usd": [
+                r"\binsurance\s*(?:premium|cost|quote)?\s*(?:is|=|:)?\s*(?:USD\s*)?[$]?([0-9][0-9,.]*)\s*(?:USD|dollars?)?\b",
+            ],
+            "duty_rate_percent": [
+                r"\bduty\s*(?:rate)?\s*(?:is|=|:)?\s*([0-9][0-9,.]*)\s*(?:%|percent|per\s+cent)\b",
+            ],
+            "import_tax_rate_percent": [
+                r"\bimport\s+tax\s*(?:rate)?\s*(?:is|=|:)?\s*([0-9][0-9,.]*)\s*(?:%|percent|per\s+cent)\b",
+                r"\bvat\s*(?:rate)?\s*(?:is|=|:)?\s*([0-9][0-9,.]*)\s*(?:%|percent|per\s+cent)\b",
+            ],
+            "customs_brokerage_usd": [
+                r"\bcustoms\s+brokerage\s*(?:fee|cost)?\s*(?:is|=|:)?\s*(?:USD\s*)?[$]?([0-9][0-9,.]*)\s*(?:USD|dollars?)?\b",
+                r"\bbrokerage\s*(?:fee|cost)?\s*(?:is|=|:)?\s*(?:USD\s*)?[$]?([0-9][0-9,.]*)\s*(?:USD|dollars?)?\b",
+                r"\bclearance\s*(?:fee|cost)?\s*(?:is|=|:)?\s*(?:USD\s*)?[$]?([0-9][0-9,.]*)\s*(?:USD|dollars?)?\b",
+            ],
+            "local_delivery_usd": [
+                r"\blocal\s+delivery\s*(?:fee|cost)?\s*(?:is|=|:)?\s*(?:USD\s*)?[$]?([0-9][0-9,.]*)\s*(?:USD|dollars?)?\b",
+                r"\blast[-\s]?mile\s+delivery\s*(?:fee|cost)?\s*(?:is|=|:)?\s*(?:USD\s*)?[$]?([0-9][0-9,.]*)\s*(?:USD|dollars?)?\b",
+                r"\bdestination\s+delivery\s*(?:fee|cost)?\s*(?:is|=|:)?\s*(?:USD\s*)?[$]?([0-9][0-9,.]*)\s*(?:USD|dollars?)?\b",
+            ],
+        }
+
+        for key, key_patterns in patterns.items():
+            for pattern in key_patterns:
+                match = _finance_v2_re.search(pattern, source, flags=_finance_v2_re.IGNORECASE)
+                if match:
+                    number = _finance_v2_as_number(match.group(1))
+                    if number is not None:
+                        fields[key] = number
+                        break
+
+        if "procurement_value_usd" in fields:
+            fields["declared_value_usd"] = fields["procurement_value_usd"]
+            fields["commercial_value_usd"] = fields["procurement_value_usd"]
+
+        return fields
+
+    def _finance_v2_calculate(known):
+        procurement = _finance_v2_as_number(known.get("procurement_value_usd"))
+        if procurement is None:
+            return {}
+
+        freight = _finance_v2_as_number(known.get("freight_quote_usd")) or 0.0
+        insurance = _finance_v2_as_number(known.get("insurance_premium_usd")) or 0.0
+        duty_rate = _finance_v2_as_number(known.get("duty_rate_percent")) or 0.0
+        tax_rate = _finance_v2_as_number(known.get("import_tax_rate_percent")) or 0.0
+        brokerage = _finance_v2_as_number(known.get("customs_brokerage_usd")) or 0.0
+        local_delivery = _finance_v2_as_number(known.get("local_delivery_usd")) or 0.0
+
+        customs_value = procurement + freight + insurance
+        duty = customs_value * duty_rate / 100.0
+        import_tax_base = customs_value + duty
+        import_tax = import_tax_base * tax_rate / 100.0
+        landed = procurement + freight + insurance + duty + import_tax + brokerage + local_delivery
+
+        return {
+            "customs_value_usd": round(customs_value, 2),
+            "estimated_duty_usd": round(duty, 2),
+            "import_tax_base_usd": round(import_tax_base, 2),
+            "estimated_import_tax_usd": round(import_tax, 2),
+            "estimated_subtotal_known_usd": round(landed, 2),
+            "estimated_landed_cost_usd": round(landed, 2),
+            "landed_cost_formula": [
+                "procurement_value_usd",
+                "freight_quote_usd",
+                "insurance_premium_usd",
+                "estimated_duty",
+                "estimated_import_tax_or_vat",
+                "customs_brokerage_usd",
+                "local_delivery_usd",
+            ],
+        }
+
+    def _finance_v2_filter_list(items, known_fields):
+        if not isinstance(items, list):
+            return []
+
+        token_map = {
+            "procurement_value_usd": ["procurement_value_usd", "procurement value", "declared value", "cargo value", "commercial value"],
+            "customs_brokerage_usd": ["customs_brokerage_usd", "customs brokerage", "brokerage", "clearance"],
+            "local_delivery_usd": ["local_delivery_usd", "local delivery", "last mile", "last-mile", "destination delivery"],
+            "freight_quote_usd": ["freight_quote_usd", "freight quote", "freight cost"],
+            "insurance_premium_usd": ["insurance_premium_usd", "insurance premium", "insurance cost"],
+            "duty_rate_percent": ["duty_rate_percent", "duty rate"],
+            "import_tax_rate_percent": ["import_tax_rate_percent", "import tax", "vat"],
+        }
+
+        filtered = []
+        for item in items:
+            lowered = str(item or "").lower()
+            remove = False
+            for field in known_fields:
+                for token in token_map.get(field, []):
+                    if token in lowered:
+                        remove = True
+                        break
+                if remove:
+                    break
+            if not remove:
+                filtered.append(item)
+
+        return filtered
+
+    def _finance_v2_recursive_filter(obj, known_fields):
+        if isinstance(obj, dict):
+            return {key: _finance_v2_recursive_filter(value, known_fields) for key, value in obj.items()}
+
+        if isinstance(obj, list):
+            filtered = _finance_v2_filter_list(obj, known_fields)
+            return [_finance_v2_recursive_filter(item, known_fields) for item in filtered]
+
+        return obj
+
+    def _finance_v2_apply(payload, original_text=None):
+        if not isinstance(payload, dict):
+            return payload
+
+        fields = _finance_v2_extract_fields(payload, original_text)
+        if not fields:
+            return payload
+
+        finance_payload = payload.get("finance_payload")
+        if not isinstance(finance_payload, dict):
+            finance_payload = {}
+
+        for key, value in fields.items():
+            payload[key] = value
+            finance_payload[key] = value
+
+        payload["finance_payload"] = finance_payload
+
+        advice = payload.get("landed_cost_advice")
+        if not isinstance(advice, dict):
+            advice = {}
+
+        advice.setdefault("applicable", True)
+        known = advice.get("known_inputs")
+        if not isinstance(known, dict):
+            known = {}
+
+        for key, value in fields.items():
+            if key in {"declared_value_usd", "commercial_value_usd"}:
+                continue
+            known[key] = value
+
+        advice["known_inputs"] = known
+
+        known_fields = {key for key, value in known.items() if value is not None}
+
+        advice["missing_cost_inputs"] = _finance_v2_filter_list(advice.get("missing_cost_inputs") or [], known_fields)
+        advice["blockers"] = _finance_v2_filter_list(advice.get("blockers") or [], known_fields)
+        advice["warnings"] = _finance_v2_filter_list(advice.get("warnings") or [], known_fields)
+        advice["recommendations"] = _finance_v2_filter_list(advice.get("recommendations") or [], known_fields)
+
+        calculation = _finance_v2_calculate(known)
+        if calculation:
+            advice.update(calculation)
+
+        if not advice.get("missing_cost_inputs") and not advice.get("blockers"):
+            advice["status"] = "review_required"
+            advice["summary"] = "Landed cost advice prepared from the supplied finance inputs."
+            recommendations = advice.get("recommendations")
+            if not isinstance(recommendations, list):
+                recommendations = []
+            recommendations.append("Validate all supplied finance inputs before final booking.")
+            advice["recommendations"] = list(dict.fromkeys(str(item) for item in recommendations if item))
+
+        payload["landed_cost_advice"] = advice
+
+        # Remove stale missing-field prompts from action_plan, booking_readiness, summaries, etc.
+        payload = _finance_v2_recursive_filter(payload, known_fields)
+        payload["landed_cost_advice"] = advice
+        payload["finance_payload"] = finance_payload
+
+        return payload
+
+    def cleanup_frontend_response(payload, original_text=None):
+        cleaned = _cleanup_frontend_response_before_finance_landed_cost_v2(payload, original_text)
+        try:
+            return _finance_v2_apply(cleaned, original_text)
+        except Exception:
+            return cleaned
+
+except Exception:
+    pass
+
+
+# Backend response polish hook v1.
+try:
+    from app.backend_response_polish import polish_backend_response as _backend_response_polish_v1
+
+    _cleanup_frontend_response_before_backend_response_polish_v1 = cleanup_frontend_response
+
+    def cleanup_frontend_response(payload, original_text=None):
+        cleaned = _cleanup_frontend_response_before_backend_response_polish_v1(payload, original_text)
+        try:
+            return _backend_response_polish_v1(cleaned, original_text)
+        except Exception:
+            return cleaned
+
+except Exception:
+    pass
+
