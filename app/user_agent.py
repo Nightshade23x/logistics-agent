@@ -1185,6 +1185,164 @@ def _run_text_logistics_flow(
 ) -> dict[str, Any]:
     parsed, logistics_input = _build_logistics_input_from_text(text)
 
+    # Parsed item rescue before logistics missing-info fallback.
+    # parse_shipment_text() can understand compact inputs like:
+    # "20ft container of hazardous chemicals, destination Germany"
+    # but Logistics Agent expects normalized item fields: name, length_m, weight_kg, etc.
+    # If parsed items exist, normalize them before handing off.
+    def _normalize_text_item_for_logistics(_item):
+        if not isinstance(_item, dict):
+            return None
+
+        def _num(*_values, _default=0.0):
+            for _value in _values:
+                if _value is None or _value == "":
+                    continue
+                try:
+                    return float(_value)
+                except Exception:
+                    continue
+            return float(_default)
+
+        _dims = _item.get("dimensions_m") if isinstance(_item.get("dimensions_m"), dict) else {}
+
+        _name = (
+            _item.get("name")
+            or _item.get("item_name")
+            or _item.get("product_name")
+            or _item.get("description")
+            or "Unknown item"
+        )
+
+        _quantity = _num(_item.get("quantity"), _default=1.0)
+        if _quantity <= 0:
+            _quantity = 1.0
+
+        _length_m = _num(_item.get("length_m"), _item.get("length"), _dims.get("length"), _default=1.0)
+        _width_m = _num(_item.get("width_m"), _item.get("width"), _dims.get("width"), _default=1.0)
+        _height_m = _num(_item.get("height_m"), _item.get("height"), _dims.get("height"), _default=1.0)
+
+        _unit_weight = _num(_item.get("weight_kg"), _item.get("unit_weight_kg"), _default=0.0)
+        _total_weight = _num(_item.get("total_weight_kg"), _default=0.0)
+
+        if _unit_weight <= 0 and _total_weight > 0:
+            _unit_weight = _total_weight / _quantity
+
+        _unit_cbm = _num(_item.get("unit_cbm"), _default=0.0)
+        _total_cbm = _num(_item.get("total_cbm"), _default=0.0)
+
+        if _unit_cbm <= 0:
+            _unit_cbm = _length_m * _width_m * _height_m
+
+        if _total_cbm <= 0:
+            _total_cbm = _unit_cbm * _quantity
+
+        _categories = []
+        for _key in ["category_tags", "cargo_categories", "categories"]:
+            _value = _item.get(_key)
+            if isinstance(_value, list):
+                _categories.extend(str(_entry) for _entry in _value if _entry)
+
+        _lowered = (str(_name) + " " + " ".join(_categories) + " " + str(_item.get("notes", ""))).lower()
+        _hazardous = bool(_item.get("hazardous")) or any(
+            _token in _lowered
+            for _token in ["hazardous", "chemical", "chemicals", "dangerous_goods", "dangerous goods", "battery", "batteries", "radioactive", "flammable"]
+        )
+
+        _fragile = bool(_item.get("fragile")) or "fragile" in _lowered
+        _perishable = bool(_item.get("perishable")) or "perishable" in _lowered
+        _radioactive = bool(_item.get("radioactive")) or "radioactive" in _lowered
+
+        _stackable = _item.get("stackable")
+        if _stackable is None:
+            _stackable = False if _hazardous else True
+
+        _normalized = {
+            "name": str(_name),
+            "item_name": str(_name),
+            "quantity": int(_quantity) if float(_quantity).is_integer() else _quantity,
+            "length_m": _length_m,
+            "width_m": _width_m,
+            "height_m": _height_m,
+            "weight_kg": _unit_weight,
+            "unit_weight_kg": _unit_weight,
+            "unit_cbm": round(_unit_cbm, 4),
+            "total_cbm": round(_total_cbm, 4),
+            "total_weight_kg": round(_unit_weight * _quantity, 4),
+            "fragile": _fragile,
+            "perishable": _perishable,
+            "hazardous": _hazardous,
+            "radioactive": _radioactive,
+            "stackable": bool(_stackable),
+            "unload_priority": _item.get("unload_priority", 3),
+            "cargo_categories": sorted(set(_categories)) if _categories else [],
+            "category_tags": sorted(set(_categories)) if _categories else [],
+        }
+
+        if _item.get("notes"):
+            _normalized["notes"] = _item.get("notes")
+
+        return _normalized
+
+    if not logistics_input.get("items"):
+        _parsed_items_for_rescue = parsed.get("items") if isinstance(parsed, dict) else None
+
+        if isinstance(_parsed_items_for_rescue, list) and _parsed_items_for_rescue:
+            _normalized_items_for_rescue = [
+                _normalized
+                for _normalized in (
+                    _normalize_text_item_for_logistics(_item)
+                    for _item in _parsed_items_for_rescue
+                )
+                if isinstance(_normalized, dict)
+            ]
+
+            if _normalized_items_for_rescue:
+                logistics_input["items"] = _normalized_items_for_rescue
+
+                for _key in [
+                    "origin",
+                    "origin_country",
+                    "country_from",
+                    "destination",
+                    "destination_country",
+                    "country_to",
+                    "target_market",
+                    "incoterm",
+                    "trade_term",
+                    "requested_container",
+                    "container_type",
+                    "recommended_container",
+                    "total_cbm",
+                    "total_weight_kg",
+                ]:
+                    _value = parsed.get(_key)
+                    if _value is not None and not logistics_input.get(_key):
+                        logistics_input[_key] = _value
+
+                if not logistics_input.get("total_cbm"):
+                    logistics_input["total_cbm"] = round(
+                        sum(float(_item.get("total_cbm") or 0) for _item in _normalized_items_for_rescue),
+                        4,
+                    )
+
+                if not logistics_input.get("total_weight_kg"):
+                    logistics_input["total_weight_kg"] = round(
+                        sum(float(_item.get("total_weight_kg") or 0) for _item in _normalized_items_for_rescue),
+                        4,
+                    )
+
+                _requested_container = (
+                    parsed.get("requested_container")
+                    or parsed.get("container_type")
+                    or parsed.get("recommended_container")
+                )
+                if _requested_container:
+                    logistics_input["requested_container"] = _requested_container
+                    logistics_input["container_type"] = _requested_container
+                    logistics_input["recommended_container"] = _requested_container
+                    logistics_input["container_recommendation"] = _requested_container
+
     if not logistics_input.get("items"):
         response = _build_missing_booking_info_response(text, routing=routing)
         response["detected_intent"] = detected_intent
