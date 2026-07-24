@@ -3037,3 +3037,671 @@ try:
 
 except Exception:
     pass
+
+# JSON regression fixes v10: routing continuation
+try:
+    _run_user_agent_from_text_before_json_regression_v10 = (
+        run_user_agent_from_text
+    )
+
+    def _json_v10_route_country(value):
+        value = str(value or "").strip().lower()
+        value = re.sub(r"^the\s+", "", value)
+        value = value.strip(" ?.,;:")
+
+        aliases = {
+            "usa": "USA",
+            "us": "USA",
+            "u.s.": "USA",
+            "u.s.a.": "USA",
+            "united states": "USA",
+            "united states of america": "USA",
+            "india": "India",
+            "germany": "Germany",
+            "china": "China",
+            "uk": "UK",
+            "united kingdom": "UK",
+            "uae": "UAE",
+            "united arab emirates": "UAE",
+            "iran": "Iran",
+            "zambia": "Zambia",
+            "finland": "Finland",
+            "japan": "Japan",
+            "singapore": "Singapore",
+            "australia": "Australia",
+            "canada": "Canada",
+            "mexico": "Mexico",
+            "france": "France",
+            "italy": "Italy",
+            "spain": "Spain",
+            "portugal": "Portugal",
+            "turkey": "Turkey",
+            "turkiye": "Turkey",
+        }
+
+        return aliases.get(value)
+
+    def _json_v10_text_route(text):
+        raw = str(text or "")
+
+        country_names = [
+            "united states of america",
+            "united arab emirates",
+            "united kingdom",
+            "united states",
+            "south korea",
+            "germany",
+            "india",
+            "china",
+            "japan",
+            "singapore",
+            "australia",
+            "canada",
+            "mexico",
+            "france",
+            "italy",
+            "spain",
+            "portugal",
+            "finland",
+            "zambia",
+            "iran",
+            "turkey",
+            "turkiye",
+            "usa",
+            "u.s.a.",
+            "u.s.",
+            "uae",
+            "uk",
+            "us",
+        ]
+
+        pattern = "|".join(
+            sorted(
+                (re.escape(item) for item in country_names),
+                key=len,
+                reverse=True,
+            )
+        )
+
+        origin_match = re.search(
+            rf"\bfrom\s+(?:the\s+)?({pattern})\b",
+            raw,
+            flags=re.IGNORECASE,
+        )
+
+        destination_match = re.search(
+            rf"\bto\s+(?:the\s+)?({pattern})\b",
+            raw,
+            flags=re.IGNORECASE,
+        )
+
+        return {
+            "origin": (
+                _json_v10_route_country(origin_match.group(1))
+                if origin_match
+                else None
+            ),
+            "destination": (
+                _json_v10_route_country(destination_match.group(1))
+                if destination_match
+                else None
+            ),
+        }
+
+    def _json_v10_recursive_route_sync(value, origin, destination):
+        if isinstance(value, dict):
+            for key in list(value):
+                lower_key = str(key).lower()
+
+                if origin and lower_key in {
+                    "origin",
+                    "origin_country",
+                    "country_from",
+                }:
+                    value[key] = origin
+                    continue
+
+                if destination and lower_key in {
+                    "destination",
+                    "destination_country",
+                    "country_to",
+                    "target_market",
+                }:
+                    value[key] = destination
+                    continue
+
+                value[key] = _json_v10_recursive_route_sync(
+                    value[key],
+                    origin,
+                    destination,
+                )
+
+            return value
+
+        if isinstance(value, list):
+            return [
+                _json_v10_recursive_route_sync(
+                    item,
+                    origin,
+                    destination,
+                )
+                for item in value
+            ]
+
+        if isinstance(value, str):
+            value = re.sub(
+                r"\bthe\s+USA\??\b",
+                "USA",
+                value,
+                flags=re.IGNORECASE,
+            )
+
+            value = value.replace(
+                "the product was could not be automatically classified",
+                "the product could not be automatically classified",
+            )
+
+            return value
+
+        return value
+
+    def _json_v10_should_continue_to_trader(response, text):
+        agents = response.get("agents_called")
+
+        if not isinstance(agents, list):
+            return False
+
+        if "trader_agent" in agents:
+            return False
+
+        if not any(
+            agent in agents
+            for agent in ["shopping_agent", "logistics_agent"]
+        ):
+            return False
+
+        route = _json_v10_text_route(text)
+
+        if not route["origin"] or not route["destination"]:
+            return False
+
+        has_incoterm = bool(
+            re.search(
+                r"\b(EXW|FCA|FAS|FOB|CFR|CIF|CPT|CIP|DAP|DPU|DDP)\b",
+                str(text or ""),
+                flags=re.IGNORECASE,
+            )
+        )
+
+        return has_incoterm
+
+    def _json_v10_continue_to_trader(response, text):
+        specialists = response.get("specialist_responses")
+
+        if not isinstance(specialists, dict):
+            specialists = {}
+            response["specialist_responses"] = specialists
+
+        logistics_response = specialists.get("logistics_agent")
+
+        if not isinstance(logistics_response, dict):
+            return response
+
+        shopping_response = specialists.get("shopping_agent")
+
+        try:
+            trader_input = _build_trader_input_from_handoffs(
+                shopping_response=(
+                    shopping_response
+                    if isinstance(shopping_response, dict)
+                    else None
+                ),
+                logistics_input=(
+                    response.get("logistics_input")
+                    if isinstance(
+                        response.get("logistics_input"),
+                        dict,
+                    )
+                    else {}
+                ),
+                logistics_response=logistics_response,
+                original_text=text,
+            )
+
+            trader_response = run_trader_agent(
+                trader_input,
+                use_reasoning=True,
+            )
+        except Exception as exc:
+            response.setdefault("warnings", [])
+            response["warnings"].append(
+                f"Trader continuation failed: {exc}"
+            )
+            return response
+
+        specialists["trader_agent"] = trader_response
+        response["trader_input"] = trader_input
+
+        agents = response.get("agents_called")
+
+        if not isinstance(agents, list):
+            agents = []
+
+        if "trader_agent" not in agents:
+            agents.append("trader_agent")
+
+        response["agents_called"] = agents
+
+        return response
+
+    def run_user_agent_from_text(user_text):
+        response = _run_user_agent_from_text_before_json_regression_v10(
+            user_text
+        )
+
+        if not isinstance(response, dict):
+            return response
+
+        route = _json_v10_text_route(user_text)
+
+        response = _json_v10_recursive_route_sync(
+            response,
+            route["origin"],
+            route["destination"],
+        )
+
+        if _json_v10_should_continue_to_trader(
+            response,
+            user_text,
+        ):
+            response = _json_v10_continue_to_trader(
+                response,
+                user_text,
+            )
+
+        try:
+            response = _attach_final_verdict(response)
+        except Exception:
+            pass
+
+        return response
+
+except Exception:
+    pass
+
+# Final text-specialist routing fixes v11.
+try:
+    from app.final_text_response_fixes import (
+        build_document_specialists as _v11_build_document_specialists,
+        build_finance_specialist as _v11_build_finance_specialist,
+        clean_product_name as _v11_clean_product_name,
+        extract_finance_fields as _v11_extract_finance_fields,
+        extract_incoterm as _v11_extract_incoterm,
+        extract_route as _v11_extract_route,
+        is_document_requirements_request as _v11_is_document_request,
+        is_landed_cost_request as _v11_is_landed_cost_request,
+        repair_raw_response as _v11_repair_raw_response,
+    )
+
+    _run_user_agent_from_text_before_final_v11 = (
+        run_user_agent_from_text
+    )
+
+    def _v11_unique(values):
+        output = []
+        seen = set()
+
+        for value in values:
+            key = str(value).strip().lower()
+
+            if key and key not in seen:
+                seen.add(key)
+                output.append(value)
+
+        return output
+
+    def _v11_add_document_agents(response, text):
+        document_response, compliance_response = (
+            _v11_build_document_specialists(text)
+        )
+
+        response.update(
+            {
+                "agent_name": "user_agent",
+                "status": "review_required",
+                "detected_intent": "document",
+                "agents_called": [
+                    "document_ai_agent",
+                    "compliance_agent",
+                ],
+                "summary": (
+                    "User Agent routed the request to "
+                    "Document AI Agent and Compliance Agent."
+                ),
+                "specialist_response": document_response,
+                "specialist_responses": {
+                    "document_ai_agent": document_response,
+                    "compliance_agent": compliance_response,
+                },
+                "missing_information": _v11_unique(
+                    document_response.get(
+                        "missing_information",
+                        [],
+                    )
+                    + compliance_response.get(
+                        "missing_information",
+                        [],
+                    )
+                ),
+                "handoff_payload": document_response.get(
+                    "handoff_payload",
+                    {},
+                ),
+                "final_answer": (
+                    document_response["summary"]
+                    + " "
+                    + compliance_response["summary"]
+                ),
+                "route_reason": (
+                    "The request asks for invoice, "
+                    "packing-list and dangerous-goods "
+                    "document requirements."
+                ),
+            }
+        )
+
+        return response
+
+    def _v11_add_trader(response, text):
+        agents = response.get("agents_called")
+
+        if not isinstance(agents, list):
+            agents = []
+
+        if "trader_agent" in agents:
+            return response
+
+        route = _v11_extract_route(text)
+        incoterm = _v11_extract_incoterm(text)
+
+        if (
+            not route.get("origin")
+            or not route.get("destination")
+            or not incoterm
+        ):
+            return response
+
+        if not any(
+            agent in agents
+            for agent in [
+                "logistics_agent",
+                "shopping_agent",
+            ]
+        ):
+            return response
+
+        try:
+            trader_input = _build_trader_input_from_text(
+                text
+            )
+
+            if not isinstance(trader_input, dict):
+                trader_input = {}
+
+            for key in [
+                "product_description",
+                "product_name",
+            ]:
+                if trader_input.get(key):
+                    trader_input[key] = (
+                        _v11_clean_product_name(
+                            trader_input[key]
+                        )
+                    )
+
+            trader_input["country_from"] = route[
+                "origin"
+            ]
+            trader_input["origin_country"] = route[
+                "origin"
+            ]
+            trader_input["country_to"] = route[
+                "destination"
+            ]
+            trader_input["destination_country"] = (
+                route["destination"]
+            )
+            trader_input["incoterm"] = incoterm
+            trader_input["trade_term"] = incoterm
+
+            trader_response = run_trader_agent(
+                trader_input,
+                use_reasoning=True,
+            )
+        except Exception as exc:
+            response.setdefault("warnings", [])
+            response["warnings"].append(
+                f"Trader continuation failed: {exc}"
+            )
+            return response
+
+        specialists = response.get(
+            "specialist_responses"
+        )
+
+        if not isinstance(specialists, dict):
+            specialists = {}
+            response["specialist_responses"] = specialists
+
+        specialists["trader_agent"] = trader_response
+
+        agents.append("trader_agent")
+        response["agents_called"] = _v11_unique(agents)
+        response["trader_input"] = trader_input
+
+        response.setdefault("missing_information", [])
+        response["missing_information"] = _v11_unique(
+            response["missing_information"]
+            + trader_response.get(
+                "missing_information",
+                [],
+            )
+        )
+
+        return response
+
+    def _v11_add_finance(response, text):
+        if not _v11_is_landed_cost_request(text):
+            return response
+
+        finance_response = _v11_build_finance_specialist(
+            text
+        )
+
+        agents = response.get("agents_called")
+
+        if not isinstance(agents, list):
+            agents = []
+
+        if "finance_agent" not in agents:
+            agents.append("finance_agent")
+
+        response["agents_called"] = _v11_unique(agents)
+
+        specialists = response.get(
+            "specialist_responses"
+        )
+
+        if not isinstance(specialists, dict):
+            specialists = {}
+            response["specialist_responses"] = specialists
+
+        specialists["finance_agent"] = finance_response
+
+        fields = _v11_extract_finance_fields(text)
+
+        response["finance_input"] = fields
+        response["finance_payload"] = {
+            **fields,
+            **finance_response.get(
+                "handoff_payload",
+                {},
+            ),
+        }
+        response["text_cost_inputs"] = fields
+        response["landed_cost_advice"] = (
+            finance_response.get("calculation")
+        )
+        response["status"] = "review_required"
+        response["summary"] = (
+            "User Agent routed the request to "
+            "Trader Agent and Finance Agent."
+        )
+
+        missing = response.get("missing_information")
+
+        if not isinstance(missing, list):
+            missing = []
+
+        known = set(fields)
+
+        response["missing_information"] = [
+            item
+            for item in missing
+            if str(item) not in known
+        ]
+
+        return response
+
+    def run_user_agent_from_text(user_text):
+        response = (
+            _run_user_agent_from_text_before_final_v11(
+                user_text
+            )
+        )
+
+        if not isinstance(response, dict):
+            return response
+
+        if (
+            response.get("detected_intent") == "document"
+            and _v11_is_document_request(user_text)
+            and not response.get("agents_called")
+        ):
+            response = _v11_add_document_agents(
+                response,
+                user_text,
+            )
+
+        response = _v11_add_trader(
+            response,
+            user_text,
+        )
+        response = _v11_add_finance(
+            response,
+            user_text,
+        )
+        response = _v11_repair_raw_response(
+            response,
+            user_text,
+        )
+
+        try:
+            response = _attach_final_verdict(response)
+        except Exception:
+            pass
+
+        return response
+
+except Exception:
+    pass
+
+
+# Q1 product extraction fix v12
+try:
+    _previous_extract_product_from_trade_text_q1_v12 = _extract_product_from_trade_text
+except Exception:
+    _previous_extract_product_from_trade_text_q1_v12 = None
+
+
+def _q1_v12_clean_product_name(value):
+    import re
+
+    name = str(value or "").strip()
+
+    if not name:
+        return None
+
+    name = re.sub(
+        r"\s+(?:exported|shipped|imported)\s+from\s+.+$",
+        "",
+        name,
+        flags=re.IGNORECASE,
+    )
+
+    name = re.sub(
+        r"\s+from\s+[A-Za-z][A-Za-z\s]+?\s+to\s+(?:the\s+)?[A-Za-z][A-Za-z\s]+.*$",
+        "",
+        name,
+        flags=re.IGNORECASE,
+    )
+
+    name = re.sub(
+        r"\s+using\s+(?:EXW|FCA|FAS|FOB|CFR|CIF|CPT|CIP|DAP|DPU|DDP)\b.*$",
+        "",
+        name,
+        flags=re.IGNORECASE,
+    )
+
+    name = re.sub(
+        r"^(?:what\s+is\s+)?(?:the\s+)?(?:hs\s+code|import\s+duty\s+rate|fta\s+status|and|,|\s)+\s*(?:for\s+)?",
+        "",
+        name,
+        flags=re.IGNORECASE,
+    )
+
+    name = re.sub(r"\s+", " ", name)
+    name = name.strip(" .,:;?\"'()[]{}")
+
+    return name or None
+
+
+def _extract_product_from_trade_text(text):
+    import re
+
+    raw = str(text or "").strip()
+
+    patterns = [
+        r"\b(?:for|of)\s+(.+?)\s+(?:exported|shipped|imported)\s+from\s+[A-Za-z][A-Za-z\s]+?\s+to\s+(?:the\s+)?[A-Za-z][A-Za-z\s]+",
+        r"\b(?:for|of)\s+(.+?)\s+from\s+[A-Za-z][A-Za-z\s]+?\s+to\s+(?:the\s+)?[A-Za-z][A-Za-z\s]+",
+        r"\b(?:for|of)\s+(.+?)(?:\.|,|\?|$)",
+    ]
+
+    for pattern in patterns:
+        match = re.search(pattern, raw, flags=re.IGNORECASE)
+        if match:
+            cleaned = _q1_v12_clean_product_name(match.group(1))
+            if cleaned:
+                return cleaned
+
+    if callable(_previous_extract_product_from_trade_text_q1_v12):
+        try:
+            return _q1_v12_clean_product_name(
+                _previous_extract_product_from_trade_text_q1_v12(raw)
+            )
+        except Exception:
+            return None
+
+    return None
+
+
+def _build_trader_input_from_text(text):
+    route = _extract_route_from_text(text)
+
+    return {
+        "product_description": _extract_product_from_trade_text(text),
+        "country_from": route.get("country_from"),
+        "country_to": route.get("country_to"),
+        "target_market": route.get("country_to"),
+    }
+

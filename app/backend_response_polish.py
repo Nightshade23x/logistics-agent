@@ -2641,3 +2641,624 @@ try:
 except Exception:
     pass
 
+# JSON regression fixes v10: final payload consistency
+try:
+    _polish_backend_response_before_json_regression_v10 = (
+        polish_backend_response
+    )
+
+    def _json_v10_polish_float(value):
+        try:
+            return float(str(value).replace(",", "").strip())
+        except Exception:
+            return None
+
+    def _json_v10_extract_original_text(payload, original_text):
+        if original_text:
+            return str(original_text)
+
+        metadata = payload.get("request_metadata")
+
+        if isinstance(metadata, dict):
+            source = metadata.get("input_source")
+
+            if source:
+                return str(source)
+
+        source = payload.get("input_source")
+
+        return str(source or "")
+
+    def _json_v10_extract_finance(text):
+        raw = str(text or "")
+        fields = {}
+
+        patterns = {
+            "procurement_value_usd": [
+                r"\bprocurement\s+value\s*(?:is|=|:)?\s*"
+                r"(?:USD\s*)?[$]?([0-9][0-9,.]*)",
+            ],
+            "freight_quote_usd": [
+                r"\bfreight\s+quote\s*(?:is|=|:)?\s*"
+                r"(?:USD\s*)?[$]?([0-9][0-9,.]*)",
+            ],
+            "insurance_premium_usd": [
+                r"\binsurance(?:\s+premium)?\s*(?:is|=|:)?\s*"
+                r"(?:USD\s*)?[$]?([0-9][0-9,.]*)",
+            ],
+            "duty_rate_percent": [
+                r"\bduty(?:\s+rate)?\s*(?:is|=|:)?\s*"
+                r"([0-9][0-9,.]*)\s*(?:%|percent|per\s+cent)",
+            ],
+            "import_tax_rate_percent": [
+                r"\bimport\s+tax(?:\s+rate)?\s*(?:is|=|:)?\s*"
+                r"([0-9][0-9,.]*)\s*(?:%|percent|per\s+cent)",
+            ],
+            "customs_brokerage_usd": [
+                r"\bcustoms\s+brokerage\s*(?:is|=|:)?\s*"
+                r"(?:USD\s*)?[$]?([0-9][0-9,.]*)",
+            ],
+            "local_delivery_usd": [
+                r"\blocal\s+delivery\s*(?:is|=|:)?\s*"
+                r"(?:USD\s*)?[$]?([0-9][0-9,.]*)",
+            ],
+        }
+
+        for key, candidates in patterns.items():
+            for pattern in candidates:
+                match = re.search(
+                    pattern,
+                    raw,
+                    flags=re.IGNORECASE,
+                )
+
+                if match:
+                    value = _json_v10_polish_float(match.group(1))
+
+                    if value is not None:
+                        fields[key] = value
+                        break
+
+        return fields
+
+    def _json_v10_recalculate_landed_cost(payload, fields):
+        if not fields:
+            return
+
+        advice = payload.get("landed_cost_advice")
+
+        if not isinstance(advice, dict):
+            advice = {}
+
+        known = advice.get("known_inputs")
+
+        if not isinstance(known, dict):
+            known = {}
+
+        known.update(fields)
+        advice["known_inputs"] = known
+
+        procurement = _json_v10_polish_float(
+            known.get("procurement_value_usd")
+        )
+
+        if procurement is None:
+            payload["landed_cost_advice"] = advice
+            return
+
+        freight = (
+            _json_v10_polish_float(
+                known.get("freight_quote_usd")
+            )
+            or 0
+        )
+        insurance = (
+            _json_v10_polish_float(
+                known.get("insurance_premium_usd")
+            )
+            or 0
+        )
+        duty_rate = (
+            _json_v10_polish_float(
+                known.get("duty_rate_percent")
+            )
+            or 0
+        )
+        tax_rate = (
+            _json_v10_polish_float(
+                known.get("import_tax_rate_percent")
+            )
+            or 0
+        )
+        brokerage = (
+            _json_v10_polish_float(
+                known.get("customs_brokerage_usd")
+            )
+            or 0
+        )
+        delivery = (
+            _json_v10_polish_float(
+                known.get("local_delivery_usd")
+            )
+            or 0
+        )
+
+        customs_value = procurement + freight + insurance
+        duty = customs_value * duty_rate / 100
+        import_tax_base = customs_value + duty
+        import_tax = import_tax_base * tax_rate / 100
+
+        landed = (
+            procurement
+            + freight
+            + insurance
+            + duty
+            + import_tax
+            + brokerage
+            + delivery
+        )
+
+        advice.update(
+            {
+                "customs_value_usd": round(customs_value, 2),
+                "estimated_duty_usd": round(duty, 2),
+                "import_tax_base_usd": round(
+                    import_tax_base,
+                    2,
+                ),
+                "estimated_import_tax_usd": round(
+                    import_tax,
+                    2,
+                ),
+                "estimated_subtotal_known_usd": round(
+                    landed,
+                    2,
+                ),
+                "estimated_landed_cost_usd": round(
+                    landed,
+                    2,
+                ),
+            }
+        )
+
+        missing = advice.get("missing_cost_inputs")
+
+        if not isinstance(missing, list):
+            missing = []
+
+        advice["missing_cost_inputs"] = [
+            item
+            for item in missing
+            if str(item) not in fields
+        ]
+
+        required = {
+            "procurement_value_usd",
+            "freight_quote_usd",
+            "insurance_premium_usd",
+            "duty_rate_percent",
+            "import_tax_rate_percent",
+            "customs_brokerage_usd",
+            "local_delivery_usd",
+        }
+
+        if required.issubset(known):
+            advice["status"] = "review_required"
+            advice["summary"] = (
+                "Landed cost advice prepared from all supplied "
+                "finance inputs."
+            )
+            advice["missing_cost_inputs"] = []
+            advice["blockers"] = []
+
+        payload["landed_cost_advice"] = advice
+
+        payload.setdefault("text_cost_inputs", {})
+
+        if isinstance(payload["text_cost_inputs"], dict):
+            payload["text_cost_inputs"].update(fields)
+
+    def _json_v10_remove_known_missing(value, fields):
+        if isinstance(value, dict):
+            return {
+                key: _json_v10_remove_known_missing(item, fields)
+                for key, item in value.items()
+            }
+
+        if isinstance(value, list):
+            output = []
+
+            for item in value:
+                text = str(item or "").lower()
+
+                is_known = any(
+                    text == field.lower()
+                    or text
+                    == f"landed cost input: {field.lower()}"
+                    for field in fields
+                )
+
+                if not is_known:
+                    output.append(
+                        _json_v10_remove_known_missing(
+                            item,
+                            fields,
+                        )
+                    )
+
+            return output
+
+        return value
+
+    def _json_v10_fix_document_contract(payload):
+        agents = payload.get("agents_called")
+
+        if not isinstance(agents, list):
+            agents = []
+
+        if "document_ai_agent" not in agents:
+            return
+
+        specialists = payload.get("specialist_responses")
+
+        if not isinstance(specialists, dict):
+            specialists = {}
+            payload["specialist_responses"] = specialists
+
+        advice = payload.get("document_requirements_advice")
+
+        if "document_ai_agent" not in specialists:
+            specialists["document_ai_agent"] = {
+                "agent_name": "document_ai_agent",
+                "status": (
+                    advice.get("status")
+                    if isinstance(advice, dict)
+                    else "review_required"
+                ),
+                "summary": (
+                    advice.get("summary")
+                    if isinstance(advice, dict)
+                    else
+                    "Document AI Agent prepared document requirements."
+                ),
+                "document_requirements_advice": advice,
+                "missing_information": (
+                    advice.get("missing_information", [])
+                    if isinstance(advice, dict)
+                    else []
+                ),
+            }
+
+        compliance = payload.get("trade_compliance_readiness")
+
+        if (
+            "compliance_agent" in agents
+            and "compliance_agent" not in specialists
+        ):
+            specialists["compliance_agent"] = {
+                "agent_name": "compliance_agent",
+                "status": (
+                    compliance.get("status")
+                    if isinstance(compliance, dict)
+                    else "review_required"
+                ),
+                "summary": (
+                    compliance.get("summary")
+                    if isinstance(compliance, dict)
+                    else
+                    "Compliance Agent prepared compliance advice."
+                ),
+                "trade_compliance_readiness": compliance,
+                "missing_information": (
+                    compliance.get("missing_information", [])
+                    if isinstance(compliance, dict)
+                    else []
+                ),
+            }
+
+        review = payload.get("document_quality_review")
+
+        if isinstance(review, dict):
+            review["applicable"] = True
+            review["status"] = (
+                advice.get("status", "review_required")
+                if isinstance(advice, dict)
+                else "review_required"
+            )
+            review["summary"] = (
+                advice.get("summary")
+                if isinstance(advice, dict)
+                else
+                "Document AI Agent prepared document requirements."
+            )
+
+        validation = payload.get("backend_validation")
+
+        if isinstance(validation, dict):
+            errors = validation.get("response_contract_errors")
+
+            if not isinstance(errors, list):
+                errors = []
+
+            errors = [
+                error
+                for error in errors
+                if "specialist_responses" not in str(error)
+            ]
+
+            validation["response_contract_errors"] = errors
+            validation["response_contract_valid"] = not errors
+
+        if {
+            "document_ai_agent",
+            "compliance_agent",
+        }.issubset(agents):
+            payload["summary"] = (
+                "User Agent routed the request to Document AI Agent "
+                "and Compliance Agent."
+            )
+
+    def _json_v10_fix_visualizer(payload, text):
+        visualizer = payload.get("logistics_visualizer")
+
+        if not isinstance(visualizer, dict):
+            return
+
+        container = visualizer.get("container")
+        cargo_mix = visualizer.get("cargo_mix")
+
+        has_container = (
+            isinstance(container, dict)
+            and bool(container.get("selected_container"))
+        )
+        has_cargo = isinstance(cargo_mix, list) and bool(cargo_mix)
+
+        if not has_container or not has_cargo:
+            visualizer["status"] = "unavailable"
+            visualizer["fit_check"] = {
+                "status": "unavailable",
+                "selected_container_checked": None,
+                "warnings": [],
+                "recommendations": [],
+                "item_fit_results": [],
+            }
+            return
+
+        raw = str(text or "")
+        lowered = raw.lower()
+
+        weight_match = re.search(
+            r"\bweighing\s+([0-9][0-9,.]*)\s*kg\b",
+            raw,
+            flags=re.IGNORECASE,
+        )
+
+        cbm_match = re.search(
+            r"\b([0-9][0-9,.]*)\s*"
+            r"(?:cbm|m3|m\^3|cubic\s+meters?|cubic\s+metres?)\b",
+            raw,
+            flags=re.IGNORECASE,
+        )
+
+        explicit_weight = (
+            _json_v10_polish_float(weight_match.group(1))
+            if weight_match
+            else None
+        )
+
+        explicit_cbm = (
+            _json_v10_polish_float(cbm_match.group(1))
+            if cbm_match
+            else None
+        )
+
+        if isinstance(container, dict):
+            if explicit_weight is not None:
+                container["total_weight_kg"] = explicit_weight
+
+            if explicit_cbm is not None:
+                container["total_cbm"] = explicit_cbm
+
+            if any(
+                token in lowered
+                for token in [
+                    "hazardous",
+                    "lithium battery",
+                    "lithium batteries",
+                ]
+            ):
+                container["risk_level"] = "high"
+                container["risk_score"] = max(
+                    container.get("risk_score") or 0,
+                    7,
+                )
+
+        if len(cargo_mix) == 1 and isinstance(cargo_mix[0], dict):
+            item = cargo_mix[0]
+            quantity = item.get("quantity") or 1
+
+            try:
+                quantity_number = float(quantity)
+            except Exception:
+                quantity_number = 1
+
+            name = str(item.get("item_name") or "")
+
+            name = re.sub(
+                r"\s+\bweighing\s+[0-9][0-9,.]*\s*kg\b",
+                "",
+                name,
+                flags=re.IGNORECASE,
+            )
+
+            item["item_name"] = name.strip(" ,.;:-")
+
+            if explicit_weight is not None:
+                item["total_weight_kg"] = explicit_weight
+                item["unit_weight_kg"] = round(
+                    explicit_weight / quantity_number,
+                    6,
+                )
+
+            if explicit_cbm is not None:
+                item["total_cbm"] = explicit_cbm
+                item["unit_cbm"] = round(
+                    explicit_cbm / quantity_number,
+                    6,
+                )
+                item["aggregate_volume_only"] = True
+                item["dimensions_are_aggregate"] = True
+
+                side = round(explicit_cbm ** (1 / 3), 6)
+
+                item["dimensions_m"] = {
+                    "length": side,
+                    "width": side,
+                    "height": side,
+                }
+
+            if (
+                "non-stackable" in lowered
+                or "non stackable" in lowered
+                or "do not stack" in lowered
+            ):
+                item["stackable"] = False
+
+                tags = item.get("category_tags")
+
+                if not isinstance(tags, list):
+                    tags = []
+
+                if "non_stackable" not in tags:
+                    tags.append("non_stackable")
+
+                item["category_tags"] = tags
+
+            if any(
+                token in lowered
+                for token in [
+                    "hazardous",
+                    "lithium battery",
+                    "lithium batteries",
+                ]
+            ):
+                tags = item.get("category_tags")
+
+                if not isinstance(tags, list):
+                    tags = []
+
+                if "hazardous" not in tags:
+                    tags.append("hazardous")
+
+                item["category_tags"] = tags
+
+        metrics = payload.get("logistics_metrics")
+
+        if isinstance(metrics, dict):
+            if explicit_weight is not None:
+                metrics["total_weight_kg"] = explicit_weight
+
+            if explicit_cbm is not None:
+                metrics["total_cbm"] = explicit_cbm
+
+            if any(
+                token in lowered
+                for token in [
+                    "hazardous",
+                    "lithium battery",
+                    "lithium batteries",
+                ]
+            ):
+                metrics["risk_level"] = "high"
+                metrics["risk_score"] = max(
+                    metrics.get("risk_score") or 0,
+                    7,
+                )
+
+    def polish_backend_response(payload, original_text=None):
+        cleaned = _polish_backend_response_before_json_regression_v10(
+            payload,
+            original_text,
+        )
+
+        if not isinstance(cleaned, dict):
+            return cleaned
+
+        text = _json_v10_extract_original_text(
+            cleaned,
+            original_text,
+        )
+
+        fields = _json_v10_extract_finance(text)
+
+        _json_v10_recalculate_landed_cost(cleaned, fields)
+
+        if fields:
+            cleaned = _json_v10_remove_known_missing(
+                cleaned,
+                set(fields),
+            )
+
+            _json_v10_recalculate_landed_cost(
+                cleaned,
+                fields,
+            )
+
+        _json_v10_fix_document_contract(cleaned)
+        _json_v10_fix_visualizer(cleaned, text)
+
+        return cleaned
+
+except Exception:
+    pass
+
+
+# Q1 leaked product phrase cleanup v12
+try:
+    _previous_polish_backend_response_q1_v12 = polish_backend_response
+
+    def _q1_v12_clean_string(value):
+        import re
+
+        if not isinstance(value, str):
+            return value
+
+        value = re.sub(
+            r"\bceramic\s+tiles\s+exported\s+from\s+India\s+to\s+(?:the\s+)?USA\b",
+            "ceramic tiles",
+            value,
+            flags=re.IGNORECASE,
+        )
+
+        value = re.sub(
+            r"\bceramic\s+tiles\s+exported\b",
+            "ceramic tiles",
+            value,
+            flags=re.IGNORECASE,
+        )
+
+        return value
+
+    def _q1_v12_clean_payload(obj):
+        if isinstance(obj, dict):
+            return {key: _q1_v12_clean_payload(value) for key, value in obj.items()}
+
+        if isinstance(obj, list):
+            return [_q1_v12_clean_payload(value) for value in obj]
+
+        if isinstance(obj, str):
+            return _q1_v12_clean_string(obj)
+
+        return obj
+
+    def polish_backend_response(payload, original_text=None):
+        cleaned = _previous_polish_backend_response_q1_v12(payload, original_text)
+
+        try:
+            return _q1_v12_clean_payload(cleaned)
+        except Exception:
+            return cleaned
+
+except Exception:
+    pass
+

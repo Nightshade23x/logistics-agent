@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from pathlib import Path
 from typing import Any
@@ -406,3 +406,32 @@ def process_document_files_request(
             error=error,
             include_raw_response=include_raw_response,
         )
+
+# Apply the complete frontend cleanup to direct backend-service text calls v11.
+try:
+    from app.frontend_response_cleanup import (
+        cleanup_frontend_response as _backend_text_cleanup_v11,
+    )
+
+    _process_text_request_before_final_cleanup_v11 = (
+        process_text_request
+    )
+
+    def process_text_request(
+        user_text: str,
+        include_raw_response: bool = False,
+    ) -> dict[str, Any]:
+        payload = (
+            _process_text_request_before_final_cleanup_v11(
+                user_text=user_text,
+                include_raw_response=include_raw_response,
+            )
+        )
+
+        return _backend_text_cleanup_v11(
+            payload,
+            user_text,
+        )
+
+except Exception:
+    pass

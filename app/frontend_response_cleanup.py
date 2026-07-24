@@ -1277,3 +1277,31 @@ try:
 except Exception:
     pass
 
+# Final frontend response repair v11.
+try:
+    from app.final_text_response_fixes import (
+        repair_frontend_payload as _repair_frontend_payload_v11,
+    )
+
+    _cleanup_frontend_response_before_final_v11 = (
+        cleanup_frontend_response
+    )
+
+    def cleanup_frontend_response(
+        payload,
+        original_text=None,
+    ):
+        cleaned = (
+            _cleanup_frontend_response_before_final_v11(
+                payload,
+                original_text,
+            )
+        )
+
+        return _repair_frontend_payload_v11(
+            cleaned,
+            original_text,
+        )
+
+except Exception:
+    pass

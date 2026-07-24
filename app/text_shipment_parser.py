@@ -795,3 +795,164 @@ try:
 except Exception:
     pass
 
+# JSON regression fixes v10: explicit shipment properties
+#
+# Explicit information in the prompt must override catalogue defaults.
+try:
+    _parse_shipment_text_before_json_regression_v10 = parse_shipment_text
+
+    def _json_v10_float(value):
+        try:
+            return float(str(value).replace(",", "").strip())
+        except Exception:
+            return None
+
+    def _json_v10_clean_item_name(value):
+        name = str(value or "")
+
+        name = re.sub(
+            r"\s+\bweighing\s+[0-9][0-9,.]*\s*"
+            r"(?:kg|kgs|kilograms?|lb|lbs|pounds?)\b",
+            "",
+            name,
+            flags=re.IGNORECASE,
+        )
+
+        name = re.sub(
+            r"\s+\bfrom\s+.+$",
+            "",
+            name,
+            flags=re.IGNORECASE,
+        )
+
+        name = re.sub(
+            r"\s+\b(?:under|using|use)\s+(?:the\s+)?"
+            r"(?:EXW|FCA|FAS|FOB|CFR|CIF|CPT|CIP|DAP|DPU|DDP)\b.*$",
+            "",
+            name,
+            flags=re.IGNORECASE,
+        )
+
+        return re.sub(r"\s+", " ", name).strip(" ,.;:-")
+
+    def _json_v10_explicit_weight(text):
+        match = re.search(
+            r"\bweighing\s+([0-9][0-9,.]*)\s*"
+            r"(kg|kgs|kilograms?|lb|lbs|pounds?)\b",
+            str(text or ""),
+            flags=re.IGNORECASE,
+        )
+
+        if not match:
+            return None
+
+        value = _json_v10_float(match.group(1))
+
+        if value is None:
+            return None
+
+        unit = str(match.group(2)).lower()
+
+        if unit in {"lb", "lbs", "pound", "pounds"}:
+            value *= 0.45359237
+
+        return round(value, 6)
+
+    def _json_v10_explicit_cbm(text):
+        match = re.search(
+            r"\b([0-9][0-9,.]*)\s*"
+            r"(?:cbm|m3|m\^3|cubic\s+meters?|cubic\s+metres?)\b",
+            str(text or ""),
+            flags=re.IGNORECASE,
+        )
+
+        if not match:
+            return None
+
+        return _json_v10_float(match.group(1))
+
+    def parse_shipment_text(text: str):
+        result = _parse_shipment_text_before_json_regression_v10(text)
+
+        if not isinstance(result, dict):
+            return result
+
+        raw = str(text or "")
+        lowered = raw.lower()
+
+        weight = _json_v10_explicit_weight(raw)
+        cbm = _json_v10_explicit_cbm(raw)
+
+        items = result.get("items")
+
+        if not isinstance(items, list):
+            items = []
+            result["items"] = items
+
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+
+            item["name"] = _json_v10_clean_item_name(
+                item.get("name")
+                or item.get("item_name")
+                or item.get("product_name")
+                or "cargo"
+            )
+
+            quantity = item.get("quantity") or 1
+
+            try:
+                quantity_number = float(quantity)
+            except Exception:
+                quantity_number = 1.0
+
+            if len(items) == 1 and weight is not None:
+                item["total_weight_kg"] = weight
+                item["unit_weight_kg"] = round(
+                    weight / quantity_number,
+                    6,
+                )
+                item["weight_kg"] = round(
+                    weight / quantity_number,
+                    6,
+                )
+
+            if len(items) == 1 and cbm is not None:
+                item["total_cbm"] = cbm
+                item["unit_cbm"] = round(
+                    cbm / quantity_number,
+                    6,
+                )
+                item["aggregate_volume_only"] = True
+                item["dimensions_are_aggregate"] = True
+
+            if (
+                "non-stackable" in lowered
+                or "non stackable" in lowered
+                or "do not stack" in lowered
+            ):
+                item["stackable"] = False
+
+            if any(
+                token in lowered
+                for token in [
+                    "hazardous",
+                    "dangerous goods",
+                    "lithium battery",
+                    "lithium batteries",
+                    "radioactive",
+                ]
+            ):
+                item["hazardous"] = True
+
+        if weight is not None:
+            result["total_weight_kg"] = weight
+
+        if cbm is not None:
+            result["total_cbm"] = cbm
+
+        return result
+
+except Exception:
+    pass
