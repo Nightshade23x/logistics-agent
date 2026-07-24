@@ -1,23 +1,39 @@
-﻿Ship 200 cartons of cotton t-shirts from India to the UK using CIF. Each carton is 60 cm x 40 cm x 40 cm and weighs 18 kg.
+﻿Ship 40 boxes of ceramic tiles from India to Canada using FOB. Each box is 45 cm x 45 cm x 20 cm and weighs 22 kg.
 ---
-I need to ship furniture from India to Germany but I do not know the dimensions or weight yet. Tell me what information is missing before booking.
+Ship 12 wooden tables from Vietnam to Germany using CIF. Each table is 6 ft x 3 ft x 2.5 ft and weighs 35 kg.
 ---
-Ship 5 electric scooters from China to USA using FOB. Each scooter is 1.8 m x 0.7 m x 1.2 m and weighs 45 kg. The scooters contain lithium batteries.
+Ship 300 cartons of clothes from India to UAE. Total cargo is 18 CBM and 2400 kg. Use EXW.
 ---
-What documents are needed to ship 50 TVs from India to USA using CIF? The TVs are fragile.
+Ship 8 pallets of glass jars from India to USA using CIF. Each pallet is 1.2 m x 1.0 m x 1.5 m and weighs 180 kg. The cargo is fragile.
 ---
-Calculate landed cost for ceramic tiles from India to USA using CIF. Product value 8000 USD, freight 1500 USD, insurance 300 USD, duty 5 percent, import tax 8 percent, customs brokerage 250 USD, local delivery 400 USD.
+Ship 2 industrial generators from China to Kenya using FOB. Each generator is 2.4 m x 1.1 m x 1.6 m and weighs 1800 kg.
 ---
-Find suppliers for 100 pillows and create a shipping plan from India to UAE using FOB.
+Ship 1000 kg of lithium batteries from China to Germany using DDP. Cargo volume is 2.5 CBM and the cargo is hazardous.
 ---
-Assess trade plan for glass bottles exported from India to Canada. Give HS code, duty, FTA status, and export strategy.
+Ship 750 kg of paint from India to USA using CIF. It is flammable. I do not know the volume yet.
 ---
-Can I ship radioactive medical equipment from India to Germany? I need compliance, risk, documents, and logistics readiness.
+Can I ship radioactive lab equipment from India to France? I do not know dimensions or weight.
 ---
-Ship 1 oversized machine from Germany to India. Dimensions are 7 m x 2.5 m x 2.8 m and weight is 9000 kg. Use CIF.
+What documents are needed for lithium batteries shipped from China to Germany using DDP?
 ---
-Ship 500 kg of perfume from France to USA using DDP. It is flammable.
+What documents are needed for cotton t-shirts from India to the UK using FOB?
 ---
-I want to buy ceramic tiles, glass bottles, and pillows from suppliers, but I have no destination country yet.
+Assess HS code, duty rate, FTA status, and export strategy for wooden furniture exported from Vietnam to Germany.
 ---
-Ship 30 CBM of mixed household goods from India to USA using EXW. Total weight is 5000 kg. Also estimate insurance and documents needed.
+Tell me the import duty and FTA status for electric scooters from China to USA.
+---
+Calculate landed cost for glass bottles from India to USA using CIF. Cargo value 15000 USD, freight quote 2200 USD, insurance premium glass bottles from India to USA using CIF. Cargo value 15000 USD, freight quote 2200 USD, insurance premium 500 USD, duty rate 6 percent, VAT 7 percent, customs brokerage 300 USD, local delivery 650 USD.
+---
+Calculate landed cost for wooden furniture from Vietnam to Germany using FOB. Product value 9000 USD and freight 1800 USD.
+---
+Find suppliers for ceramic tiles, pillows, and mattresses. I have not chosen the destination country yet.
+---
+Find suppliers for 500 glass bottles and make a shipping plan from India to Canada using CIF. Glass bottles are fragile.
+---
+Ship 1 machine from Germany to India using CIF. Dimensions are 13 m x 2.6 m x 3 m and weight is 12000 kg.
+---
+Ship 20 CBM of household goods from India to Australia using DAP. Total weight is 3500 kg.
+---
+I need to ship fragile electronics from India to USA but I only know there are 50 units. Tell me what else you need.
+---
+Create a full trade plan for 10 CBM ceramic tiles from India to USA using CIF. Total weight is 1200 kg. Include logistics, documents, duty, and risk.

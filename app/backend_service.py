@@ -1545,3 +1545,57 @@ try:
 except Exception:
     pass
 
+
+# Phase 3 v24 final process_text_request wrapper
+try:
+    from app.phase2_response_fixes import apply_phase2_response_fixes as _phase3_v24_apply_response_fixes
+
+    if not getattr(process_text_request, "_phase3_v24_wrapped", False):
+        _phase3_v24_previous_process_text_request = process_text_request
+
+        def process_text_request(*args, **kwargs):
+            prompt_text = None
+
+            if args:
+                prompt_text = args[0]
+            else:
+                for key in ("input_text", "text", "prompt", "query", "message"):
+                    if key in kwargs:
+                        prompt_text = kwargs.get(key)
+                        break
+
+            payload = _phase3_v24_previous_process_text_request(*args, **kwargs)
+            return _phase3_v24_apply_response_fixes(payload, prompt_text)
+
+        process_text_request._phase3_v24_wrapped = True
+
+except Exception:
+    pass
+
+
+# Phase 3 v27 safe final process_text_request wrapper
+try:
+    from app.phase3_final_fixes import apply_phase3_final_fixes as _phase3_v27_apply_final_fixes
+
+    if not getattr(process_text_request, "_phase3_v27_wrapped", False):
+        _phase3_v27_previous_process_text_request = process_text_request
+
+        def process_text_request(*args, **kwargs):
+            prompt_text = None
+
+            if args:
+                prompt_text = args[0]
+            else:
+                for _phase3_v27_key in ("input_text", "text", "prompt", "query", "message"):
+                    if _phase3_v27_key in kwargs:
+                        prompt_text = kwargs.get(_phase3_v27_key)
+                        break
+
+            payload = _phase3_v27_previous_process_text_request(*args, **kwargs)
+            return _phase3_v27_apply_final_fixes(payload, prompt_text)
+
+        process_text_request._phase3_v27_wrapped = True
+
+except Exception:
+    pass
+
