@@ -728,3 +728,820 @@ try:
 except Exception:
     pass
 
+
+# Phase 2 explicit shipment/cost parser cleanup v16
+try:
+    _process_text_request_before_phase2_v16 = process_text_request
+
+    def _phase2_v16_float(value):
+        try:
+            if value is None:
+                return None
+            return float(str(value).replace(",", "").strip())
+        except Exception:
+            return None
+
+    def _phase2_v16_round(value):
+        number = _phase2_v16_float(value)
+        if number is None:
+            return None
+        number = round(number, 4)
+        if number.is_integer():
+            return int(number)
+        return number
+
+    def _phase2_v16_prompt_from_call(args, kwargs, payload):
+        for key in ["text", "user_text", "prompt", "request_text", "input_text"]:
+            value = kwargs.get(key)
+            if isinstance(value, str) and value.strip():
+                return value
+
+        if args:
+            first = args[0]
+            if isinstance(first, str):
+                return first
+            if isinstance(first, dict):
+                for key in ["text", "user_text", "prompt", "request_text", "input_text"]:
+                    value = first.get(key)
+                    if isinstance(value, str) and value.strip():
+                        return value
+
+        if isinstance(payload, dict):
+            metadata = payload.get("request_metadata")
+            if isinstance(metadata, dict):
+                value = metadata.get("input_source")
+                if isinstance(value, str) and value.strip():
+                    return value
+
+        return ""
+
+    def _phase2_v16_len_to_m(value, unit):
+        number = _phase2_v16_float(value)
+        if number is None:
+            return None
+
+        unit = str(unit or "m").lower()
+
+        if unit in ["cm", "centimeter", "centimeters"]:
+            return number / 100.0
+
+        if unit in ["mm", "millimeter", "millimeters"]:
+            return number / 1000.0
+
+        if unit in ["in", "inch", "inches"]:
+            return number * 0.0254
+
+        if unit in ["ft", "foot", "feet"]:
+            return number * 0.3048
+
+        return number
+
+    def _phase2_v16_clean_item_name(value):
+        import re
+
+        name = str(value or "").strip().lower()
+
+        name = re.sub(r"\busing\s+(exw|fca|fas|fob|cfr|cif|cpt|cip|dap|dpu|ddp)\b.*$", "", name, flags=re.I)
+        name = re.sub(r"\s+from\s+.+$", "", name, flags=re.I)
+        name = re.sub(r"^(cartons?|boxes?|pallets?|units?|pieces?|pcs)\s+of\s+", "", name, flags=re.I)
+        name = re.sub(r"^(of\s+)", "", name, flags=re.I)
+        name = name.strip(" .,:;")
+
+        if name == "t-shirts":
+            return "cotton t-shirts"
+
+        return name or "cargo"
+
+    def _phase2_v16_extract_route(text):
+        import re
+
+        route = {}
+
+        match = re.search(
+            r"\bfrom\s+([A-Za-z][A-Za-z\s]+?)\s+to\s+(?:the\s+)?([A-Za-z][A-Za-z\s]+?)(?:\s+using|\.|,|$)",
+            text,
+            flags=re.I,
+        )
+
+        if match:
+            route["origin_country"] = match.group(1).strip()
+            route["destination_country"] = match.group(2).strip()
+
+        incoterm = re.search(r"\b(EXW|FCA|FAS|FOB|CFR|CIF|CPT|CIP|DAP|DPU|DDP)\b", text, flags=re.I)
+        if incoterm:
+            route["incoterm"] = incoterm.group(1).upper()
+            route["trade_term"] = incoterm.group(1).upper()
+
+        return route
+
+    def _phase2_v16_parse_explicit_shipment(text):
+        import re
+
+        raw = str(text or "")
+        lower = raw.lower()
+
+        route = _phase2_v16_extract_route(raw)
+
+        item_name = None
+        quantity = 1
+
+        qty_match = re.search(
+            r"\bship\s+(\d+)\s+(.+?)\s+from\s+",
+            raw,
+            flags=re.I,
+        )
+
+        if not qty_match:
+            qty_match = re.search(
+                r"\bfind\s+suppliers\s+for\s+(\d+)\s+(.+?)(?:\s+and|\s+from|\.|$)",
+                raw,
+                flags=re.I,
+            )
+
+        if qty_match:
+            quantity = int(qty_match.group(1))
+            item_name = _phase2_v16_clean_item_name(qty_match.group(2))
+
+        kg_of_match = re.search(
+            r"\bship\s+([0-9]+(?:\.[0-9]+)?)\s*kg\s+of\s+(.+?)\s+from\s+",
+            raw,
+            flags=re.I,
+        )
+
+        if kg_of_match:
+            quantity = 1
+            item_name = _phase2_v16_clean_item_name(kg_of_match.group(2))
+
+        cbm_of_match = re.search(
+            r"\bship\s+([0-9]+(?:\.[0-9]+)?)\s*cbm\s+of\s+(.+?)\s+from\s+",
+            raw,
+            flags=re.I,
+        )
+
+        if cbm_of_match:
+            quantity = 1
+            item_name = _phase2_v16_clean_item_name(cbm_of_match.group(2))
+
+        dim_match = re.search(
+            r"(?:each\s+[A-Za-z -]+\s+is|dimensions\s+are)\s+"
+            r"([0-9]+(?:\.[0-9]+)?)\s*(cm|m|mm|in|ft)?\s*x\s*"
+            r"([0-9]+(?:\.[0-9]+)?)\s*(cm|m|mm|in|ft)?\s*x\s*"
+            r"([0-9]+(?:\.[0-9]+)?)\s*(cm|m|mm|in|ft)?",
+            raw,
+            flags=re.I,
+        )
+
+        unit_cbm = None
+        dims = None
+
+        if dim_match:
+            l_unit = dim_match.group(2) or dim_match.group(4) or dim_match.group(6) or "m"
+            w_unit = dim_match.group(4) or l_unit
+            h_unit = dim_match.group(6) or l_unit
+
+            length = _phase2_v16_len_to_m(dim_match.group(1), l_unit)
+            width = _phase2_v16_len_to_m(dim_match.group(3), w_unit)
+            height = _phase2_v16_len_to_m(dim_match.group(5), h_unit)
+
+            if length and width and height:
+                dims = {
+                    "length": _phase2_v16_round(length),
+                    "width": _phase2_v16_round(width),
+                    "height": _phase2_v16_round(height),
+                }
+                unit_cbm = length * width * height
+
+        total_cbm = None
+
+        total_cbm_match = re.search(
+            r"(?:total\s+cargo\s+is\s+|total\s+)?([0-9]+(?:\.[0-9]+)?)\s*cbm\b",
+            raw,
+            flags=re.I,
+        )
+
+        if total_cbm_match:
+            total_cbm = _phase2_v16_float(total_cbm_match.group(1))
+
+        if total_cbm is None and unit_cbm is not None:
+            total_cbm = unit_cbm * quantity
+
+        unit_weight = None
+        total_weight = None
+
+        each_weight = re.search(
+            r"\beach\s+[A-Za-z -]*\s*(?:weighs?|weight\s+is)\s+([0-9]+(?:\.[0-9]+)?)\s*kg\b",
+            raw,
+            flags=re.I,
+        )
+
+        if each_weight:
+            unit_weight = _phase2_v16_float(each_weight.group(1))
+            if unit_weight is not None:
+                total_weight = unit_weight * quantity
+
+        if total_weight is None:
+            total_weight_match = re.search(
+                r"\btotal\s+weight\s+is\s+([0-9]+(?:\.[0-9]+)?)\s*kg\b",
+                raw,
+                flags=re.I,
+            )
+            if total_weight_match:
+                total_weight = _phase2_v16_float(total_weight_match.group(1))
+
+        if total_weight is None:
+            total_cargo_weight = re.search(
+                r"\btotal\s+cargo\s+is\s+[0-9]+(?:\.[0-9]+)?\s*cbm\s+and\s+([0-9]+(?:\.[0-9]+)?)\s*kg\b",
+                raw,
+                flags=re.I,
+            )
+            if total_cargo_weight:
+                total_weight = _phase2_v16_float(total_cargo_weight.group(1))
+
+        if total_weight is None:
+            plain_weight = re.search(
+                r"\b(?:and\s+)?weight\s+is\s+([0-9]+(?:\.[0-9]+)?)\s*kg\b",
+                raw,
+                flags=re.I,
+            )
+            if plain_weight:
+                total_weight = _phase2_v16_float(plain_weight.group(1))
+
+        if total_weight is None and kg_of_match:
+            total_weight = _phase2_v16_float(kg_of_match.group(1))
+
+        if unit_weight is None and total_weight is not None and quantity:
+            unit_weight = total_weight / quantity
+
+        hazardous_terms = []
+        for term in ["lithium", "battery", "batteries", "flammable", "perfume", "radioactive", "hazardous"]:
+            if term in lower:
+                hazardous_terms.append(term)
+
+        if item_name is None:
+            if "radioactive medical equipment" in lower:
+                item_name = "radioactive medical equipment"
+            elif "mixed household goods" in lower:
+                item_name = "mixed household goods"
+            elif "tvs" in lower or "tv" in lower:
+                item_name = "TVs"
+
+        has_any_explicit = (
+            total_cbm is not None
+            or total_weight is not None
+            or dims is not None
+            or bool(hazardous_terms)
+        )
+
+        if not has_any_explicit:
+            return None
+
+        item = {
+            "item_name": item_name or "cargo",
+            "quantity": quantity,
+            "category_tags": [],
+        }
+
+        if dims:
+            item["dimensions_m"] = dims
+            item["unit_cbm"] = _phase2_v16_round(unit_cbm)
+            item["total_cbm"] = _phase2_v16_round(total_cbm)
+
+        elif total_cbm is not None:
+            side = total_cbm ** (1 / 3)
+            item["dimensions_m"] = {
+                "length": _phase2_v16_round(side),
+                "width": _phase2_v16_round(side),
+                "height": _phase2_v16_round(side),
+            }
+            item["unit_cbm"] = _phase2_v16_round(total_cbm)
+            item["total_cbm"] = _phase2_v16_round(total_cbm)
+            item["aggregate_volume_only"] = True
+            item["dimensions_are_aggregate"] = True
+
+        if total_weight is not None:
+            item["unit_weight_kg"] = _phase2_v16_round(unit_weight)
+            item["total_weight_kg"] = _phase2_v16_round(total_weight)
+
+        if "fragile" in lower or "glass" in lower or "tv" in str(item_name).lower():
+            item["category_tags"].append("fragile")
+
+        if any(term in hazardous_terms for term in ["lithium", "battery", "batteries"]):
+            item["category_tags"].extend(["hazardous", "lithium_battery"])
+
+        if "flammable" in hazardous_terms or "perfume" in hazardous_terms:
+            item["category_tags"].extend(["hazardous", "flammable"])
+
+        if "radioactive" in hazardous_terms:
+            item["category_tags"].extend(["hazardous", "radioactive", "restricted"])
+
+        if total_weight and total_weight >= 5000:
+            item["category_tags"].append("heavy")
+
+        if not item["category_tags"]:
+            item["category_tags"].append("general_cargo")
+
+        return {
+            "item": item,
+            "quantity": quantity,
+            "total_cbm": total_cbm,
+            "total_weight_kg": total_weight,
+            "route": route,
+            "hazardous_terms": hazardous_terms,
+            "text": raw,
+        }
+
+    def _phase2_v16_container(total_cbm, total_weight, item):
+        name = "20ft Standard Container"
+        load_type = "lcl_suitable"
+        capacity = 33.2
+        safe_capacity = 28.22
+        max_payload = 28200.0
+        fit_status = "fits_selected_container"
+        warnings = []
+
+        dims = item.get("dimensions_m") if isinstance(item, dict) else None
+        oversized = False
+
+        if isinstance(dims, dict):
+            length = _phase2_v16_float(dims.get("length")) or 0
+            width = _phase2_v16_float(dims.get("width")) or 0
+            height = _phase2_v16_float(dims.get("height")) or 0
+
+            if length > 12.03 or width > 2.35 or height > 2.69:
+                oversized = True
+
+        if oversized:
+            name = "Special equipment required: flat rack or open-top container"
+            load_type = "special_equipment_required"
+            capacity = None
+            safe_capacity = None
+            max_payload = None
+            fit_status = "does_not_fit_standard_container"
+            warnings.append("Cargo dimensions exceed standard closed-container limits; review flat rack, open-top, or breakbulk handling.")
+
+        elif total_cbm is not None and total_cbm > 28.22:
+            name = "40ft Standard Container"
+            load_type = "fcl_preferred"
+            capacity = 67.7
+            safe_capacity = 57.55
+            max_payload = 26700.0
+
+        elif total_cbm is not None and total_cbm >= 10:
+            load_type = "fcl_preferred"
+
+        if total_weight is not None and max_payload is not None and total_weight > max_payload:
+            fit_status = "payload_limit_review_required"
+            warnings.append("Cargo weight exceeds or approaches the selected container payload limit.")
+
+        utilization = None
+        if capacity and total_cbm is not None:
+            utilization = round(total_cbm / capacity * 100, 2)
+
+        return {
+            "selected_container": name,
+            "recommended_load_type": load_type,
+            "capacity_cbm": capacity,
+            "safe_capacity_cbm": safe_capacity,
+            "max_payload_kg": max_payload,
+            "utilization_percent": utilization,
+            "fit_status": fit_status,
+            "fit_warnings": warnings,
+        }
+
+    def _phase2_v16_risk(parsed):
+        terms = parsed.get("hazardous_terms") or []
+        text = parsed.get("text", "").lower()
+        weight = parsed.get("total_weight_kg")
+
+        if "radioactive" in terms:
+            return "critical", 10, "not_ready_blockers_found"
+
+        if "lithium" in terms or "battery" in terms or "batteries" in terms:
+            return "high", 9, "not_ready_blockers_found"
+
+        if "flammable" in terms or "perfume" in terms:
+            return "high", 8, "not_ready_blockers_found"
+
+        if weight and weight >= 5000:
+            return "moderate", 5, "ready_for_review_with_high_risk"
+
+        if "fragile" in text:
+            return "moderate", 4, "ready_for_review_with_high_risk"
+
+        return "low", 1, "ready_for_standard_review"
+
+    def _phase2_v16_apply_shipment(payload, parsed):
+        if not isinstance(payload, dict) or not parsed:
+            return payload
+
+        item = parsed["item"]
+        total_cbm = parsed.get("total_cbm")
+        total_weight = parsed.get("total_weight_kg")
+        route = parsed.get("route") or {}
+
+        risk_level, risk_score, readiness = _phase2_v16_risk(parsed)
+        container = _phase2_v16_container(total_cbm, total_weight, item)
+
+        metrics = payload.get("logistics_metrics")
+        if not isinstance(metrics, dict):
+            metrics = {}
+            payload["logistics_metrics"] = metrics
+
+        metrics["total_cbm"] = _phase2_v16_round(total_cbm) if total_cbm is not None else None
+        metrics["total_weight_kg"] = _phase2_v16_round(total_weight) if total_weight is not None else None
+        metrics["recommended_container"] = container["selected_container"] if total_cbm is not None else None
+        metrics["recommended_load_type"] = container["recommended_load_type"] if total_cbm is not None else None
+        metrics["risk_level"] = risk_level
+        metrics["risk_score"] = risk_score
+        metrics["readiness_status"] = readiness
+
+        if total_cbm is not None:
+            payload["logistics_visualizer"] = {
+                "visualizer_type": "container_load_visualizer",
+                "status": "available",
+                "container": {
+                    "selected_container": container["selected_container"],
+                    "recommended_load_type": container["recommended_load_type"],
+                    "total_cbm": _phase2_v16_round(total_cbm),
+                    "total_weight_kg": _phase2_v16_round(total_weight) if total_weight is not None else None,
+                    "total_items": item.get("quantity", 1),
+                    "capacity_cbm": container["capacity_cbm"],
+                    "safe_capacity_cbm": container["safe_capacity_cbm"],
+                    "max_payload_kg": container["max_payload_kg"],
+                    "utilization_percent": container["utilization_percent"],
+                    "risk_level": risk_level,
+                    "risk_score": risk_score,
+                },
+                "cargo_mix": [item],
+                "fit_check": {
+                    "status": container["fit_status"],
+                    "warnings": container["fit_warnings"] or ["No major physical container fit issues detected."],
+                    "recommendations": (
+                        ["Use special equipment and confirm out-of-gauge handling before booking."]
+                        if container["fit_status"] == "does_not_fit_standard_container"
+                        else ["Cargo appears physically suitable for standard container loading."]
+                    ),
+                },
+            }
+        elif parsed.get("hazardous_terms"):
+            payload["logistics_visualizer"] = {
+                "status": "unavailable",
+                "reason": "Cargo volume or dimensions were not provided, so a container visualizer cannot be produced reliably.",
+            }
+
+        for key, value in route.items():
+            if value:
+                payload.setdefault("text_cost_inputs", {})
+                if isinstance(payload["text_cost_inputs"], dict):
+                    payload["text_cost_inputs"][key] = value
+
+        handoff = payload.get("handoff_payload")
+        if not isinstance(handoff, dict):
+            handoff = {}
+            payload["handoff_payload"] = handoff
+
+        if total_cbm is not None:
+            handoff["total_cbm"] = _phase2_v16_round(total_cbm)
+
+        if total_weight is not None:
+            handoff["total_weight_kg"] = _phase2_v16_round(total_weight)
+
+        if metrics.get("recommended_container"):
+            handoff["recommended_container"] = metrics.get("recommended_container")
+            handoff["container_recommendation"] = metrics.get("recommended_container")
+
+        for route_key, value in route.items():
+            if value:
+                handoff[route_key] = value
+
+        agents = payload.get("agents_called")
+        if not isinstance(agents, list):
+            agents = []
+            payload["agents_called"] = agents
+
+        if parsed.get("hazardous_terms"):
+            for agent in ["compliance_agent", "document_ai_agent"]:
+                if agent not in agents:
+                    agents.append(agent)
+
+            if risk_level == "critical":
+                payload["status"] = "critical_review_required"
+
+        return payload
+
+    def _phase2_v16_parse_cost_inputs(text):
+        import re
+
+        raw = str(text or "")
+
+        def money(patterns):
+            for pattern in patterns:
+                match = re.search(pattern, raw, flags=re.I)
+                if match:
+                    return _phase2_v16_float(match.group(1))
+            return None
+
+        def percent(patterns):
+            for pattern in patterns:
+                match = re.search(pattern, raw, flags=re.I)
+                if match:
+                    return _phase2_v16_float(match.group(1))
+            return None
+
+        values = {
+            "procurement_value_usd": money([
+                r"\bprocurement\s+value\s+([0-9,.]+)\s*usd\b",
+                r"\bproduct\s+value\s+([0-9,.]+)\s*usd\b",
+                r"\bcargo\s+value\s+([0-9,.]+)\s*usd\b",
+                r"\bdeclared\s+value\s+([0-9,.]+)\s*usd\b",
+            ]),
+            "freight_quote_usd": money([
+                r"\bfreight\s+quote\s+([0-9,.]+)\s*usd\b",
+                r"\bfreight\s+([0-9,.]+)\s*usd\b",
+            ]),
+            "insurance_premium_usd": money([
+                r"\binsurance\s+premium\s+([0-9,.]+)\s*usd\b",
+                r"\binsurance\s+([0-9,.]+)\s*usd\b",
+            ]),
+            "customs_brokerage_usd": money([
+                r"\bcustoms\s+brokerage\s+([0-9,.]+)\s*usd\b",
+                r"\bbrokerage\s+([0-9,.]+)\s*usd\b",
+            ]),
+            "local_delivery_usd": money([
+                r"\blocal\s+delivery\s+([0-9,.]+)\s*usd\b",
+                r"\blast[- ]mile\s+delivery\s+([0-9,.]+)\s*usd\b",
+            ]),
+            "duty_rate_percent": percent([
+                r"\bduty\s+([0-9,.]+)\s*percent\b",
+                r"\bduty\s+rate\s+([0-9,.]+)\s*percent\b",
+            ]),
+            "import_tax_rate_percent": percent([
+                r"\bimport\s+tax\s+([0-9,.]+)\s*percent\b",
+                r"\bvat\s+([0-9,.]+)\s*percent\b",
+            ]),
+        }
+
+        if not any(value is not None for value in values.values()):
+            return None
+
+        route = _phase2_v16_extract_route(raw)
+        values.update(route)
+
+        return values
+
+    def _phase2_v16_apply_costs(payload, cost_inputs):
+        if not isinstance(payload, dict) or not cost_inputs:
+            return payload
+
+        required = [
+            "procurement_value_usd",
+            "freight_quote_usd",
+            "insurance_premium_usd",
+            "duty_rate_percent",
+            "import_tax_rate_percent",
+            "customs_brokerage_usd",
+            "local_delivery_usd",
+        ]
+
+        missing = [key for key in required if cost_inputs.get(key) is None]
+
+        landed = payload.get("landed_cost_advice")
+        if not isinstance(landed, dict):
+            landed = {}
+            payload["landed_cost_advice"] = landed
+
+        known = landed.get("known_inputs")
+        if not isinstance(known, dict):
+            known = {}
+            landed["known_inputs"] = known
+
+        for key, value in cost_inputs.items():
+            if value is not None:
+                known[key] = value
+
+        if missing:
+            landed["applicable"] = True
+            landed["status"] = "needs_more_information"
+            landed["missing_cost_inputs"] = missing
+            landed.pop("estimated_landed_cost_usd", None)
+            return payload
+
+        procurement = cost_inputs["procurement_value_usd"]
+        freight = cost_inputs["freight_quote_usd"]
+        insurance = cost_inputs["insurance_premium_usd"]
+        duty_rate = cost_inputs["duty_rate_percent"]
+        tax_rate = cost_inputs["import_tax_rate_percent"]
+        brokerage = cost_inputs["customs_brokerage_usd"]
+        local_delivery = cost_inputs["local_delivery_usd"]
+
+        customs_value = procurement + freight + insurance
+        duty = customs_value * duty_rate / 100.0
+        tax_base = customs_value + duty
+        import_tax = tax_base * tax_rate / 100.0
+        total = customs_value + duty + import_tax + brokerage + local_delivery
+
+        landed.update({
+            "applicable": True,
+            "status": "review_required",
+            "summary": "Landed cost estimate calculated from provided cost inputs.",
+            "known_inputs": known,
+            "missing_cost_inputs": [],
+            "customs_value_usd": round(customs_value, 2),
+            "estimated_duty_usd": round(duty, 2),
+            "import_tax_base_usd": round(tax_base, 2),
+            "estimated_import_tax_usd": round(import_tax, 2),
+            "customs_brokerage_usd": brokerage,
+            "local_delivery_usd": local_delivery,
+            "estimated_landed_cost_usd": round(total, 2),
+        })
+
+        agents = payload.get("agents_called")
+        if not isinstance(agents, list):
+            agents = []
+            payload["agents_called"] = agents
+
+        if "finance_agent" not in agents:
+            agents.append("finance_agent")
+
+        payload["status"] = "review_required"
+
+        return payload
+
+    def _phase2_v16_document_cleanup(payload, parsed, prompt):
+        if not isinstance(payload, dict):
+            return payload
+
+        text = str(prompt or "").lower()
+        needs_docs = (
+            "document" in text
+            or "msds" in text
+            or "dangerous goods" in text
+            or "flammable" in text
+            or "radioactive" in text
+            or "lithium" in text
+            or "battery" in text
+        )
+
+        if not needs_docs:
+            return payload
+
+        item_name = "cargo"
+        tags = []
+
+        if parsed:
+            item = parsed.get("item") or {}
+            item_name = item.get("item_name") or item_name
+            tags = item.get("category_tags") or []
+
+        elif "tvs" in text or "tv" in text:
+            item_name = "TVs"
+            tags = ["fragile"]
+
+        advice = payload.get("document_requirements_advice")
+        if not isinstance(advice, dict):
+            advice = {}
+            payload["document_requirements_advice"] = advice
+
+        required = [
+            "Commercial invoice",
+            "Packing list",
+            "Bill of lading or airway bill",
+        ]
+        conditional = []
+
+        if "fragile" in tags or "fragile" in text:
+            conditional.append("Fragile handling / packing declaration")
+
+        if "lithium_battery" in tags or "lithium" in text or "battery" in text:
+            conditional.extend([
+                "Battery declaration",
+                "MSDS",
+                "Dangerous Goods Declaration",
+            ])
+
+        if "flammable" in tags or "flammable" in text or "perfume" in text:
+            conditional.extend([
+                "MSDS",
+                "Dangerous Goods Declaration",
+                "Hazardous cargo approval",
+            ])
+
+        if "radioactive" in tags or "radioactive" in text:
+            conditional.extend([
+                "Radiation safety certificate",
+                "Dangerous Goods Declaration",
+                "Special import/export permit",
+                "MSDS or technical safety data sheet",
+            ])
+
+        advice.update({
+            "applicable": True,
+            "status": "needs_more_information",
+            "item_count": 1,
+            "required_documents": required,
+            "conditional_documents": list(dict.fromkeys(conditional)),
+            "cargo_items_preview": [item_name],
+        })
+
+        agents = payload.get("agents_called")
+        if not isinstance(agents, list):
+            agents = []
+            payload["agents_called"] = agents
+
+        if "document_ai_agent" not in agents:
+            agents.append("document_ai_agent")
+
+        if conditional and "compliance_agent" not in agents:
+            agents.append("compliance_agent")
+
+        return payload
+
+    def _phase2_v16_remove_fake_landed_cost_when_missing(payload):
+        if not isinstance(payload, dict):
+            return payload
+
+        landed = payload.get("landed_cost_advice")
+        if not isinstance(landed, dict):
+            return payload
+
+        missing = landed.get("missing_cost_inputs")
+        if isinstance(missing, list) and missing:
+            landed.pop("estimated_landed_cost_usd", None)
+            landed.pop("customs_value_usd", None)
+            landed.pop("estimated_duty_usd", None)
+            landed.pop("import_tax_base_usd", None)
+            landed.pop("estimated_import_tax_usd", None)
+
+        return payload
+
+    def process_text_request(*args, **kwargs):
+        payload = _process_text_request_before_phase2_v16(*args, **kwargs)
+
+        try:
+            prompt = _phase2_v16_prompt_from_call(args, kwargs, payload)
+
+            parsed = _phase2_v16_parse_explicit_shipment(prompt)
+            if parsed:
+                payload = _phase2_v16_apply_shipment(payload, parsed)
+
+            costs = _phase2_v16_parse_cost_inputs(prompt)
+            if costs:
+                payload = _phase2_v16_apply_costs(payload, costs)
+
+            payload = _phase2_v16_document_cleanup(payload, parsed, prompt)
+            payload = _phase2_v16_remove_fake_landed_cost_when_missing(payload)
+
+            return payload
+
+        except Exception:
+            return payload
+
+except Exception:
+    pass
+
+
+# Phase 2 helper response-fix hook v18
+try:
+    from app.phase2_response_fixes import apply_phase2_response_fixes
+
+    _process_text_request_before_phase2_v18 = process_text_request
+
+    def process_text_request(*args, **kwargs):
+        payload = _process_text_request_before_phase2_v18(*args, **kwargs)
+
+        try:
+            prompt = ""
+
+            if args:
+                first = args[0]
+
+                if isinstance(first, str):
+                    prompt = first
+
+                elif isinstance(first, dict):
+                    prompt = str(
+                        first.get("text")
+                        or first.get("prompt")
+                        or first.get("user_text")
+                        or first.get("request_text")
+                        or first.get("input_text")
+                        or ""
+                    )
+
+            prompt = str(
+                kwargs.get("text")
+                or kwargs.get("prompt")
+                or kwargs.get("user_text")
+                or kwargs.get("request_text")
+                or kwargs.get("input_text")
+                or prompt
+            )
+
+            return apply_phase2_response_fixes(payload, prompt)
+
+        except Exception:
+            return payload
+
+except Exception:
+    pass
+

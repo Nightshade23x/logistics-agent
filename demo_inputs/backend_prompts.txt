@@ -1,11 +1,23 @@
-﻿What is the HS code, import duty rate and FTA status for ceramic tiles exported from India to the USA?
+﻿Ship 200 cartons of cotton t-shirts from India to the UK using CIF. Each carton is 60 cm x 40 cm x 40 cm and weighs 18 kg.
 ---
-Ship 1.2 CBM of lithium batteries weighing 1000 kg from India to Germany. The cargo is hazardous and non-stackable.
+I need to ship furniture from India to Germany but I do not know the dimensions or weight yet. Tell me what information is missing before booking.
 ---
-Ship 10 pallets of ceramic tiles from India to USA using CIF. Total cargo is 10 CBM and 1200 kg.
+Ship 5 electric scooters from China to USA using FOB. Each scooter is 1.8 m x 0.7 m x 1.2 m and weighs 45 kg. The scooters contain lithium batteries.
 ---
-Find suppliers and shipping plan for 10 CBM ceramic tiles, 100 pillows, 5 mattresses, and 100 glass bottles from India to USA. Glass bottles are fragile. Use FOB.
+What documents are needed to ship 50 TVs from India to USA using CIF? The TVs are fragile.
 ---
-Finance Agent: calculate landed cost for ceramic tiles from India to USA using CIF. Procurement value 12000 USD, freight quote 3500 USD, insurance 600 USD, duty 8 percent, import tax 6 percent, customs brokerage 400 USD, local delivery 800 USD. Total cargo is 10 CBM and 1200 kg.
+Calculate landed cost for ceramic tiles from India to USA using CIF. Product value 8000 USD, freight 1500 USD, insurance 300 USD, duty 5 percent, import tax 8 percent, customs brokerage 250 USD, local delivery 400 USD.
 ---
-What documents are needed to ship hazardous chemicals from India to Germany using CIF? Include dangerous goods declaration, MSDS, insurance, and compliance readiness.
+Find suppliers for 100 pillows and create a shipping plan from India to UAE using FOB.
+---
+Assess trade plan for glass bottles exported from India to Canada. Give HS code, duty, FTA status, and export strategy.
+---
+Can I ship radioactive medical equipment from India to Germany? I need compliance, risk, documents, and logistics readiness.
+---
+Ship 1 oversized machine from Germany to India. Dimensions are 7 m x 2.5 m x 2.8 m and weight is 9000 kg. Use CIF.
+---
+Ship 500 kg of perfume from France to USA using DDP. It is flammable.
+---
+I want to buy ceramic tiles, glass bottles, and pillows from suppliers, but I have no destination country yet.
+---
+Ship 30 CBM of mixed household goods from India to USA using EXW. Total weight is 5000 kg. Also estimate insurance and documents needed.
