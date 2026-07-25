@@ -99,12 +99,40 @@ function Playground() {
   );
 }
 
+// Real status of the specialist-agent connection, based on what the backend
+// actually tells us (result.live_orchestrator_configured), not a guess from
+// a status string. Previously this checked
+// `status !== "partner_review_not_configured"` and defaulted everything else
+// — including "needs_more_information", "blocked", null, etc — to "reporting
+// via Trade Orchestrator", which was wrong any time the orchestrator wasn't
+// actually connected. Verified against app/partner_review_service.py:
+// live_orchestrator_configured is only true when TRADE_ORCHESTRATOR_BASE_URL
+// is set and the live orchestrator path was actually taken.
+function partnerConnectionLabel(result) {
+  const status = result?.partner_review_status;
+  const liveConfigured = result?.live_orchestrator_configured;
+
+  if (!liveConfigured) {
+    return "not configured — set env vars in config/partner_integrations.example.env";
+  }
+  if (status === "needs_more_information") {
+    return "prepared for orchestrator — waiting on more shipment or trade info before it can run";
+  }
+  if (status === "blocked" || status === "review_required") {
+    return "reporting via Trade Orchestrator — response flagged for review";
+  }
+  if (status === "clear") {
+    return "reporting via Trade Orchestrator";
+  }
+  return "orchestrator connected — awaiting a request";
+}
+
 export default function PartnerAgents() {
   return (
     <>
       <div className="page-header">
         <div>
-          <div className="page-title">Partner Agents</div>
+          <div className="page-title">Specialist Agents</div>
           <div className="page-subtitle">
             Risk / Compliance / Trader (MCP) and Finance (REST) — degrade to "not_configured" when
             env vars are unset, per app/partner_review_service.py.
@@ -118,7 +146,7 @@ export default function PartnerAgents() {
             {(result) => (
               <div className="card">
                 <div className="card-header">
-                  <div className="card-title">Partner Check Status</div>
+                  <div className="card-title">Specialist Agent Status</div>
                   <Badge status={result.partner_review_status} />
                 </div>
                 <div className="card-body">
@@ -132,11 +160,7 @@ export default function PartnerAgents() {
                           <div className="partner-icon">{p.icon}</div>
                           <div>
                             <div className="partner-name">{p.name}</div>
-                            <div className="partner-meta">
-                              {result.partner_review_status === "partner_review_not_configured"
-                                ? "not configured — set env vars in config/partner_integrations.example.env"
-                                : "reporting via Trade Orchestrator"}
-                            </div>
+                            <div className="partner-meta">{partnerConnectionLabel(result)}</div>
                           </div>
                         </div>
                         <Badge status={result.partner_review_status} />
