@@ -1185,6 +1185,164 @@ def _run_text_logistics_flow(
 ) -> dict[str, Any]:
     parsed, logistics_input = _build_logistics_input_from_text(text)
 
+    # Parsed item rescue before logistics missing-info fallback.
+    # parse_shipment_text() can understand compact inputs like:
+    # "20ft container of hazardous chemicals, destination Germany"
+    # but Logistics Agent expects normalized item fields: name, length_m, weight_kg, etc.
+    # If parsed items exist, normalize them before handing off.
+    def _normalize_text_item_for_logistics(_item):
+        if not isinstance(_item, dict):
+            return None
+
+        def _num(*_values, _default=0.0):
+            for _value in _values:
+                if _value is None or _value == "":
+                    continue
+                try:
+                    return float(_value)
+                except Exception:
+                    continue
+            return float(_default)
+
+        _dims = _item.get("dimensions_m") if isinstance(_item.get("dimensions_m"), dict) else {}
+
+        _name = (
+            _item.get("name")
+            or _item.get("item_name")
+            or _item.get("product_name")
+            or _item.get("description")
+            or "Unknown item"
+        )
+
+        _quantity = _num(_item.get("quantity"), _default=1.0)
+        if _quantity <= 0:
+            _quantity = 1.0
+
+        _length_m = _num(_item.get("length_m"), _item.get("length"), _dims.get("length"), _default=1.0)
+        _width_m = _num(_item.get("width_m"), _item.get("width"), _dims.get("width"), _default=1.0)
+        _height_m = _num(_item.get("height_m"), _item.get("height"), _dims.get("height"), _default=1.0)
+
+        _unit_weight = _num(_item.get("weight_kg"), _item.get("unit_weight_kg"), _default=0.0)
+        _total_weight = _num(_item.get("total_weight_kg"), _default=0.0)
+
+        if _unit_weight <= 0 and _total_weight > 0:
+            _unit_weight = _total_weight / _quantity
+
+        _unit_cbm = _num(_item.get("unit_cbm"), _default=0.0)
+        _total_cbm = _num(_item.get("total_cbm"), _default=0.0)
+
+        if _unit_cbm <= 0:
+            _unit_cbm = _length_m * _width_m * _height_m
+
+        if _total_cbm <= 0:
+            _total_cbm = _unit_cbm * _quantity
+
+        _categories = []
+        for _key in ["category_tags", "cargo_categories", "categories"]:
+            _value = _item.get(_key)
+            if isinstance(_value, list):
+                _categories.extend(str(_entry) for _entry in _value if _entry)
+
+        _lowered = (str(_name) + " " + " ".join(_categories) + " " + str(_item.get("notes", ""))).lower()
+        _hazardous = bool(_item.get("hazardous")) or any(
+            _token in _lowered
+            for _token in ["hazardous", "chemical", "chemicals", "dangerous_goods", "dangerous goods", "battery", "batteries", "radioactive", "flammable"]
+        )
+
+        _fragile = bool(_item.get("fragile")) or "fragile" in _lowered
+        _perishable = bool(_item.get("perishable")) or "perishable" in _lowered
+        _radioactive = bool(_item.get("radioactive")) or "radioactive" in _lowered
+
+        _stackable = _item.get("stackable")
+        if _stackable is None:
+            _stackable = False if _hazardous else True
+
+        _normalized = {
+            "name": str(_name),
+            "item_name": str(_name),
+            "quantity": int(_quantity) if float(_quantity).is_integer() else _quantity,
+            "length_m": _length_m,
+            "width_m": _width_m,
+            "height_m": _height_m,
+            "weight_kg": _unit_weight,
+            "unit_weight_kg": _unit_weight,
+            "unit_cbm": round(_unit_cbm, 4),
+            "total_cbm": round(_total_cbm, 4),
+            "total_weight_kg": round(_unit_weight * _quantity, 4),
+            "fragile": _fragile,
+            "perishable": _perishable,
+            "hazardous": _hazardous,
+            "radioactive": _radioactive,
+            "stackable": bool(_stackable),
+            "unload_priority": _item.get("unload_priority", 3),
+            "cargo_categories": sorted(set(_categories)) if _categories else [],
+            "category_tags": sorted(set(_categories)) if _categories else [],
+        }
+
+        if _item.get("notes"):
+            _normalized["notes"] = _item.get("notes")
+
+        return _normalized
+
+    if not logistics_input.get("items"):
+        _parsed_items_for_rescue = parsed.get("items") if isinstance(parsed, dict) else None
+
+        if isinstance(_parsed_items_for_rescue, list) and _parsed_items_for_rescue:
+            _normalized_items_for_rescue = [
+                _normalized
+                for _normalized in (
+                    _normalize_text_item_for_logistics(_item)
+                    for _item in _parsed_items_for_rescue
+                )
+                if isinstance(_normalized, dict)
+            ]
+
+            if _normalized_items_for_rescue:
+                logistics_input["items"] = _normalized_items_for_rescue
+
+                for _key in [
+                    "origin",
+                    "origin_country",
+                    "country_from",
+                    "destination",
+                    "destination_country",
+                    "country_to",
+                    "target_market",
+                    "incoterm",
+                    "trade_term",
+                    "requested_container",
+                    "container_type",
+                    "recommended_container",
+                    "total_cbm",
+                    "total_weight_kg",
+                ]:
+                    _value = parsed.get(_key)
+                    if _value is not None and not logistics_input.get(_key):
+                        logistics_input[_key] = _value
+
+                if not logistics_input.get("total_cbm"):
+                    logistics_input["total_cbm"] = round(
+                        sum(float(_item.get("total_cbm") or 0) for _item in _normalized_items_for_rescue),
+                        4,
+                    )
+
+                if not logistics_input.get("total_weight_kg"):
+                    logistics_input["total_weight_kg"] = round(
+                        sum(float(_item.get("total_weight_kg") or 0) for _item in _normalized_items_for_rescue),
+                        4,
+                    )
+
+                _requested_container = (
+                    parsed.get("requested_container")
+                    or parsed.get("container_type")
+                    or parsed.get("recommended_container")
+                )
+                if _requested_container:
+                    logistics_input["requested_container"] = _requested_container
+                    logistics_input["container_type"] = _requested_container
+                    logistics_input["recommended_container"] = _requested_container
+                    logistics_input["container_recommendation"] = _requested_container
+
     if not logistics_input.get("items"):
         response = _build_missing_booking_info_response(text, routing=routing)
         response["detected_intent"] = detected_intent
@@ -2879,3 +3037,671 @@ try:
 
 except Exception:
     pass
+
+# JSON regression fixes v10: routing continuation
+try:
+    _run_user_agent_from_text_before_json_regression_v10 = (
+        run_user_agent_from_text
+    )
+
+    def _json_v10_route_country(value):
+        value = str(value or "").strip().lower()
+        value = re.sub(r"^the\s+", "", value)
+        value = value.strip(" ?.,;:")
+
+        aliases = {
+            "usa": "USA",
+            "us": "USA",
+            "u.s.": "USA",
+            "u.s.a.": "USA",
+            "united states": "USA",
+            "united states of america": "USA",
+            "india": "India",
+            "germany": "Germany",
+            "china": "China",
+            "uk": "UK",
+            "united kingdom": "UK",
+            "uae": "UAE",
+            "united arab emirates": "UAE",
+            "iran": "Iran",
+            "zambia": "Zambia",
+            "finland": "Finland",
+            "japan": "Japan",
+            "singapore": "Singapore",
+            "australia": "Australia",
+            "canada": "Canada",
+            "mexico": "Mexico",
+            "france": "France",
+            "italy": "Italy",
+            "spain": "Spain",
+            "portugal": "Portugal",
+            "turkey": "Turkey",
+            "turkiye": "Turkey",
+        }
+
+        return aliases.get(value)
+
+    def _json_v10_text_route(text):
+        raw = str(text or "")
+
+        country_names = [
+            "united states of america",
+            "united arab emirates",
+            "united kingdom",
+            "united states",
+            "south korea",
+            "germany",
+            "india",
+            "china",
+            "japan",
+            "singapore",
+            "australia",
+            "canada",
+            "mexico",
+            "france",
+            "italy",
+            "spain",
+            "portugal",
+            "finland",
+            "zambia",
+            "iran",
+            "turkey",
+            "turkiye",
+            "usa",
+            "u.s.a.",
+            "u.s.",
+            "uae",
+            "uk",
+            "us",
+        ]
+
+        pattern = "|".join(
+            sorted(
+                (re.escape(item) for item in country_names),
+                key=len,
+                reverse=True,
+            )
+        )
+
+        origin_match = re.search(
+            rf"\bfrom\s+(?:the\s+)?({pattern})\b",
+            raw,
+            flags=re.IGNORECASE,
+        )
+
+        destination_match = re.search(
+            rf"\bto\s+(?:the\s+)?({pattern})\b",
+            raw,
+            flags=re.IGNORECASE,
+        )
+
+        return {
+            "origin": (
+                _json_v10_route_country(origin_match.group(1))
+                if origin_match
+                else None
+            ),
+            "destination": (
+                _json_v10_route_country(destination_match.group(1))
+                if destination_match
+                else None
+            ),
+        }
+
+    def _json_v10_recursive_route_sync(value, origin, destination):
+        if isinstance(value, dict):
+            for key in list(value):
+                lower_key = str(key).lower()
+
+                if origin and lower_key in {
+                    "origin",
+                    "origin_country",
+                    "country_from",
+                }:
+                    value[key] = origin
+                    continue
+
+                if destination and lower_key in {
+                    "destination",
+                    "destination_country",
+                    "country_to",
+                    "target_market",
+                }:
+                    value[key] = destination
+                    continue
+
+                value[key] = _json_v10_recursive_route_sync(
+                    value[key],
+                    origin,
+                    destination,
+                )
+
+            return value
+
+        if isinstance(value, list):
+            return [
+                _json_v10_recursive_route_sync(
+                    item,
+                    origin,
+                    destination,
+                )
+                for item in value
+            ]
+
+        if isinstance(value, str):
+            value = re.sub(
+                r"\bthe\s+USA\??\b",
+                "USA",
+                value,
+                flags=re.IGNORECASE,
+            )
+
+            value = value.replace(
+                "the product was could not be automatically classified",
+                "the product could not be automatically classified",
+            )
+
+            return value
+
+        return value
+
+    def _json_v10_should_continue_to_trader(response, text):
+        agents = response.get("agents_called")
+
+        if not isinstance(agents, list):
+            return False
+
+        if "trader_agent" in agents:
+            return False
+
+        if not any(
+            agent in agents
+            for agent in ["shopping_agent", "logistics_agent"]
+        ):
+            return False
+
+        route = _json_v10_text_route(text)
+
+        if not route["origin"] or not route["destination"]:
+            return False
+
+        has_incoterm = bool(
+            re.search(
+                r"\b(EXW|FCA|FAS|FOB|CFR|CIF|CPT|CIP|DAP|DPU|DDP)\b",
+                str(text or ""),
+                flags=re.IGNORECASE,
+            )
+        )
+
+        return has_incoterm
+
+    def _json_v10_continue_to_trader(response, text):
+        specialists = response.get("specialist_responses")
+
+        if not isinstance(specialists, dict):
+            specialists = {}
+            response["specialist_responses"] = specialists
+
+        logistics_response = specialists.get("logistics_agent")
+
+        if not isinstance(logistics_response, dict):
+            return response
+
+        shopping_response = specialists.get("shopping_agent")
+
+        try:
+            trader_input = _build_trader_input_from_handoffs(
+                shopping_response=(
+                    shopping_response
+                    if isinstance(shopping_response, dict)
+                    else None
+                ),
+                logistics_input=(
+                    response.get("logistics_input")
+                    if isinstance(
+                        response.get("logistics_input"),
+                        dict,
+                    )
+                    else {}
+                ),
+                logistics_response=logistics_response,
+                original_text=text,
+            )
+
+            trader_response = run_trader_agent(
+                trader_input,
+                use_reasoning=True,
+            )
+        except Exception as exc:
+            response.setdefault("warnings", [])
+            response["warnings"].append(
+                f"Trader continuation failed: {exc}"
+            )
+            return response
+
+        specialists["trader_agent"] = trader_response
+        response["trader_input"] = trader_input
+
+        agents = response.get("agents_called")
+
+        if not isinstance(agents, list):
+            agents = []
+
+        if "trader_agent" not in agents:
+            agents.append("trader_agent")
+
+        response["agents_called"] = agents
+
+        return response
+
+    def run_user_agent_from_text(user_text):
+        response = _run_user_agent_from_text_before_json_regression_v10(
+            user_text
+        )
+
+        if not isinstance(response, dict):
+            return response
+
+        route = _json_v10_text_route(user_text)
+
+        response = _json_v10_recursive_route_sync(
+            response,
+            route["origin"],
+            route["destination"],
+        )
+
+        if _json_v10_should_continue_to_trader(
+            response,
+            user_text,
+        ):
+            response = _json_v10_continue_to_trader(
+                response,
+                user_text,
+            )
+
+        try:
+            response = _attach_final_verdict(response)
+        except Exception:
+            pass
+
+        return response
+
+except Exception:
+    pass
+
+# Final text-specialist routing fixes v11.
+try:
+    from app.final_text_response_fixes import (
+        build_document_specialists as _v11_build_document_specialists,
+        build_finance_specialist as _v11_build_finance_specialist,
+        clean_product_name as _v11_clean_product_name,
+        extract_finance_fields as _v11_extract_finance_fields,
+        extract_incoterm as _v11_extract_incoterm,
+        extract_route as _v11_extract_route,
+        is_document_requirements_request as _v11_is_document_request,
+        is_landed_cost_request as _v11_is_landed_cost_request,
+        repair_raw_response as _v11_repair_raw_response,
+    )
+
+    _run_user_agent_from_text_before_final_v11 = (
+        run_user_agent_from_text
+    )
+
+    def _v11_unique(values):
+        output = []
+        seen = set()
+
+        for value in values:
+            key = str(value).strip().lower()
+
+            if key and key not in seen:
+                seen.add(key)
+                output.append(value)
+
+        return output
+
+    def _v11_add_document_agents(response, text):
+        document_response, compliance_response = (
+            _v11_build_document_specialists(text)
+        )
+
+        response.update(
+            {
+                "agent_name": "user_agent",
+                "status": "review_required",
+                "detected_intent": "document",
+                "agents_called": [
+                    "document_ai_agent",
+                    "compliance_agent",
+                ],
+                "summary": (
+                    "User Agent routed the request to "
+                    "Document AI Agent and Compliance Agent."
+                ),
+                "specialist_response": document_response,
+                "specialist_responses": {
+                    "document_ai_agent": document_response,
+                    "compliance_agent": compliance_response,
+                },
+                "missing_information": _v11_unique(
+                    document_response.get(
+                        "missing_information",
+                        [],
+                    )
+                    + compliance_response.get(
+                        "missing_information",
+                        [],
+                    )
+                ),
+                "handoff_payload": document_response.get(
+                    "handoff_payload",
+                    {},
+                ),
+                "final_answer": (
+                    document_response["summary"]
+                    + " "
+                    + compliance_response["summary"]
+                ),
+                "route_reason": (
+                    "The request asks for invoice, "
+                    "packing-list and dangerous-goods "
+                    "document requirements."
+                ),
+            }
+        )
+
+        return response
+
+    def _v11_add_trader(response, text):
+        agents = response.get("agents_called")
+
+        if not isinstance(agents, list):
+            agents = []
+
+        if "trader_agent" in agents:
+            return response
+
+        route = _v11_extract_route(text)
+        incoterm = _v11_extract_incoterm(text)
+
+        if (
+            not route.get("origin")
+            or not route.get("destination")
+            or not incoterm
+        ):
+            return response
+
+        if not any(
+            agent in agents
+            for agent in [
+                "logistics_agent",
+                "shopping_agent",
+            ]
+        ):
+            return response
+
+        try:
+            trader_input = _build_trader_input_from_text(
+                text
+            )
+
+            if not isinstance(trader_input, dict):
+                trader_input = {}
+
+            for key in [
+                "product_description",
+                "product_name",
+            ]:
+                if trader_input.get(key):
+                    trader_input[key] = (
+                        _v11_clean_product_name(
+                            trader_input[key]
+                        )
+                    )
+
+            trader_input["country_from"] = route[
+                "origin"
+            ]
+            trader_input["origin_country"] = route[
+                "origin"
+            ]
+            trader_input["country_to"] = route[
+                "destination"
+            ]
+            trader_input["destination_country"] = (
+                route["destination"]
+            )
+            trader_input["incoterm"] = incoterm
+            trader_input["trade_term"] = incoterm
+
+            trader_response = run_trader_agent(
+                trader_input,
+                use_reasoning=True,
+            )
+        except Exception as exc:
+            response.setdefault("warnings", [])
+            response["warnings"].append(
+                f"Trader continuation failed: {exc}"
+            )
+            return response
+
+        specialists = response.get(
+            "specialist_responses"
+        )
+
+        if not isinstance(specialists, dict):
+            specialists = {}
+            response["specialist_responses"] = specialists
+
+        specialists["trader_agent"] = trader_response
+
+        agents.append("trader_agent")
+        response["agents_called"] = _v11_unique(agents)
+        response["trader_input"] = trader_input
+
+        response.setdefault("missing_information", [])
+        response["missing_information"] = _v11_unique(
+            response["missing_information"]
+            + trader_response.get(
+                "missing_information",
+                [],
+            )
+        )
+
+        return response
+
+    def _v11_add_finance(response, text):
+        if not _v11_is_landed_cost_request(text):
+            return response
+
+        finance_response = _v11_build_finance_specialist(
+            text
+        )
+
+        agents = response.get("agents_called")
+
+        if not isinstance(agents, list):
+            agents = []
+
+        if "finance_agent" not in agents:
+            agents.append("finance_agent")
+
+        response["agents_called"] = _v11_unique(agents)
+
+        specialists = response.get(
+            "specialist_responses"
+        )
+
+        if not isinstance(specialists, dict):
+            specialists = {}
+            response["specialist_responses"] = specialists
+
+        specialists["finance_agent"] = finance_response
+
+        fields = _v11_extract_finance_fields(text)
+
+        response["finance_input"] = fields
+        response["finance_payload"] = {
+            **fields,
+            **finance_response.get(
+                "handoff_payload",
+                {},
+            ),
+        }
+        response["text_cost_inputs"] = fields
+        response["landed_cost_advice"] = (
+            finance_response.get("calculation")
+        )
+        response["status"] = "review_required"
+        response["summary"] = (
+            "User Agent routed the request to "
+            "Trader Agent and Finance Agent."
+        )
+
+        missing = response.get("missing_information")
+
+        if not isinstance(missing, list):
+            missing = []
+
+        known = set(fields)
+
+        response["missing_information"] = [
+            item
+            for item in missing
+            if str(item) not in known
+        ]
+
+        return response
+
+    def run_user_agent_from_text(user_text):
+        response = (
+            _run_user_agent_from_text_before_final_v11(
+                user_text
+            )
+        )
+
+        if not isinstance(response, dict):
+            return response
+
+        if (
+            response.get("detected_intent") == "document"
+            and _v11_is_document_request(user_text)
+            and not response.get("agents_called")
+        ):
+            response = _v11_add_document_agents(
+                response,
+                user_text,
+            )
+
+        response = _v11_add_trader(
+            response,
+            user_text,
+        )
+        response = _v11_add_finance(
+            response,
+            user_text,
+        )
+        response = _v11_repair_raw_response(
+            response,
+            user_text,
+        )
+
+        try:
+            response = _attach_final_verdict(response)
+        except Exception:
+            pass
+
+        return response
+
+except Exception:
+    pass
+
+
+# Q1 product extraction fix v12
+try:
+    _previous_extract_product_from_trade_text_q1_v12 = _extract_product_from_trade_text
+except Exception:
+    _previous_extract_product_from_trade_text_q1_v12 = None
+
+
+def _q1_v12_clean_product_name(value):
+    import re
+
+    name = str(value or "").strip()
+
+    if not name:
+        return None
+
+    name = re.sub(
+        r"\s+(?:exported|shipped|imported)\s+from\s+.+$",
+        "",
+        name,
+        flags=re.IGNORECASE,
+    )
+
+    name = re.sub(
+        r"\s+from\s+[A-Za-z][A-Za-z\s]+?\s+to\s+(?:the\s+)?[A-Za-z][A-Za-z\s]+.*$",
+        "",
+        name,
+        flags=re.IGNORECASE,
+    )
+
+    name = re.sub(
+        r"\s+using\s+(?:EXW|FCA|FAS|FOB|CFR|CIF|CPT|CIP|DAP|DPU|DDP)\b.*$",
+        "",
+        name,
+        flags=re.IGNORECASE,
+    )
+
+    name = re.sub(
+        r"^(?:what\s+is\s+)?(?:the\s+)?(?:hs\s+code|import\s+duty\s+rate|fta\s+status|and|,|\s)+\s*(?:for\s+)?",
+        "",
+        name,
+        flags=re.IGNORECASE,
+    )
+
+    name = re.sub(r"\s+", " ", name)
+    name = name.strip(" .,:;?\"'()[]{}")
+
+    return name or None
+
+
+def _extract_product_from_trade_text(text):
+    import re
+
+    raw = str(text or "").strip()
+
+    patterns = [
+        r"\b(?:for|of)\s+(.+?)\s+(?:exported|shipped|imported)\s+from\s+[A-Za-z][A-Za-z\s]+?\s+to\s+(?:the\s+)?[A-Za-z][A-Za-z\s]+",
+        r"\b(?:for|of)\s+(.+?)\s+from\s+[A-Za-z][A-Za-z\s]+?\s+to\s+(?:the\s+)?[A-Za-z][A-Za-z\s]+",
+        r"\b(?:for|of)\s+(.+?)(?:\.|,|\?|$)",
+    ]
+
+    for pattern in patterns:
+        match = re.search(pattern, raw, flags=re.IGNORECASE)
+        if match:
+            cleaned = _q1_v12_clean_product_name(match.group(1))
+            if cleaned:
+                return cleaned
+
+    if callable(_previous_extract_product_from_trade_text_q1_v12):
+        try:
+            return _q1_v12_clean_product_name(
+                _previous_extract_product_from_trade_text_q1_v12(raw)
+            )
+        except Exception:
+            return None
+
+    return None
+
+
+def _build_trader_input_from_text(text):
+    route = _extract_route_from_text(text)
+
+    return {
+        "product_description": _extract_product_from_trade_text(text),
+        "country_from": route.get("country_from"),
+        "country_to": route.get("country_to"),
+        "target_market": route.get("country_to"),
+    }
+

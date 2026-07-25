@@ -62,3 +62,7 @@ node_modules/
 
 # Vite build output
 frontend/dist/
+
+backups/
+
+backups/

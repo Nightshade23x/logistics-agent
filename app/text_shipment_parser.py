@@ -597,3 +597,362 @@ def parse_shipment_text(text: str) -> dict[str, Any]:
         result["issues"].append("No requested items were provided.")
 
     return result
+
+
+# Container-of-cargo short text parser support v1.
+# Handles compact prompts such as:
+# "20ft container of hazardous chemicals, destination Germany"
+# This belongs in the parser, not user_agent routing.
+try:
+    _parse_shipment_text_before_container_of_cargo_v1 = parse_shipment_text
+
+    def _container_v1_clean_country(value: str | None) -> str | None:
+        raw = str(value or "").strip()
+        if not raw:
+            return None
+
+        aliases = {
+            "usa": "USA",
+            "us": "USA",
+            "u.s.": "USA",
+            "u.s.a.": "USA",
+            "united states": "USA",
+            "united states of america": "USA",
+            "uk": "UK",
+            "united kingdom": "UK",
+            "uae": "UAE",
+            "turkiye": "Turkey",
+        }
+
+        key = raw.lower()
+        return aliases.get(key, raw[:1].upper() + raw[1:])
+
+    def _container_v1_extract_destination(text: str | None) -> str | None:
+        raw = str(text or "")
+
+        country_group = (
+            r"USA|US|U\.S\.|U\.S\.A\.|United States|United States of America|"
+            r"India|Germany|UK|United Kingdom|China|Turkey|Turkiye|UAE|Iran|"
+            r"Zambia|Finland|Spain|Portugal|France|Italy|Canada|Mexico|Japan|"
+            r"Singapore|Australia|Netherlands|Belgium|Sweden|Norway|Denmark"
+        )
+
+        patterns = [
+            rf"\b(?:destination|dest|destination_country|country_to)\s*(?:is|=|:)?\s*({country_group})\b",
+            rf"\bto\s+({country_group})\b",
+            rf"\binto\s+({country_group})\b",
+        ]
+
+        for pattern in patterns:
+            match = re.search(pattern, raw, flags=re.IGNORECASE)
+            if match:
+                return _container_v1_clean_country(match.group(1))
+
+        return None
+
+    def _container_v1_extract_origin(text: str | None) -> str | None:
+        raw = str(text or "")
+
+        country_group = (
+            r"USA|US|U\.S\.|U\.S\.A\.|United States|United States of America|"
+            r"India|Germany|UK|United Kingdom|China|Turkey|Turkiye|UAE|Iran|"
+            r"Zambia|Finland|Spain|Portugal|France|Italy|Canada|Mexico|Japan|"
+            r"Singapore|Australia|Netherlands|Belgium|Sweden|Norway|Denmark"
+        )
+
+        match = re.search(rf"\bfrom\s+({country_group})\b", raw, flags=re.IGNORECASE)
+        if match:
+            return _container_v1_clean_country(match.group(1))
+
+        return None
+
+    def _container_v1_requested_container(text: str | None) -> str | None:
+        raw = str(text or "")
+        match = re.search(r"\b(20|40)\s*ft\b", raw, flags=re.IGNORECASE)
+        if match:
+            return f"{match.group(1)}ft Standard Container"
+        if re.search(r"\bcontainer\b", raw, flags=re.IGNORECASE):
+            return "20ft Standard Container"
+        return None
+
+    def _container_v1_extract_cargo_name(text: str | None) -> str | None:
+        raw = str(text or "")
+
+        patterns = [
+            r"\b(?:20|40)\s*ft\s+container\s+of\s+(.+?)(?=,|;|\.|\bdestination\b|\bto\b|\bfrom\b|$)",
+            r"\bcontainer\s+of\s+(.+?)(?=,|;|\.|\bdestination\b|\bto\b|\bfrom\b|$)",
+        ]
+
+        for pattern in patterns:
+            match = re.search(pattern, raw, flags=re.IGNORECASE)
+            if match:
+                name = match.group(1).strip()
+                name = re.sub(r"\s+", " ", name).strip(" ,.;:")
+                if name:
+                    return name.lower()
+
+        return None
+
+    def _container_v1_is_hazardous(text: str | None, cargo_name: str | None) -> bool:
+        lowered = (str(text or "") + " " + str(cargo_name or "")).lower()
+        return any(
+            token in lowered
+            for token in [
+                "hazardous",
+                "dangerous goods",
+                "chemical",
+                "chemicals",
+                "battery",
+                "batteries",
+                "radioactive",
+                "flammable",
+                "corrosive",
+            ]
+        )
+
+    def _container_v1_build_item(text: str | None) -> dict | None:
+        cargo_name = _container_v1_extract_cargo_name(text)
+
+        if not cargo_name:
+            return None
+
+        hazardous = _container_v1_is_hazardous(text, cargo_name)
+
+        category_tags = ["general_cargo"]
+        notes = "Container-of-cargo item extracted from compact free-text prompt."
+
+        if hazardous:
+            category_tags = ["hazardous", "chemical", "dangerous_goods", "non_stackable"]
+            notes = (
+                "Hazardous cargo; confirm UN number, hazard class, packing group, "
+                "SDS/MSDS, packaging, quantity, and carrier acceptance."
+            )
+
+        return {
+            "item_name": cargo_name,
+            "quantity": 1,
+            "dimensions_m": {
+                "length": 1.2,
+                "width": 1.0,
+                "height": 1.0,
+            },
+            "unit_cbm": 1.2,
+            "total_cbm": 1.2,
+            "unit_weight_kg": 1000 if hazardous else 100,
+            "total_weight_kg": 1000 if hazardous else 100,
+            "stackable": False if hazardous else True,
+            "hazardous": hazardous,
+            "category_tags": category_tags,
+            "notes": notes,
+        }
+
+    def parse_shipment_text(text: str):
+        result = _parse_shipment_text_before_container_of_cargo_v1(text)
+
+        if not isinstance(result, dict):
+            return result
+
+        raw = str(text or "")
+
+        destination = _container_v1_extract_destination(raw)
+        origin = _container_v1_extract_origin(raw)
+        requested_container = _container_v1_requested_container(raw)
+        fallback_item = _container_v1_build_item(raw)
+
+        if destination:
+            for key in ["destination", "destination_country", "country_to", "target_market"]:
+                result[key] = destination
+
+        if origin:
+            for key in ["origin", "origin_country", "country_from"]:
+                result[key] = origin
+
+        if requested_container:
+            result["requested_container"] = requested_container
+            result["container_type"] = requested_container
+            result["recommended_container"] = requested_container
+
+        items = result.get("items")
+        if not isinstance(items, list):
+            items = []
+
+        if fallback_item and not items:
+            items.append(fallback_item)
+            result["items"] = items
+
+            result["total_cbm"] = fallback_item["total_cbm"]
+            result["total_weight_kg"] = fallback_item["total_weight_kg"]
+
+            if fallback_item.get("hazardous"):
+                result.setdefault("issues", [])
+                if isinstance(result["issues"], list):
+                    result["issues"].append(
+                        "Hazardous cargo requires DG classification, SDS/MSDS, packaging details, and carrier acceptance."
+                    )
+
+        return result
+
+except Exception:
+    pass
+
+# JSON regression fixes v10: explicit shipment properties
+#
+# Explicit information in the prompt must override catalogue defaults.
+try:
+    _parse_shipment_text_before_json_regression_v10 = parse_shipment_text
+
+    def _json_v10_float(value):
+        try:
+            return float(str(value).replace(",", "").strip())
+        except Exception:
+            return None
+
+    def _json_v10_clean_item_name(value):
+        name = str(value or "")
+
+        name = re.sub(
+            r"\s+\bweighing\s+[0-9][0-9,.]*\s*"
+            r"(?:kg|kgs|kilograms?|lb|lbs|pounds?)\b",
+            "",
+            name,
+            flags=re.IGNORECASE,
+        )
+
+        name = re.sub(
+            r"\s+\bfrom\s+.+$",
+            "",
+            name,
+            flags=re.IGNORECASE,
+        )
+
+        name = re.sub(
+            r"\s+\b(?:under|using|use)\s+(?:the\s+)?"
+            r"(?:EXW|FCA|FAS|FOB|CFR|CIF|CPT|CIP|DAP|DPU|DDP)\b.*$",
+            "",
+            name,
+            flags=re.IGNORECASE,
+        )
+
+        return re.sub(r"\s+", " ", name).strip(" ,.;:-")
+
+    def _json_v10_explicit_weight(text):
+        match = re.search(
+            r"\bweighing\s+([0-9][0-9,.]*)\s*"
+            r"(kg|kgs|kilograms?|lb|lbs|pounds?)\b",
+            str(text or ""),
+            flags=re.IGNORECASE,
+        )
+
+        if not match:
+            return None
+
+        value = _json_v10_float(match.group(1))
+
+        if value is None:
+            return None
+
+        unit = str(match.group(2)).lower()
+
+        if unit in {"lb", "lbs", "pound", "pounds"}:
+            value *= 0.45359237
+
+        return round(value, 6)
+
+    def _json_v10_explicit_cbm(text):
+        match = re.search(
+            r"\b([0-9][0-9,.]*)\s*"
+            r"(?:cbm|m3|m\^3|cubic\s+meters?|cubic\s+metres?)\b",
+            str(text or ""),
+            flags=re.IGNORECASE,
+        )
+
+        if not match:
+            return None
+
+        return _json_v10_float(match.group(1))
+
+    def parse_shipment_text(text: str):
+        result = _parse_shipment_text_before_json_regression_v10(text)
+
+        if not isinstance(result, dict):
+            return result
+
+        raw = str(text or "")
+        lowered = raw.lower()
+
+        weight = _json_v10_explicit_weight(raw)
+        cbm = _json_v10_explicit_cbm(raw)
+
+        items = result.get("items")
+
+        if not isinstance(items, list):
+            items = []
+            result["items"] = items
+
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+
+            item["name"] = _json_v10_clean_item_name(
+                item.get("name")
+                or item.get("item_name")
+                or item.get("product_name")
+                or "cargo"
+            )
+
+            quantity = item.get("quantity") or 1
+
+            try:
+                quantity_number = float(quantity)
+            except Exception:
+                quantity_number = 1.0
+
+            if len(items) == 1 and weight is not None:
+                item["total_weight_kg"] = weight
+                item["unit_weight_kg"] = round(
+                    weight / quantity_number,
+                    6,
+                )
+                item["weight_kg"] = round(
+                    weight / quantity_number,
+                    6,
+                )
+
+            if len(items) == 1 and cbm is not None:
+                item["total_cbm"] = cbm
+                item["unit_cbm"] = round(
+                    cbm / quantity_number,
+                    6,
+                )
+                item["aggregate_volume_only"] = True
+                item["dimensions_are_aggregate"] = True
+
+            if (
+                "non-stackable" in lowered
+                or "non stackable" in lowered
+                or "do not stack" in lowered
+            ):
+                item["stackable"] = False
+
+            if any(
+                token in lowered
+                for token in [
+                    "hazardous",
+                    "dangerous goods",
+                    "lithium battery",
+                    "lithium batteries",
+                    "radioactive",
+                ]
+            ):
+                item["hazardous"] = True
+
+        if weight is not None:
+            result["total_weight_kg"] = weight
+
+        if cbm is not None:
+            result["total_cbm"] = cbm
+
+        return result
+
+except Exception:
+    pass
