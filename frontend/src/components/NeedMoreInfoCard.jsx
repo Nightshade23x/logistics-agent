@@ -2,14 +2,36 @@ import { useState } from "react";
 import { api } from "../api.js";
 
 // Surfaces `action_plan.user_questions` / `clarification_questions` as an
-// actual form instead of a dead-end bullet list. Answers get appended as
-// plain-English follow-up sentences to the original request and resubmitted
-// through the same text pipeline — so it inherits whatever the parser can
-// already handle (e.g. answering "FOB" to the Incoterm question works best
-// if phrased as "Use FOB incoterm", since that's what the backend regex
-// looks for). This is a first pass: a more robust version would map answers
-// straight into Structured JSON fields instead of round-tripping through
-// free-text parsing again.
+// actual form instead of a dead-end bullet list. Answers get formatted into
+// the specific phrasing the backend parsers actually look for (verified
+// directly against app/shopping_text_parser.py and app/text_shipment_parser.py
+// rather than guessed), then appended as new lines to the original request
+// and resubmitted through the same text pipeline. Known formats:
+//   - "destination" questions -> "Destination: <answer>" on its own line
+//     (shopping_text_parser.py only matches this exact labeled-line form,
+//     not "to <country>" inline phrasing)
+//   - "incoterm" questions -> "Use <answer> incoterm." if the answer doesn't
+//     already say "incoterm"
+//   - everything else -> the raw answer, on its own line, prefixed with the
+//     question so context isn't lost
+// This still can't fill fields the backend has no extraction pattern for at
+// all (freight/insurance/duty/import-tax/customs/local-delivery in the
+// shopping-intent parser) — that's a backend gap, not something client-side
+// formatting can work around.
+function formatAnswerLine(question, answer) {
+  const q = question.toLowerCase();
+  const a = answer.trim();
+  if (!a) return null;
+
+  if (q.includes("destination")) {
+    return `Destination: ${a}`;
+  }
+  if (q.includes("incoterm")) {
+    return /incoterm/i.test(a) ? a : `Use ${a} incoterm.`;
+  }
+  return `${question} ${a}.`;
+}
+
 export default function NeedMoreInfoCard({ result, originalText, onResult }) {
   const questions =
     (result?.clarification_questions?.length && result.clarification_questions) ||
@@ -28,18 +50,18 @@ export default function NeedMoreInfoCard({ result, originalText, onResult }) {
   }
 
   async function handleSubmit() {
-    const answeredLines = questions
-      .map((q) => (answers[q] || "").trim())
+    const formattedLines = questions
+      .map((q) => formatAnswerLine(q, answers[q] || ""))
       .filter(Boolean);
     const extraLine = extra.trim();
 
-    if (!answeredLines.length && !extraLine) {
+    if (!formattedLines.length && !extraLine) {
       setError("Answer at least one question, or add a note, before submitting.");
       return;
     }
 
-    const followUp = [...answeredLines, extraLine].filter(Boolean).join(". ");
-    const combinedText = `${originalText}\n\nAdditional information: ${followUp}.`;
+    const allLines = [...formattedLines, extraLine].filter(Boolean);
+    const combinedText = `${originalText}\n\n${allLines.join("\n")}`;
 
     setLoading(true);
     setError(null);
