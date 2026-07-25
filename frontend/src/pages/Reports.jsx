@@ -69,6 +69,11 @@ export default function Reports() {
                     <div className="card-body">
                       <p style={{ fontWeight: 500, marginBottom: 10 }}>{fa?.headline}</p>
                       {fa?.answer_text && <p style={{ color: "var(--text-secondary)", marginBottom: 12 }}>{fa.answer_text}</p>}
+                      {result.agents_called?.length > 0 && (
+                        <p style={{ color: "var(--text-muted)", fontSize: 13, marginBottom: 12 }}>
+                          <strong>Agents used:</strong> {result.agents_called.join(", ")}
+                        </p>
+                      )}
                       <div className="grid-2">
                         <div>
                           <div className="form-label">Ready items</div>
@@ -81,6 +86,12 @@ export default function Reports() {
                       </div>
                     </div>
                   </div>
+
+                  <ChecklistCard
+                    title="Missing Information"
+                    items={result.missing_information_preview}
+                    priority="high"
+                  />
 
                   <ChecklistCard title="Immediate Actions" items={ap?.immediate_actions} priority="high" />
                   <ChecklistCard title="Before Booking" items={ap?.before_booking} priority="med" />
