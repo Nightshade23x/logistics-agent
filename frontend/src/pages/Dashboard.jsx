@@ -4,6 +4,7 @@ import { api } from "../api.js";
 import { useStore } from "../store.jsx";
 import Badge from "../components/Badge.jsx";
 import AnswerCard from "../components/AnswerCard.jsx";
+import NeedMoreInfoCard from "../components/NeedMoreInfoCard.jsx";
 
 const SAMPLE_TEXT =
   "I need 50 TVs, 5 scooters, and 100 ceramic tiles. Prefer suppliers from India. Avoid China. Budget 13000 USD.";
@@ -187,6 +188,9 @@ export default function Dashboard() {
       )}
 
       {result && <AnswerCard result={result} />}
+      {result && (
+        <NeedMoreInfoCard result={result} originalText={text} onResult={setResult} />
+      )}
 
       <div className="card">
         <div className="card-header">

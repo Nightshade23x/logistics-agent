@@ -20,7 +20,7 @@ export default function AnswerCard({ result }) {
   const warnings = fa?.warnings?.length ? fa.warnings : [];
 
   return (
-    <div className="card" style={{ borderLeft: "4px solid var(--accent-teal, #0f9d8f)" }}>
+    <div className="card" style={{ borderLeft: "4px solid var(--accent-teal)" }}>
       <div className="card-header">
         <div className="card-title">Answer</div>
         <Badge status={fa?.status} />
