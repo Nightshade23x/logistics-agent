@@ -273,3 +273,12 @@ def parse_shopping_request_text(text: str) -> dict[str, Any]:
 def read_shopping_request_text(path: str) -> dict[str, Any]:
     with open(path, "r", encoding="utf-8-sig") as file:
         return parse_shopping_request_text(file.read())
+
+
+# Shopping parser final enrichment hook v2
+try:
+    from app.shopping_parser_final_fixes import install_shopping_parser_final_wrappers
+    install_shopping_parser_final_wrappers(globals())
+except Exception:
+    pass
+

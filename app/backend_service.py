@@ -1599,3 +1599,30 @@ try:
 except Exception:
     pass
 
+
+# Shopping parser final backend enrichment wrapper v2
+try:
+    from app.shopping_parser_final_fixes import enrich_backend_payload as _shopping_parser_v2_enrich_backend_payload
+
+    if not getattr(process_text_request, "_shopping_parser_v2_wrapped", False):
+        _shopping_parser_v2_previous_process_text_request = process_text_request
+
+        def process_text_request(*args, **kwargs):
+            prompt_text = None
+
+            if args:
+                prompt_text = args[0]
+            else:
+                for _shopping_parser_v2_key in ("input_text", "text", "prompt", "query", "message"):
+                    if _shopping_parser_v2_key in kwargs:
+                        prompt_text = kwargs.get(_shopping_parser_v2_key)
+                        break
+
+            payload = _shopping_parser_v2_previous_process_text_request(*args, **kwargs)
+            return _shopping_parser_v2_enrich_backend_payload(payload, prompt_text)
+
+        process_text_request._shopping_parser_v2_wrapped = True
+
+except Exception:
+    pass
+
