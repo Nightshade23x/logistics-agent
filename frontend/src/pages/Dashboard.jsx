@@ -192,7 +192,13 @@ export default function Dashboard() {
         <NeedMoreInfoCard result={result} originalText={text} onResult={setResult} />
       )}
 
-      <div className="card">
+      <div className="recent-requests-dropdown">
+        <details>
+          <summary>
+            <span>Recent Requests</span>
+            <span className="recent-requests-summary-help">Show or hide request history</span>
+          </summary>
+          <div className="card">
         <div className="card-header">
           <div className="card-title">Recent Requests</div>
         </div>
@@ -225,6 +231,8 @@ export default function Dashboard() {
             </div>
           )}
         </div>
+      </div>
+        </details>
       </div>
     </>
   );

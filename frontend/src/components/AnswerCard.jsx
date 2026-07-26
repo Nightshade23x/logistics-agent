@@ -1,10 +1,35 @@
 ﻿import Badge from "./Badge.jsx";
+import AnswerFlow from "./AnswerFlow.jsx";
 import {
+  buildNextStepFlow,
   getAgentSummaryFallback,
   getAnswerActions,
   getAnswerStatus,
+  parseAnswerSections,
   pickUserFacingAnswer,
 } from "../utils/userFacingAnswer.js";
+
+function AnswerSection({ section }) {
+  return (
+    <div className="answer-section">
+      <div className="answer-section-title">{section.title}</div>
+
+      {section.body.map((paragraph, index) => (
+        <p className="answer-paragraph" key={`p-${index}`}>
+          {paragraph}
+        </p>
+      ))}
+
+      {section.bullets.length > 0 && (
+        <ul className="answer-bullets">
+          {section.bullets.map((bullet, index) => (
+            <li key={`b-${index}`}>{bullet}</li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
 
 export default function AnswerCard({ result }) {
   const answerText = pickUserFacingAnswer(result);
@@ -12,40 +37,31 @@ export default function AnswerCard({ result }) {
   const displayText = answerText || fallbackText;
   const actions = getAnswerActions(result);
   const status = getAnswerStatus(result);
+  const sections = parseAnswerSections(displayText);
+  const flowSteps = buildNextStepFlow(result, actions);
 
-  if (!displayText && !actions.length) return null;
+  if (!displayText && !actions.length && !flowSteps.length) return null;
 
   return (
-    <div className="card" style={{ borderLeft: "4px solid var(--accent-teal)" }}>
-      <div className="card-header">
-        <div className="card-title">Answer</div>
+    <div className="card answer-card-v2">
+      <div className="card-header answer-card-header">
+        <div>
+          <div className="card-title">Answer</div>
+          <div className="answer-subtitle">Clear first-pass result and next workflow steps</div>
+        </div>
         <Badge status={status} />
       </div>
 
       <div className="card-body">
-        {displayText && (
-          <div
-            style={{
-              color: "var(--text-secondary)",
-              whiteSpace: "pre-wrap",
-              lineHeight: 1.65,
-              marginBottom: actions.length ? 16 : 0,
-            }}
-          >
-            {displayText}
+        <div className="answer-layout">
+          <div className="answer-main">
+            {sections.map((section, index) => (
+              <AnswerSection section={section} key={`${section.title}-${index}`} />
+            ))}
           </div>
-        )}
 
-        {actions.length > 0 && (
-          <div style={{ marginTop: 12 }}>
-            <div className="form-label">What to do next</div>
-            <ul className="bullets">
-              {actions.slice(0, 8).map((action, index) => (
-                <li key={index}>{action}</li>
-              ))}
-            </ul>
-          </div>
-        )}
+          <AnswerFlow steps={flowSteps} />
+        </div>
       </div>
     </div>
   );

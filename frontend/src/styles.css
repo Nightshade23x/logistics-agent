@@ -663,3 +663,210 @@ pre.json-view { background: var(--navy-900); color: #d9e2ec; padding: 14px; bord
   }
 }
 
+/* ANSWER UI V2 START */
+
+.answer-card-v2 {
+  border-left: 4px solid var(--accent-teal);
+  overflow: hidden;
+}
+
+.answer-card-header {
+  align-items: flex-start;
+}
+
+.answer-subtitle {
+  color: var(--text-muted);
+  font-size: 13px;
+  margin-top: 4px;
+}
+
+.answer-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.65fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.answer-main {
+  display: grid;
+  gap: 14px;
+}
+
+.answer-section {
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 16px;
+}
+
+.answer-section-title {
+  color: var(--text-primary);
+  font-weight: 700;
+  margin-bottom: 10px;
+  letter-spacing: 0.02em;
+}
+
+.answer-paragraph {
+  color: var(--text-secondary);
+  line-height: 1.65;
+  margin: 0 0 10px 0;
+}
+
+.answer-paragraph:last-child {
+  margin-bottom: 0;
+}
+
+.answer-bullets {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--text-secondary);
+}
+
+.answer-bullets li {
+  margin-bottom: 8px;
+  line-height: 1.55;
+}
+
+.answer-bullets li:last-child {
+  margin-bottom: 0;
+}
+
+.answer-flow {
+  position: sticky;
+  top: 18px;
+  background: linear-gradient(180deg, rgba(0, 188, 174, 0.08), rgba(255, 255, 255, 0.025));
+  border: 1px solid rgba(0, 188, 174, 0.35);
+  border-radius: 16px;
+  padding: 16px;
+}
+
+.answer-flow-title {
+  color: var(--text-primary);
+  font-weight: 800;
+  margin-bottom: 14px;
+}
+
+.answer-flow-track {
+  display: grid;
+  gap: 10px;
+}
+
+.answer-flow-item-wrap {
+  display: grid;
+  gap: 10px;
+}
+
+.answer-flow-item {
+  display: grid;
+  grid-template-columns: 36px 1fr;
+  gap: 12px;
+  background: rgba(0, 0, 0, 0.16);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 12px;
+}
+
+.answer-flow-item.is-now {
+  border-color: var(--accent-teal);
+  box-shadow: 0 0 0 1px rgba(0, 188, 174, 0.2);
+}
+
+.answer-flow-number {
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  background: var(--accent-teal);
+  color: #061414;
+  font-weight: 900;
+}
+
+.answer-flow-step-title {
+  color: var(--text-primary);
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.answer-flow-tab {
+  color: var(--accent-blue);
+  font-size: 13px;
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+
+.answer-flow-detail {
+  color: var(--text-secondary);
+  line-height: 1.45;
+  font-size: 13px;
+}
+
+.answer-flow-arrow {
+  color: var(--accent-teal);
+  font-size: 22px;
+  font-weight: 900;
+  padding-left: 14px;
+}
+
+.recent-requests-dropdown {
+  margin-top: 16px;
+}
+
+.recent-requests-dropdown details {
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  overflow: hidden;
+  background: var(--surface);
+}
+
+.recent-requests-dropdown summary {
+  cursor: pointer;
+  list-style: none;
+  padding: 16px 18px;
+  color: var(--text-primary);
+  font-weight: 800;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.recent-requests-dropdown summary::-webkit-details-marker {
+  display: none;
+}
+
+.recent-requests-dropdown summary::after {
+  content: "Show";
+  color: var(--accent-blue);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.recent-requests-dropdown details[open] summary::after {
+  content: "Hide";
+}
+
+.recent-requests-summary-help {
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 500;
+  margin-left: 12px;
+}
+
+.recent-requests-dropdown .card {
+  border: 0;
+  border-top: 1px solid var(--border);
+  border-radius: 0;
+  margin: 0;
+}
+
+@media (max-width: 1100px) {
+  .answer-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .answer-flow {
+    position: static;
+  }
+}
+
+/* ANSWER UI V2 END */
