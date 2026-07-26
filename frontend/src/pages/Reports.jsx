@@ -1,31 +1,7 @@
 import Badge from "../components/Badge.jsx";
-import { getAnswerActions, getAnswerStatus, pickUserFacingAnswer } from "../utils/userFacingAnswer.js";
+import AnswerCard from "../components/AnswerCard.jsx";
 import ResultGate from "../components/ResultGate.jsx";
-
-function ChecklistCard({ title, items, priority = "med" }) {
-  if (!items || items.length === 0) return null;
-  return (
-    <div className="card">
-      <div className="card-header">
-        <div className="card-title">{title}</div>
-        <span className="tab-count">{items.length}</span>
-      </div>
-      <div className="card-body tight">
-        <ul className="checklist" style={{ padding: "0 18px" }}>
-          {items.map((item, i) => (
-            <li key={i}>
-              <input type="checkbox" readOnly />
-              <div className="check-content">
-                <div className="check-title">{item}</div>
-              </div>
-              <span className={`check-priority ${priority}`}>{priority}</span>
-            </li>
-          ))}
-        </ul>
-      </div>
-    </div>
-  );
-}
+import { cleanText, formatValue, groupItems, humanizeKey, uniq } from "../utils/displayFormat.js";
 
 function downloadJson(data, filename) {
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
@@ -37,100 +13,128 @@ function downloadJson(data, filename) {
   URL.revokeObjectURL(url);
 }
 
+function ChecklistCard({ title, items, priority, grouped }) {
+  const list = uniq(Array.isArray(items) ? items : []);
+
+  if (!list.length) return null;
+
+  if (grouped) {
+    const groups = groupItems(list);
+
+    return (
+      <div className="card">
+        <div className="card-header">
+          <div className="card-title">{title}</div>
+          <span className="tab-count">{list.length}</span>
+        </div>
+        <div className="card-body grouped-list">
+          {Object.entries(groups).map(([group, groupItems]) => (
+            <div className="grouped-list-block" key={group}>
+              <div className="grouped-list-title">{group}</div>
+              <ul className="compact-list">
+                {groupItems.map((item, index) => <li key={index}>{humanizeKey(item)}</li>)}
+              </ul>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="card">
+      <div className="card-header">
+        <div className="card-title">{title}</div>
+        <span className="tab-count">{list.length}</span>
+      </div>
+      <div className="card-body">
+        <div className="report-checklist">
+          {list.map((item, index) => (
+            <label className="report-check-row" key={`${item}-${index}`}>
+              <input type="checkbox" />
+              <span>{humanizeKey(cleanText(item))}</span>
+              <em>{priority || "med"}</em>
+            </label>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function BookingReadiness({ br }) {
+  return (
+    <div className="card">
+      <div className="card-header">
+        <div className="card-title">Booking readiness</div>
+        <Badge status={br?.status} />
+      </div>
+      <div className="card-body">
+        <div className="booking-score-card">
+          <div className="smart-metric-label">Score</div>
+          <div className="booking-score-value">{br?.score ?? 0}<span>/100</span></div>
+        </div>
+        <div className="preview-list-v2">
+          <div className="preview-row-v2"><span>Ready first pass</span><strong>{formatValue(br?.ready_for_first_pass)}</strong></div>
+          <div className="preview-row-v2"><span>Ready to book</span><strong>{formatValue(br?.ready_for_booking)}</strong></div>
+          <div className="preview-row-v2"><span>Next gate</span><strong>{humanizeKey(br?.next_gate || "Review")}</strong></div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function Reports() {
   return (
     <>
       <div className="page-header">
         <div>
           <div className="page-title">Reports</div>
-          <div className="page-subtitle">Final answer, action plan, and booking readiness gate.</div>
+          <div className="page-subtitle">Final answer, grouped action plan, missing information, and booking readiness.</div>
+        </div>
+        <div className="page-actions">
+          <button className="btn" onClick={() => downloadJson(window.__lastResult || {}, "shipment-report.json")}>
+            Export technical JSON
+          </button>
         </div>
       </div>
 
       <ResultGate>
         {(result) => {
-          const fa = result.final_answer;
-          const reportAnswerText = pickUserFacingAnswer(result);
-          const reportAnswerActions = getAnswerActions(result);
-          const reportAnswerStatus = getAnswerStatus(result);
-          const ap = result.action_plan;
-          const br = result.booking_readiness;
+          window.__lastResult = result;
+          const ap = result.action_plan || {};
+          const br = result.booking_readiness || {};
+
           return (
-            <>
-              <div className="page-actions" style={{ marginBottom: 16 }}>
-                <button className="btn" onClick={() => downloadJson(result, "shipment-report.json")}>
-                  ⬇ Export full JSON
-                </button>
+            <div className="content-grid">
+              <div className="content-col">
+                <AnswerCard result={result} />
+                <ChecklistCard title="Missing information" items={result.missing_information_preview} priority="high" grouped />
+                <ChecklistCard title="Immediate actions" items={ap.immediate_actions} priority="high" />
+                <ChecklistCard title="Before booking" items={ap.before_booking} priority="med" />
+                <ChecklistCard title="Partner steps" items={ap.partner_steps} priority="low" />
+                <ChecklistCard title="Open questions" items={ap.user_questions} priority="med" grouped />
               </div>
 
-              <div className="content-grid">
-                <div className="content-col">
-                  <div className="card">
-                    <div className="card-header">
-                      <div className="card-title">Final Answer</div>
-                      <Badge status={fa?.status} />
-                    </div>
-                    <div className="card-body">
-                      <p style={{ fontWeight: 500, marginBottom: 10 }}>{fa?.headline}</p>
-                      {fa?.answer_text && <p style={{ color: "var(--text-secondary)", marginBottom: 12 }}>{fa.answer_text}</p>}
-                      {result.agents_called?.length > 0 && (
-                        <p style={{ color: "var(--text-muted)", fontSize: 13, marginBottom: 12 }}>
-                          <strong>Agents used:</strong> {result.agents_called.join(", ")}
-                        </p>
-                      )}
-                      <div className="grid-2">
-                        <div>
-                          <div className="form-label">Ready items</div>
-                          <ul className="bullets">{(fa?.ready_items || []).map((x, i) => <li key={i}>{x}</li>)}</ul>
-                        </div>
-                        <div>
-                          <div className="form-label">Blockers</div>
-                          <ul className="bullets">{(fa?.blockers || []).map((x, i) => <li key={i}>{x}</li>)}</ul>
-                        </div>
-                      </div>
-                    </div>
+              <div className="content-col">
+                <BookingReadiness br={br} />
+
+                <div className="card">
+                  <div className="card-header">
+                    <div className="card-title">Next milestone</div>
+                    <Badge status={br.status || result.status} />
                   </div>
-
-                  <ChecklistCard
-                    title="Missing Information"
-                    items={result.missing_information_preview}
-                    priority="high"
-                  />
-
-                  <ChecklistCard title="Immediate Actions" items={ap?.immediate_actions} priority="high" />
-                  <ChecklistCard title="Before Booking" items={ap?.before_booking} priority="med" />
-                  <ChecklistCard title="Partner Steps" items={ap?.partner_steps} priority="low" />
-                  <ChecklistCard title="Open Questions" items={ap?.user_questions} priority="med" />
-                </div>
-
-                <div className="content-col">
-                  <div className="card">
-                    <div className="card-header">
-                      <div className="card-title">Booking Readiness</div>
-                      <Badge status={br?.status} />
-                    </div>
-                    <div className="card-body">
-                      <div className="kpi" style={{ marginBottom: 12 }}>
-                        <div className="kpi-label">Score</div>
-                        <div className="kpi-value">{br?.score}<span className="unit">/ 100</span></div>
-                      </div>
-                      <ul className="info-list">
-                        <li><span className="label">Ready first pass</span><span className="value">{String(br?.ready_for_first_pass)}</span></li>
-                        <li><span className="label">Ready to book</span><span className="value">{String(br?.ready_for_booking)}</span></li>
-                        <li><span className="label">Next gate</span><span className="value">{String(br?.next_gate || "—").replaceAll("_", " ")}</span></li>
-                      </ul>
-                    </div>
-                  </div>
-
-                  <div className="card">
-                    <div className="card-header"><div className="card-title">Next Milestone</div></div>
-                    <div className="card-body">
-                      <ul className="bullets">{(br?.next_steps || []).map((x, i) => <li key={i}>{x}</li>)}</ul>
-                    </div>
+                  <div className="card-body">
+                    <p className="section-summary">{cleanText(br.summary || ap.summary || "Review the grouped checklist before booking.")}</p>
+                    <ul className="compact-list">
+                      {(br.next_steps || ap.ready_to_continue || []).slice(0, 6).map((step, index) => (
+                        <li key={index}>{humanizeKey(step)}</li>
+                      ))}
+                    </ul>
                   </div>
                 </div>
               </div>
-            </>
+            </div>
           );
         }}
       </ResultGate>

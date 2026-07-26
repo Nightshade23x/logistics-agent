@@ -14,7 +14,7 @@ const NAV = [
     items: [
       { to: "/procurement", label: "Procurement", icon: "🛒" },
       { to: "/compliance", label: "Compliance & Docs", icon: "📄" },
-      { to: "/partner-agents", label: "Specialist Agents", icon: "🤝" },
+      { to: "/partner-agents", label: "Agent Diagnostics", icon: "🤝" },
     ],
   },
   {

@@ -1,35 +1,60 @@
 import { useState } from "react";
 import { api } from "../api.js";
+import { humanizeKey } from "../utils/displayFormat.js";
 
-// Surfaces `action_plan.user_questions` / `clarification_questions` as an
-// actual form instead of a dead-end bullet list. Answers get formatted into
-// the specific phrasing the backend parsers actually look for (verified
-// directly against app/shopping_text_parser.py and app/text_shipment_parser.py
-// rather than guessed), then appended as new lines to the original request
-// and resubmitted through the same text pipeline. Known formats:
-//   - "destination" questions -> "Destination: <answer>" on its own line
-//     (shopping_text_parser.py only matches this exact labeled-line form,
-//     not "to <country>" inline phrasing)
-//   - "incoterm" questions -> "Use <answer> incoterm." if the answer doesn't
-//     already say "incoterm"
-//   - everything else -> the raw answer, on its own line, prefixed with the
-//     question so context isn't lost
-// This still can't fill fields the backend has no extraction pattern for at
-// all (freight/insurance/duty/import-tax/customs/local-delivery in the
-// shopping-intent parser) — that's a backend gap, not something client-side
-// formatting can work around.
-function formatAnswerLine(question, answer) {
-  const q = question.toLowerCase();
-  const a = answer.trim();
-  if (!a) return null;
+function placeholderForQuestion(question) {
+  const q = String(question || "").toLowerCase();
+
+  if (q.includes("origin") || q.includes("supplier country")) {
+    return "India";
+  }
 
   if (q.includes("destination")) {
-    return `Destination: ${a}`;
+    return "Germany";
   }
+
+  if (q.includes("quantity") || q.includes("order volume")) {
+    return "1000 ceramic tiles";
+  }
+
+  if (q.includes("budget") || q.includes("target unit price")) {
+    return "Budget 12000 USD";
+  }
+
+  if (q.includes("freight") || q.includes("insurance") || q.includes("duty") || q.includes("vat") || q.includes("brokerage") || q.includes("delivery")) {
+    return "Freight 3500 USD, insurance 600 USD, duty 8%, VAT 6%, brokerage 400 USD, delivery 800 USD";
+  }
+
+  if (q.includes("dimension") || q.includes("cbm") || q.includes("weight")) {
+    return "Total cargo is 10 CBM and 1200 kg";
+  }
+
+  if (q.includes("document") || q.includes("invoice") || q.includes("packing")) {
+    return "Commercial invoice, packing list, and bill of lading will be prepared";
+  }
+
+  return "Type your answer...";
+}
+
+function formatAnswerLine(question, answer) {
+  const q = String(question || "").toLowerCase();
+  const a = String(answer || "").trim();
+
+  if (!a) return null;
+
+  if (q.includes("origin") || q.includes("supplier country")) {
+    return `Origin country: ${a}`;
+  }
+
+  if (q.includes("destination")) {
+    return `Destination country: ${a}`;
+  }
+
   if (q.includes("incoterm")) {
     return /incoterm/i.test(a) ? a : `Use ${a} incoterm.`;
   }
-  return `${question} ${a}.`;
+
+  return a;
 }
 
 export default function NeedMoreInfoCard({ result, originalText, onResult }) {
@@ -53,6 +78,7 @@ export default function NeedMoreInfoCard({ result, originalText, onResult }) {
     const formattedLines = questions
       .map((q) => formatAnswerLine(q, answers[q] || ""))
       .filter(Boolean);
+
     const extraLine = extra.trim();
 
     if (!formattedLines.length && !extraLine) {
@@ -65,56 +91,59 @@ export default function NeedMoreInfoCard({ result, originalText, onResult }) {
 
     setLoading(true);
     setError(null);
+
     try {
       const payload = await api.requestText(combinedText);
       onResult(payload, { label: combinedText.slice(0, 60) });
       setAnswers({});
       setExtra("");
     } catch (e) {
-      setError(e.message || "Failed to resubmit with the additional information.");
+      setError(e.message || "Failed to rerun the agents with the added information.");
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <div className="card" style={{ borderLeft: "4px solid var(--accent-amber)" }}>
+    <div className="card need-info-v2">
       <div className="card-header">
-        <div className="card-title">More information needed</div>
+        <div>
+          <div className="card-title">More information needed</div>
+          <div className="section-muted">Add the missing details below. The app will merge them into the original request and rerun the agents.</div>
+        </div>
       </div>
+
       <div className="card-body">
-        <p style={{ color: "var(--text-secondary)", marginBottom: 12 }}>
-          Answer any of these and resubmit — your answers get added to the original request.
-        </p>
+        <div className="need-info-grid">
+          {questions.map((q, i) => (
+            <div className="form-group" key={`${q}-${i}`}>
+              <label className="form-label">{humanizeKey(q)}</label>
+              <input
+                type="text"
+                className="form-input"
+                value={answers[q] || ""}
+                onChange={(e) => setAnswer(q, e.target.value)}
+                placeholder={placeholderForQuestion(q)}
+              />
+            </div>
+          ))}
+        </div>
 
-        {questions.map((q, i) => (
-          <div className="form-group" key={i} style={{ marginBottom: 10 }}>
-            <label className="form-label">{q}</label>
-            <input
-              type="text"
-              className="form-input"
-              value={answers[q] || ""}
-              onChange={(e) => setAnswer(q, e.target.value)}
-              placeholder="Type your answer..."
-            />
-          </div>
-        ))}
-
-        <div className="form-group" style={{ marginBottom: 10 }}>
+        <div className="form-group" style={{ marginTop: 12 }}>
           <label className="form-label">Anything else to add</label>
           <textarea
             className="form-textarea"
-            rows={2}
             value={extra}
             onChange={(e) => setExtra(e.target.value)}
-            placeholder="Optional — any other details"
+            placeholder="Optional notes, handling instructions, preferred route, document details..."
+            style={{ minHeight: 90 }}
           />
         </div>
 
-        {error && <p style={{ color: "var(--accent-red)", marginBottom: 10 }}>{error}</p>}
+        {error && <p style={{ color: "var(--danger)", marginTop: 8 }}>{error}</p>}
 
-        <button className="btn btn-teal" onClick={handleSubmit} disabled={loading}>
-          {loading ? "Resubmitting..." : "Submit additional info"}
+        <button className="btn primary" onClick={handleSubmit} disabled={loading}>
+          {loading ? "Rerunning agents..." : "Update request and rerun agents"}
         </button>
       </div>
     </div>

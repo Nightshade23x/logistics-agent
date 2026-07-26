@@ -1,22 +1,21 @@
-// Maps the backend's free-form status/decision strings onto one of the
-// reference design's 5 badge tones (clear / review / blocked / info / neutral).
-function toneFor(status) {
-  if (!status) return "neutral";
-  const s = String(status).toLowerCase();
-  if (s.includes("blocked") || s.includes("critical") || s.includes("error")) return "blocked";
-  if (s.includes("clear") || s.includes("ready") || s.includes("ok")) return "clear";
-  if (s.includes("review") || s.includes("missing") || s.includes("needs") || s.includes("partial")) return "review";
-  if (s.includes("not_configured") || s.includes("not_applicable") || s.includes("unknown")) return "neutral";
-  return "info";
+﻿import { humanizeStatus } from "../utils/displayFormat.js";
+
+function statusClass(status) {
+  const raw = String(status || "").toLowerCase();
+
+  if (raw.includes("critical") || raw.includes("blocked") || raw.includes("error")) return "blocked";
+  if (raw.includes("clear") || raw.includes("ready") || raw.includes("available")) return "clear";
+  if (raw.includes("review") || raw.includes("missing") || raw.includes("partial")) return "review_required";
+  if (raw.includes("not_applicable") || raw.includes("unavailable")) return "not_applicable";
+
+  return raw || "unknown";
 }
 
-export default function Badge({ status, label }) {
-  const tone = toneFor(status);
-  const text = label || String(status ?? "unknown").replaceAll("_", " ");
+export default function Badge({ status }) {
   return (
-    <span className={`badge ${tone}`}>
+    <span className={`badge ${statusClass(status)}`}>
       <span className="badge-dot" />
-      {text}
+      {humanizeStatus(status)}
     </span>
   );
 }
