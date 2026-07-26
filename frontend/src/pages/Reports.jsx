@@ -1,4 +1,5 @@
 import Badge from "../components/Badge.jsx";
+import { getAnswerActions, getAnswerStatus, pickUserFacingAnswer } from "../utils/userFacingAnswer.js";
 import ResultGate from "../components/ResultGate.jsx";
 
 function ChecklistCard({ title, items, priority = "med" }) {
@@ -49,6 +50,9 @@ export default function Reports() {
       <ResultGate>
         {(result) => {
           const fa = result.final_answer;
+          const reportAnswerText = pickUserFacingAnswer(result);
+          const reportAnswerActions = getAnswerActions(result);
+          const reportAnswerStatus = getAnswerStatus(result);
           const ap = result.action_plan;
           const br = result.booking_readiness;
           return (

@@ -1626,3 +1626,57 @@ try:
 except Exception:
     pass
 
+
+# Shopping UX final backend wrapper v1
+try:
+    from app.shopping_ux_fixes import apply_shopping_ux_fixes as _shopping_ux_v1_apply
+
+    if not getattr(process_text_request, "_shopping_ux_v1_wrapped", False):
+        _shopping_ux_v1_previous_process_text_request = process_text_request
+
+        def process_text_request(*args, **kwargs):
+            prompt_text = None
+
+            if args:
+                prompt_text = args[0]
+            else:
+                for _shopping_ux_v1_key in ("input_text", "text", "prompt", "query", "message"):
+                    if _shopping_ux_v1_key in kwargs:
+                        prompt_text = kwargs.get(_shopping_ux_v1_key)
+                        break
+
+            payload = _shopping_ux_v1_previous_process_text_request(*args, **kwargs)
+            return _shopping_ux_v1_apply(payload, prompt_text)
+
+        process_text_request._shopping_ux_v1_wrapped = True
+
+except Exception:
+    pass
+
+
+# Shopping frontend sync final wrapper v1
+try:
+    from app.shopping_frontend_sync import sync_shopping_frontend_payload as _shopping_frontend_sync_v1
+
+    if not getattr(process_text_request, "_shopping_frontend_sync_v1_wrapped", False):
+        _shopping_frontend_sync_v1_previous_process_text_request = process_text_request
+
+        def process_text_request(*args, **kwargs):
+            prompt_text = None
+
+            if args:
+                prompt_text = args[0]
+            else:
+                for _shopping_frontend_sync_v1_key in ("input_text", "text", "prompt", "query", "message"):
+                    if _shopping_frontend_sync_v1_key in kwargs:
+                        prompt_text = kwargs.get(_shopping_frontend_sync_v1_key)
+                        break
+
+            payload = _shopping_frontend_sync_v1_previous_process_text_request(*args, **kwargs)
+            return _shopping_frontend_sync_v1(payload, prompt_text)
+
+        process_text_request._shopping_frontend_sync_v1_wrapped = True
+
+except Exception:
+    pass
+
