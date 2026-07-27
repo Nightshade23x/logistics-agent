@@ -46,6 +46,39 @@ CASES = [
         "name": "q6",
         "prompt": "What documents are needed to ship hazardous chemicals from India to Germany using CIF? Include dangerous goods declaration, MSDS, insurance, and compliance readiness.",
     },
+    # EXTENDED_LOGISTICS_REGRESSION_CASES_2026
+    {
+        "name": "q7",
+        "prompt": (
+            "Ship 8 pallets of glass jars from India to USA. "
+            "Each pallet is 1.2 m x 1.0 m x 1.5 m and weighs 180 kg. "
+            "The glass jars are fragile."
+        ),
+    },
+    {
+        "name": "q8",
+        "prompt": (
+            "Ship 10 CBM ceramic tiles weighing 1200 kg "
+            "and 4 CBM pillows weighing 350 kg "
+            "from India to USA."
+        ),
+    },
+    {
+        "name": "q9",
+        "prompt": (
+            "Ship 20 CBM of steel parts weighing 40000 kg "
+            "from India to USA."
+        ),
+    },
+    {
+        "name": "q10",
+        "prompt": (
+            "Create a full trade plan for 10 CBM ceramic tiles "
+            "from India to USA using CIF. "
+            "Total weight is 1200 kg. "
+            "Include logistics, documents, duty, and risk."
+        ),
+    },
 ]
 
 
@@ -284,6 +317,459 @@ def validate_q6(payload: dict[str, Any]) -> list[str]:
     return problems
 
 
+def validate_q7(payload: dict[str, Any]) -> list[str]:
+    problems = []
+
+    metrics = get_metrics(payload)
+    visualizer = get_visualizer(payload)
+
+    if not near(metrics.get("total_cbm"), 14.4):
+        problems.append(
+            f"Q7 total_cbm should be 14.4: {metrics}"
+        )
+
+    if not near(metrics.get("total_weight_kg"), 1440):
+        problems.append(
+            f"Q7 total_weight_kg should be 1440: {metrics}"
+        )
+
+    if visualizer.get("status") != "available":
+        problems.append(
+            "Q7 visualizer should be available"
+        )
+
+    display = visualizer.get("display_metrics")
+
+    if not isinstance(display, dict):
+        problems.append(
+            "Q7 display_metrics missing"
+        )
+    else:
+        if not near(
+            display.get("loaded_cbm"),
+            14.4,
+        ):
+            problems.append(
+                f"Q7 loaded_cbm should be 14.4: {display}"
+            )
+
+        if not near(
+            display.get("utilization_percent"),
+            43.37,
+            tolerance=0.10,
+        ):
+            problems.append(
+                f"Q7 utilization should be about 43.37: {display}"
+            )
+
+    container = visualizer.get("container")
+
+    if isinstance(container, dict):
+        if not near(
+            container.get("total_cbm"),
+            14.4,
+        ):
+            problems.append(
+                f"Q7 container CBM inconsistent: {container}"
+            )
+
+        if not near(
+            container.get("total_weight_kg"),
+            1440,
+        ):
+            problems.append(
+                f"Q7 container weight inconsistent: {container}"
+            )
+
+    answer = str(
+        payload.get("display_answer")
+        or payload.get("frontend_answer")
+        or ""
+    )
+
+    if "14.4" not in answer:
+        problems.append(
+            "Q7 displayed answer should contain 14.4 CBM"
+        )
+
+    if "1440" not in answer:
+        problems.append(
+            "Q7 displayed answer should contain 1440 kg"
+        )
+
+    return problems
+
+
+def validate_q8(payload: dict[str, Any]) -> list[str]:
+    problems = []
+
+    metrics = get_metrics(payload)
+    visualizer = get_visualizer(payload)
+
+    if not near(metrics.get("total_cbm"), 14):
+        problems.append(
+            f"Q8 total_cbm should be 14: {metrics}"
+        )
+
+    if not near(metrics.get("total_weight_kg"), 1550):
+        problems.append(
+            f"Q8 total_weight_kg should be 1550: {metrics}"
+        )
+
+    ceramic = find_cargo_item(
+        payload,
+        "ceramic",
+        "tile",
+    )
+
+    pillows = find_cargo_item(
+        payload,
+        "pillow",
+    )
+
+    if not isinstance(ceramic, dict):
+        problems.append(
+            "Q8 ceramic tiles item missing"
+        )
+    else:
+        if not near(
+            ceramic.get("total_cbm"),
+            10,
+        ):
+            problems.append(
+                f"Q8 ceramic CBM should be 10: {ceramic}"
+            )
+
+        if not near(
+            ceramic.get("total_weight_kg"),
+            1200,
+        ):
+            problems.append(
+                f"Q8 ceramic weight should be 1200: {ceramic}"
+            )
+
+        if ceramic.get("weight_estimated") is True:
+            problems.append(
+                "Q8 explicit ceramic weight must not be estimated"
+            )
+
+    if not isinstance(pillows, dict):
+        problems.append(
+            "Q8 pillows item missing"
+        )
+    else:
+        if not near(
+            pillows.get("total_cbm"),
+            4,
+        ):
+            problems.append(
+                f"Q8 pillows CBM should be 4: {pillows}"
+            )
+
+        if not near(
+            pillows.get("total_weight_kg"),
+            350,
+        ):
+            problems.append(
+                f"Q8 pillows weight should be 350: {pillows}"
+            )
+
+    display = visualizer.get("display_metrics")
+
+    if not isinstance(display, dict):
+        problems.append(
+            "Q8 display_metrics missing"
+        )
+    else:
+        if not near(
+            display.get("loaded_cbm"),
+            14,
+        ):
+            problems.append(
+                f"Q8 loaded_cbm should be 14: {display}"
+            )
+
+        if not near(
+            display.get("utilization_percent"),
+            42.17,
+            tolerance=0.10,
+        ):
+            problems.append(
+                f"Q8 utilization should be about 42.17: {display}"
+            )
+
+    questions = []
+
+    clarification = payload.get(
+        "clarification_questions"
+    )
+
+    if isinstance(clarification, list):
+        questions.extend(clarification)
+
+    action_plan = payload.get(
+        "action_plan"
+    )
+
+    if isinstance(action_plan, dict):
+        values = action_plan.get(
+            "user_questions"
+        )
+
+        if isinstance(values, list):
+            questions.extend(values)
+
+    for question in questions:
+        lower = str(question).lower()
+
+        if (
+            "cbm" in lower
+            and (
+                "dimension" in lower
+                or "packed" in lower
+            )
+        ):
+            problems.append(
+                f"Q8 false CBM clarification remains: {question}"
+            )
+
+    return problems
+
+
+def validate_q9(payload: dict[str, Any]) -> list[str]:
+    problems = []
+
+    metrics = get_metrics(payload)
+
+    if not near(metrics.get("total_cbm"), 20):
+        problems.append(
+            f"Q9 total_cbm should be 20: {metrics}"
+        )
+
+    if not near(metrics.get("total_weight_kg"), 40000):
+        problems.append(
+            f"Q9 total_weight_kg should be 40000: {metrics}"
+        )
+
+    expected = (
+        "Multiple containers or specialist "
+        "heavy-cargo planning required"
+    )
+
+    if metrics.get("recommended_container") != expected:
+        problems.append(
+            f"Q9 wrong recommendation: {metrics}"
+        )
+
+    if (
+        metrics.get("readiness_status")
+        != "not_ready_payload_limit_exceeded"
+    ):
+        problems.append(
+            f"Q9 readiness should be payload-limit exceeded: {metrics}"
+        )
+
+    if get_fit_status(payload) != "payload_limit_exceeded":
+        problems.append(
+            f"Q9 fit status incorrect: {get_fit_status(payload)}"
+        )
+
+    constraint = payload.get(
+        "payload_constraint"
+    )
+
+    if not isinstance(constraint, dict):
+        problems.append(
+            "Q9 payload_constraint missing"
+        )
+    else:
+        if constraint.get("status") != "blocked":
+            problems.append(
+                f"Q9 constraint should be blocked: {constraint}"
+            )
+
+        if not near(
+            constraint.get("shipment_weight_kg"),
+            40000,
+        ):
+            problems.append(
+                f"Q9 shipment weight incorrect: {constraint}"
+            )
+
+        if not near(
+            constraint.get("reference_payload_kg"),
+            28200,
+        ):
+            problems.append(
+                f"Q9 reference payload incorrect: {constraint}"
+            )
+
+        if not near(
+            constraint.get("payload_overage_kg"),
+            11800,
+        ):
+            problems.append(
+                f"Q9 overage incorrect: {constraint}"
+            )
+
+    answer = str(
+        payload.get("display_answer")
+        or ""
+    )
+
+    if (
+        "not feasible as a single standard-container load"
+        not in answer.lower()
+    ):
+        problems.append(
+            "Q9 should state single-container infeasibility"
+        )
+
+    if (
+        "Compare FCL quotes for 20ft, 40ft"
+        in answer
+    ):
+        problems.append(
+            "Q9 stale normal-FCL recommendation remains"
+        )
+
+    questions = []
+
+    clarification = payload.get(
+        "clarification_questions"
+    )
+
+    if isinstance(clarification, list):
+        questions.extend(clarification)
+
+    action_plan = payload.get(
+        "action_plan"
+    )
+
+    if isinstance(action_plan, dict):
+        values = action_plan.get(
+            "user_questions"
+        )
+
+        if isinstance(values, list):
+            questions.extend(values)
+
+    for question in questions:
+        lower = str(question).lower()
+
+        if (
+            "cbm" in lower
+            and (
+                "dimension" in lower
+                or "packed" in lower
+            )
+        ):
+            problems.append(
+                f"Q9 false CBM clarification remains: {question}"
+            )
+
+    review = payload.get(
+        "logistics_quality_review"
+    )
+
+    if isinstance(review, dict):
+        if review.get("status") != "blocked":
+            problems.append(
+                f"Q9 logistics review should be blocked: {review}"
+            )
+
+    return problems
+
+
+def validate_q10(payload: dict[str, Any]) -> list[str]:
+    problems = []
+
+    metrics = get_metrics(payload)
+    visualizer = get_visualizer(payload)
+
+    if not near(metrics.get("total_cbm"), 10):
+        problems.append(
+            f"Q10 total_cbm should be 10: {metrics}"
+        )
+
+    if not near(metrics.get("total_weight_kg"), 1200):
+        problems.append(
+            f"Q10 total_weight_kg should be 1200: {metrics}"
+        )
+
+    container = visualizer.get(
+        "container"
+    )
+
+    if isinstance(container, dict):
+        if not near(
+            container.get("total_weight_kg"),
+            1200,
+        ):
+            problems.append(
+                f"Q10 visualizer weight should be 1200: {container}"
+            )
+
+    display_answer = str(
+        payload.get("display_answer")
+        or ""
+    )
+
+    frontend_answer = str(
+        payload.get("frontend_answer")
+        or ""
+    )
+
+    final_answer = payload.get(
+        "final_answer"
+    )
+
+    final_text = ""
+
+    if isinstance(final_answer, dict):
+        final_text = str(
+            final_answer.get("answer_text")
+            or ""
+        )
+
+    if "First-pass verdict:" not in display_answer:
+        problems.append(
+            "Q10 rich full-trade answer missing"
+        )
+
+    if frontend_answer != display_answer:
+        problems.append(
+            "Q10 frontend_answer does not match display_answer"
+        )
+
+    if final_text != display_answer:
+        problems.append(
+            "Q10 final answer text does not match display_answer"
+        )
+
+    if "ceramic tiles" not in display_answer.lower():
+        problems.append(
+            "Q10 answer should mention ceramic tiles"
+        )
+
+    if "1200" not in display_answer:
+        problems.append(
+            "Q10 answer should mention 1200 kg"
+        )
+
+    dumped = json.dumps(
+        payload,
+        ensure_ascii=False,
+        default=str,
+    ).lower()
+
+    if "provisional" not in dumped:
+        problems.append(
+            "Q10 provisional duty wording missing"
+        )
+
+    return problems
+
 VALIDATORS = {
     "q1": validate_q1,
     "q2": validate_q2,
@@ -291,6 +777,10 @@ VALIDATORS = {
     "q4": validate_q4,
     "q5": validate_q5,
     "q6": validate_q6,
+    "q7": validate_q7,
+    "q8": validate_q8,
+    "q9": validate_q9,
+    "q10": validate_q10,
 }
 
 
@@ -324,7 +814,7 @@ def main() -> int:
             print("-", problem)
         return 1
 
-    print("ALL SIX JSON REGRESSION CASES PASSED")
+    print("ALL TEN JSON REGRESSION CASES PASSED")
     return 0
 
 
