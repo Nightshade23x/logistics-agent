@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+
+import re
 from pathlib import Path
 from typing import Any
 
@@ -1692,9 +1694,2854 @@ try:
             if args:
                 prompt_text = str(args[0])
             else:
-                prompt_text = str(kwargs.get("text") or kwargs.get("prompt") or kwargs.get("user_request") or "")
+                prompt_text = str(kwargs.get("user_text") or kwargs.get("text") or kwargs.get("prompt") or kwargs.get("user_request") or "")
 
             payload = _demo_answer_quality_previous_process_text_request(*args, **kwargs)
             return _demo_polish_response(payload, prompt_text)
 except Exception:
     pass
+
+
+# ============================================================
+# FINAL_REPORT_CONSISTENCY_V1
+#
+# Final normalization for full trade-plan text requests.
+#
+# This deliberately runs AFTER all earlier backend wrappers so
+# the JSON returned to the frontend/export is internally
+# consistent with the rich customer-facing answer.
+# ============================================================
+
+_process_text_request_before_report_consistency_v1 = (
+    process_text_request
+)
+
+
+def _report_sync_number_v1(value):
+    try:
+        if value in (None, "", [], {}):
+            return None
+
+        return float(value)
+
+    except (TypeError, ValueError):
+        return None
+
+
+def _report_sync_pretty_number_v1(value):
+    number = _report_sync_number_v1(value)
+
+    if number is None:
+        return None
+
+    if abs(number - round(number)) < 1e-9:
+        return str(int(round(number)))
+
+    return (
+        f"{number:.2f}"
+        .rstrip("0")
+        .rstrip(".")
+    )
+
+
+def _report_sync_explicit_weight_v1(
+    user_text,
+    payload,
+):
+    """
+    Prefer explicit user-provided shipment weight.
+
+    This prevents aggregate-volume density estimation from
+    replacing a known weight such as 1200 kg with a synthetic
+    20000 kg planning estimate.
+    """
+
+    text = str(user_text or "")
+
+    patterns = [
+        r"\btotal\s+weight\s*(?:is|=|:)?\s*"
+        r"([0-9]+(?:\.[0-9]+)?)\s*kg\b",
+
+        r"\bweighs?\s*"
+        r"([0-9]+(?:\.[0-9]+)?)\s*kg\b",
+
+        r"\bweight\s*(?:is|=|:)\s*"
+        r"([0-9]+(?:\.[0-9]+)?)\s*kg\b",
+    ]
+
+    for pattern in patterns:
+
+        match = re.search(
+            pattern,
+            text,
+            flags=re.IGNORECASE,
+        )
+
+        if match:
+
+            number = _report_sync_number_v1(
+                match.group(1)
+            )
+
+            if number is not None:
+                return number
+
+
+    # Strong structured fallbacks.
+    candidates = []
+
+    handoff = payload.get(
+        "handoff_payload"
+    )
+
+    if isinstance(handoff, dict):
+        candidates.append(
+            handoff.get("total_weight_kg")
+        )
+
+
+    executive = payload.get(
+        "executive_summary"
+    )
+
+    if isinstance(executive, dict):
+
+        snapshot = executive.get(
+            "shipment_snapshot"
+        )
+
+        if isinstance(snapshot, dict):
+            candidates.append(
+                snapshot.get(
+                    "total_weight_kg"
+                )
+            )
+
+
+    logistics_review = payload.get(
+        "logistics_quality_review"
+    )
+
+    if isinstance(
+        logistics_review,
+        dict,
+    ):
+
+        candidates.append(
+            logistics_review.get(
+                "total_weight_kg"
+            )
+        )
+
+
+    for candidate in candidates:
+
+        number = _report_sync_number_v1(
+            candidate
+        )
+
+        if number is not None:
+            return number
+
+
+    return None
+
+
+def _report_sync_clean_internal_text_v1(
+    value,
+):
+    """
+    Replace internal implementation-language blockers with
+    customer/report-friendly descriptions.
+    """
+
+    text = str(value or "").strip()
+
+    lower = text.lower()
+
+    replacements = {
+        "landed_cost has blockers.":
+            "Complete the missing landed-cost inputs before booking.",
+
+        "trade_compliance has blockers.":
+            "Complete the required document and compliance checks before booking.",
+
+        "shopping review was not applicable.":
+            "",
+
+        "procurement review was not applicable.":
+            "",
+    }
+
+    if lower in replacements:
+        return replacements[lower]
+
+    return text
+
+
+def _report_sync_clean_list_v1(values):
+    output = []
+    seen = set()
+
+    for value in values or []:
+
+        cleaned = (
+            _report_sync_clean_internal_text_v1(
+                value
+            )
+        )
+
+        if not cleaned:
+            continue
+
+        key = cleaned.lower()
+
+        if key in seen:
+            continue
+
+        seen.add(key)
+        output.append(cleaned)
+
+    return output
+
+
+def _report_sync_extract_next_actions_v1(
+    answer_text,
+):
+    """
+    Pull the rich numbered next actions into final_answer so
+    exported JSON and Reports use the same actions as Dashboard.
+    """
+
+    text = str(answer_text or "")
+
+    marker = "Next actions, in order:"
+
+    if marker not in text:
+        return []
+
+    tail = text.split(
+        marker,
+        1,
+    )[1]
+
+    actions = []
+
+    for line in tail.splitlines():
+
+        line = line.strip()
+
+        if not line.startswith("-"):
+            continue
+
+        line = line[1:].strip()
+
+        line = re.sub(
+            r"^\d+\)\s*",
+            "",
+            line,
+        )
+
+        if line:
+            actions.append(line)
+
+    return actions
+
+
+def _final_report_consistency_v1(
+    payload,
+    user_text,
+):
+    if not isinstance(payload, dict):
+        return payload
+
+
+    answer_text = (
+        payload.get("display_answer")
+        or payload.get("frontend_answer")
+        or ""
+    )
+
+    lower_prompt = str(
+        user_text or ""
+    ).lower()
+
+
+    # Only use the detailed full-trade synchronization on the
+    # rich full-trade response. Other prompts are left alone.
+    is_full_trade = (
+        "full trade plan" in lower_prompt
+        or
+        str(answer_text).startswith(
+            "First-pass verdict:"
+        )
+    )
+
+    if not is_full_trade:
+        return payload
+
+
+    # ========================================================
+    # 1. AUTHORITATIVE WEIGHT
+    # ========================================================
+
+    actual_weight = (
+        _report_sync_explicit_weight_v1(
+            user_text,
+            payload,
+        )
+    )
+
+
+    if actual_weight is not None:
+
+        # -----------------------------------------------
+        # logistics_metrics
+        # -----------------------------------------------
+
+        logistics_metrics = payload.get(
+            "logistics_metrics"
+        )
+
+        if isinstance(
+            logistics_metrics,
+            dict,
+        ):
+            logistics_metrics[
+                "total_weight_kg"
+            ] = actual_weight
+
+
+        # -----------------------------------------------
+        # visualizer
+        # -----------------------------------------------
+
+        visualizer = payload.get(
+            "logistics_visualizer"
+        )
+
+        if isinstance(
+            visualizer,
+            dict,
+        ):
+
+            container = visualizer.get(
+                "container"
+            )
+
+            if isinstance(
+                container,
+                dict,
+            ):
+
+                container[
+                    "total_weight_kg"
+                ] = actual_weight
+
+
+            cargo_mix = visualizer.get(
+                "cargo_mix"
+            )
+
+            if (
+                isinstance(
+                    cargo_mix,
+                    list,
+                )
+                and len(cargo_mix) == 1
+                and isinstance(
+                    cargo_mix[0],
+                    dict,
+                )
+            ):
+
+                item = cargo_mix[0]
+
+                quantity = (
+                    _report_sync_number_v1(
+                        item.get("quantity")
+                    )
+                    or 1
+                )
+
+                item[
+                    "total_weight_kg"
+                ] = actual_weight
+
+                item[
+                    "unit_weight_kg"
+                ] = round(
+                    actual_weight
+                    / quantity,
+                    6,
+                )
+
+                item[
+                    "weight_estimated"
+                ] = False
+
+                item[
+                    "weight_source"
+                ] = (
+                    "explicit_user_or_canonical_weight"
+                )
+
+                item.pop(
+                    "estimated_density_kg_per_cbm",
+                    None,
+                )
+
+                item.pop(
+                    "weight_estimate_warning",
+                    None,
+                )
+
+
+        # -----------------------------------------------
+        # handoff
+        # -----------------------------------------------
+
+        handoff = payload.get(
+            "handoff_payload"
+        )
+
+        if isinstance(handoff, dict):
+
+            handoff[
+                "total_weight_kg"
+            ] = actual_weight
+
+
+        # -----------------------------------------------
+        # executive snapshot
+        # -----------------------------------------------
+
+        executive = payload.get(
+            "executive_summary"
+        )
+
+        if isinstance(
+            executive,
+            dict,
+        ):
+
+            snapshot = executive.get(
+                "shipment_snapshot"
+            )
+
+            if isinstance(
+                snapshot,
+                dict,
+            ):
+
+                snapshot[
+                    "total_weight_kg"
+                ] = actual_weight
+
+
+        # -----------------------------------------------
+        # logistics review
+        # -----------------------------------------------
+
+        logistics_review = payload.get(
+            "logistics_quality_review"
+        )
+
+        if isinstance(
+            logistics_review,
+            dict,
+        ):
+
+            logistics_review[
+                "total_weight_kg"
+            ] = actual_weight
+
+
+        # -----------------------------------------------
+        # UI sections
+        # -----------------------------------------------
+
+        sections = payload.get(
+            "ui_sections"
+        )
+
+        if isinstance(sections, list):
+
+            for section in sections:
+
+                if not isinstance(
+                    section,
+                    dict,
+                ):
+                    continue
+
+                if section.get(
+                    "section_id"
+                ) not in {
+                    "shipment_snapshot",
+                    "logistics",
+                }:
+                    continue
+
+                metrics = section.get(
+                    "metrics"
+                )
+
+                if isinstance(
+                    metrics,
+                    dict,
+                ):
+
+                    metrics[
+                        "total_weight_kg"
+                    ] = actual_weight
+
+
+    # ========================================================
+    # 2. SYNCHRONIZE final_answer TO THE RICH ANSWER
+    # ========================================================
+
+    if answer_text:
+
+        final_answer = payload.setdefault(
+            "final_answer",
+            {},
+        )
+
+        if isinstance(
+            final_answer,
+            dict,
+        ):
+
+            final_answer[
+                "answer_text"
+            ] = answer_text
+
+            first_line = next(
+                (
+                    line.strip()
+                    for line
+                    in str(
+                        answer_text
+                    ).splitlines()
+                    if line.strip()
+                ),
+                "",
+            )
+
+            if first_line:
+
+                final_answer[
+                    "headline"
+                ] = first_line
+
+
+            next_actions = (
+                _report_sync_extract_next_actions_v1(
+                    answer_text
+                )
+            )
+
+            if next_actions:
+
+                final_answer[
+                    "next_actions"
+                ] = next_actions
+
+
+    # ========================================================
+    # 3. REBUILD short_answer WITH CORRECT WEIGHT
+    # ========================================================
+
+    metrics = payload.get(
+        "logistics_metrics"
+    )
+
+    if isinstance(metrics, dict):
+
+        cbm = metrics.get(
+            "total_cbm"
+        )
+
+        weight = metrics.get(
+            "total_weight_kg"
+        )
+
+        container_name = metrics.get(
+            "recommended_container"
+        )
+
+        risk_level = metrics.get(
+            "risk_level"
+        )
+
+        agents = payload.get(
+            "agents_called"
+        ) or []
+
+        decision = (
+            payload.get("decision")
+            or payload.get("status")
+            or "review_required"
+        )
+
+        parts = [
+            f"Decision: {decision}.",
+        ]
+
+        if agents:
+
+            parts.append(
+                "Agents called: "
+                + ", ".join(
+                    str(agent)
+                    for agent in agents
+                )
+                + "."
+            )
+
+
+        logistics_bits = []
+
+        if cbm is not None:
+
+            pretty = (
+                _report_sync_pretty_number_v1(
+                    cbm
+                )
+            )
+
+            logistics_bits.append(
+                f"{pretty} CBM"
+            )
+
+
+        if weight is not None:
+
+            pretty = (
+                _report_sync_pretty_number_v1(
+                    weight
+                )
+            )
+
+            logistics_bits.append(
+                f"{pretty} kg"
+            )
+
+
+        if container_name:
+
+            logistics_bits.append(
+                "recommended container "
+                + str(container_name)
+            )
+
+
+        if risk_level:
+
+            logistics_bits.append(
+                "risk level "
+                + str(risk_level)
+            )
+
+
+        if logistics_bits:
+
+            parts.append(
+                "Logistics: "
+                + ", ".join(
+                    logistics_bits
+                )
+                + "."
+            )
+
+
+        payload[
+            "short_answer"
+        ] = " ".join(parts)
+
+
+    # ========================================================
+    # 4. CLEAN EXECUTIVE "RISKS"
+    # ========================================================
+
+    executive = payload.get(
+        "executive_summary"
+    )
+
+    if isinstance(executive, dict):
+
+        executive[
+            "top_risks"
+        ] = _report_sync_clean_list_v1(
+            executive.get(
+                "top_risks"
+            )
+        )
+
+        executive[
+            "top_next_actions"
+        ] = _report_sync_clean_list_v1(
+            executive.get(
+                "top_next_actions"
+            )
+        )
+
+
+    # ========================================================
+    # 5. CLEAN BOOKING READINESS
+    # ========================================================
+
+    booking = payload.get(
+        "booking_readiness"
+    )
+
+    if isinstance(booking, dict):
+
+        booking[
+            "review_items"
+        ] = _report_sync_clean_list_v1(
+            booking.get(
+                "review_items"
+            )
+        )
+
+        booking[
+            "blockers"
+        ] = _report_sync_clean_list_v1(
+            booking.get(
+                "blockers"
+            )
+        )
+
+        booking[
+            "next_steps"
+        ] = _report_sync_clean_list_v1(
+            booking.get(
+                "next_steps"
+            )
+        )
+
+
+    # ========================================================
+    # 6. CLEAN ACTION PLAN INTERNAL WORDING
+    # ========================================================
+
+    action_plan = payload.get(
+        "action_plan"
+    )
+
+    if isinstance(action_plan, dict):
+
+        action_plan[
+            "immediate_actions"
+        ] = _report_sync_clean_list_v1(
+            action_plan.get(
+                "immediate_actions"
+            )
+        )
+
+        action_plan[
+            "before_booking"
+        ] = _report_sync_clean_list_v1(
+            action_plan.get(
+                "before_booking"
+            )
+        )
+
+
+    # ========================================================
+    # 7. UI SECTION CLEANUP
+    # ========================================================
+
+    sections = payload.get(
+        "ui_sections"
+    )
+
+    if isinstance(sections, list):
+
+        for section in sections:
+
+            if not isinstance(
+                section,
+                dict,
+            ):
+                continue
+
+            section_id = section.get(
+                "section_id"
+            )
+
+
+            # -------------------------------------------
+            # Executive Decision
+            # -------------------------------------------
+
+            if (
+                section_id
+                == "executive_decision"
+            ):
+
+                section[
+                    "bullets"
+                ] = _report_sync_clean_list_v1(
+                    section.get(
+                        "bullets"
+                    )
+                )
+
+                section[
+                    "actions"
+                ] = _report_sync_clean_list_v1(
+                    section.get(
+                        "actions"
+                    )
+                )
+
+
+            # -------------------------------------------
+            # Partner Checks contradiction
+            # -------------------------------------------
+
+            elif (
+                section_id
+                == "partner_checks"
+            ):
+
+                partner_status = payload.get(
+                    "partner_review_status"
+                )
+
+                if partner_status in (
+                    None,
+                    "",
+                    "unknown",
+                ):
+
+                    section[
+                        "status"
+                    ] = "unknown"
+
+                    section[
+                        "summary"
+                    ] = (
+                        "No structured partner-review "
+                        "result is available for this request."
+                    )
+
+                    section[
+                        "bullets"
+                    ] = []
+
+                    section[
+                        "actions"
+                    ] = []
+
+
+            # -------------------------------------------
+            # Next Actions
+            # -------------------------------------------
+
+            elif (
+                section_id
+                == "next_actions"
+            ):
+
+                section[
+                    "actions"
+                ] = _report_sync_clean_list_v1(
+                    section.get(
+                        "actions"
+                    )
+                )
+
+
+    return payload
+
+
+def process_text_request(
+    user_text: str,
+    include_raw_response: bool = False,
+):
+    payload = (
+        _process_text_request_before_report_consistency_v1(
+            user_text,
+            include_raw_response,
+        )
+    )
+
+    return _final_report_consistency_v1(
+        payload,
+        user_text,
+    )
+
+
+# ============================================================
+# FINAL_RESPONSE_AUTHORITY_V2
+#
+# This MUST remain the final text-request wrapper in this file.
+#
+# Purpose:
+# - rich answer synthesis runs after every older cleanup stage
+# - full-trade reports are synchronized to the same facts
+# - no later legacy wrapper can replace the customer answer
+# ============================================================
+
+from app.demo_answer_quality_fixes import (
+    polish_demo_response as _final_answer_authority_polish_v2,
+)
+
+
+_process_text_request_before_final_response_authority_v2 = (
+    process_text_request
+)
+
+
+def _frav2_number(value):
+    try:
+        if value in (
+            None,
+            "",
+            [],
+            {},
+        ):
+            return None
+
+        return float(value)
+
+    except (
+        TypeError,
+        ValueError,
+    ):
+        return None
+
+
+def _frav2_pretty(value):
+    number = _frav2_number(value)
+
+    if number is None:
+        return None
+
+    if abs(
+        number - round(number)
+    ) < 1e-9:
+        return str(
+            int(round(number))
+        )
+
+    return (
+        f"{number:.2f}"
+        .rstrip("0")
+        .rstrip(".")
+    )
+
+
+def _frav2_unique(values):
+    output = []
+    seen = set()
+
+    for value in values or []:
+
+        if value in (
+            None,
+            "",
+        ):
+            continue
+
+        text = str(value).strip()
+
+        if not text:
+            continue
+
+        key = text.lower()
+
+        if key in seen:
+            continue
+
+        seen.add(key)
+        output.append(text)
+
+    return output
+
+
+def _frav2_is_full_trade(
+    user_text,
+    payload=None,
+):
+    lower = str(
+        user_text or ""
+    ).lower()
+
+    phrases = [
+        "full trade plan",
+        "complete trade plan",
+        "end-to-end trade plan",
+        "full shipment plan",
+        "complete shipment plan",
+    ]
+
+    if any(
+        phrase in lower
+        for phrase in phrases
+    ):
+        return True
+
+    if isinstance(
+        payload,
+        dict,
+    ):
+
+        answer = str(
+            payload.get(
+                "display_answer"
+            )
+            or ""
+        )
+
+        if answer.startswith(
+            "First-pass verdict:"
+        ):
+            return True
+
+    return False
+
+
+def _frav2_extract_cargo_name(
+    payload,
+    user_text,
+):
+    generic = {
+        "",
+        "cargo",
+        "item",
+        "items",
+        "product",
+        "requested cargo",
+        "requested product",
+        "unknown",
+        "unknown cargo",
+    }
+
+    candidates = []
+
+
+    # -----------------------------------------------
+    # Specialist Document Agent is strongest.
+    # -----------------------------------------------
+
+    specialists = payload.get(
+        "specialist_responses"
+    )
+
+    if isinstance(
+        specialists,
+        dict,
+    ):
+
+        doc_agent = specialists.get(
+            "document_ai_agent"
+        )
+
+        if isinstance(
+            doc_agent,
+            dict,
+        ):
+
+            docs = doc_agent.get(
+                "document_requirements_advice"
+            )
+
+            if isinstance(
+                docs,
+                dict,
+            ):
+
+                candidates.extend(
+                    docs.get(
+                        "cargo_items_preview"
+                    )
+                    or []
+                )
+
+
+    # -----------------------------------------------
+    # Top-level document advice.
+    # -----------------------------------------------
+
+    docs = payload.get(
+        "document_requirements_advice"
+    )
+
+    if isinstance(
+        docs,
+        dict,
+    ):
+
+        candidates.extend(
+            docs.get(
+                "cargo_items_preview"
+            )
+            or []
+        )
+
+
+    # -----------------------------------------------
+    # Visualizer.
+    # -----------------------------------------------
+
+    visualizer = payload.get(
+        "logistics_visualizer"
+    )
+
+    if isinstance(
+        visualizer,
+        dict,
+    ):
+
+        for item in (
+            visualizer.get(
+                "cargo_mix"
+            )
+            or []
+        ):
+
+            if isinstance(
+                item,
+                dict,
+            ):
+
+                candidates.append(
+                    item.get(
+                        "item_name"
+                    )
+                )
+
+
+    for candidate in candidates:
+
+        value = str(
+            candidate or ""
+        ).strip()
+
+        if (
+            value
+            and value.lower()
+            not in generic
+        ):
+            return value
+
+
+    # -----------------------------------------------
+    # Recover directly from the user's request.
+    # -----------------------------------------------
+
+    prompt = str(
+        user_text or ""
+    )
+
+    patterns = [
+        r"\b\d+(?:\.\d+)?\s*CBM\s+(.+?)\s+from\s+",
+        r"\b\d+\s+pallets?\s+of\s+(.+?)\s+from\s+",
+        r"\bship\s+\d+\s+pallets?\s+of\s+(.+?)\s+from\s+",
+    ]
+
+    for pattern in patterns:
+
+        match = re.search(
+            pattern,
+            prompt,
+            flags=re.IGNORECASE,
+        )
+
+        if match:
+
+            value = (
+                match.group(1)
+                .strip(
+                    " \t\r\n,.;:-"
+                )
+            )
+
+            if value:
+                return value
+
+
+    return "requested cargo"
+
+
+def _frav2_specialist_docs(
+    payload,
+):
+    specialists = payload.get(
+        "specialist_responses"
+    )
+
+    if not isinstance(
+        specialists,
+        dict,
+    ):
+        return {}
+
+    doc_agent = specialists.get(
+        "document_ai_agent"
+    )
+
+    if not isinstance(
+        doc_agent,
+        dict,
+    ):
+        return {}
+
+    docs = doc_agent.get(
+        "document_requirements_advice"
+    )
+
+    if isinstance(
+        docs,
+        dict,
+    ):
+        return docs
+
+    return {}
+
+
+def _frav2_trader_info(
+    payload,
+):
+    texts = []
+
+    for summary in (
+        payload.get(
+            "agent_summaries"
+        )
+        or []
+    ):
+
+        if not isinstance(
+            summary,
+            dict,
+        ):
+            continue
+
+        if (
+            str(
+                summary.get(
+                    "agent_name"
+                )
+                or ""
+            ).lower()
+            == "trader_agent"
+        ):
+
+            value = summary.get(
+                "summary"
+            )
+
+            if value:
+                texts.append(
+                    str(value)
+                )
+
+
+    specialists = payload.get(
+        "specialist_responses"
+    )
+
+    if isinstance(
+        specialists,
+        dict,
+    ):
+
+        trader = specialists.get(
+            "trader_agent"
+        )
+
+        if isinstance(
+            trader,
+            dict,
+        ):
+
+            value = trader.get(
+                "summary"
+            )
+
+            if value:
+                texts.append(
+                    str(value)
+                )
+
+
+    combined = " ".join(
+        texts
+    )
+
+    match = re.search(
+        r"(?:estimated\s+)?"
+        r"duty\s+rate"
+        r"(?:\s+of|\s*:)?\s*"
+        r"([0-9]+(?:\.[0-9]+)?)\s*%",
+        combined,
+        flags=re.IGNORECASE,
+    )
+
+    duty_rate = (
+        float(match.group(1))
+        if match
+        else None
+    )
+
+    lower = combined.lower()
+
+    provisional = any(
+        phrase in lower
+        for phrase in [
+            "could not be automatically classified",
+            "default duty rate was used",
+            "default rate",
+            "fallback duty",
+            "fallback rate",
+        ]
+    )
+
+    no_fta = any(
+        phrase in lower
+        for phrase in [
+            "no known free trade agreement applies",
+            "no known fta applies",
+            "no free trade agreement applies",
+        ]
+    )
+
+    return {
+        "duty_rate": duty_rate,
+        "provisional": provisional,
+        "no_fta": no_fta,
+        "summary": combined,
+    }
+
+
+def _frav2_find_ui_section(
+    payload,
+    section_id,
+):
+    sections = payload.get(
+        "ui_sections"
+    )
+
+    if not isinstance(
+        sections,
+        list,
+    ):
+        return None
+
+    for section in sections:
+
+        if (
+            isinstance(
+                section,
+                dict,
+            )
+            and section.get(
+                "section_id"
+            )
+            == section_id
+        ):
+            return section
+
+    return None
+
+
+def _frav2_clean_text(
+    value,
+):
+    text = str(
+        value or ""
+    ).strip()
+
+    lower = text.lower()
+
+
+    # "not applicable" is not a shipment risk.
+    if (
+        "review was not applicable"
+        in lower
+    ):
+        return ""
+
+
+    replacements = {
+        "landed_cost has blockers.":
+            "Complete the missing landed-cost inputs before booking.",
+
+        "trade_compliance has blockers.":
+            "Complete the required document and compliance checks before booking.",
+
+        "document_requirements needs more information.":
+            "Complete the required shipment documents before final review.",
+    }
+
+    if lower in replacements:
+        return replacements[
+            lower
+        ]
+
+    return text
+
+
+def _frav2_clean_list(
+    values,
+):
+    output = []
+    seen = set()
+
+    for value in values or []:
+
+        cleaned = (
+            _frav2_clean_text(
+                value
+            )
+        )
+
+        if not cleaned:
+            continue
+
+        key = cleaned.lower()
+
+        if key in seen:
+            continue
+
+        seen.add(key)
+        output.append(
+            cleaned
+        )
+
+    return output
+
+
+def _frav2_extract_next_actions(
+    answer,
+):
+    text = str(
+        answer or ""
+    )
+
+    marker = (
+        "Next actions, in order:"
+    )
+
+    if marker not in text:
+        return []
+
+    tail = text.split(
+        marker,
+        1,
+    )[1]
+
+    actions = []
+
+    for line in (
+        tail.splitlines()
+    ):
+
+        line = line.strip()
+
+        if not line.startswith(
+            "-"
+        ):
+            continue
+
+        line = (
+            line[1:]
+            .strip()
+        )
+
+        line = re.sub(
+            r"^\d+\)\s*",
+            "",
+            line,
+        )
+
+        if line:
+            actions.append(
+                line
+            )
+
+    return actions
+
+
+
+def _frav2_explicit_weight_from_prompt(
+    user_text,
+):
+    """
+    Shipment weight explicitly supplied by the user has
+    higher authority than planning-density estimates.
+    """
+
+    text = str(
+        user_text or ""
+    )
+
+    patterns = [
+        r"\btotal\s+weight\s*(?:is|=|:)?\s*"
+        r"([0-9]+(?:\.[0-9]+)?)\s*kg\b",
+
+        r"\bweight\s*(?:is|=|:)\s*"
+        r"([0-9]+(?:\.[0-9]+)?)\s*kg\b",
+
+        r"\bweighs?\s*"
+        r"([0-9]+(?:\.[0-9]+)?)\s*kg\b",
+    ]
+
+    for pattern in patterns:
+
+        match = re.search(
+            pattern,
+            text,
+            flags=re.IGNORECASE,
+        )
+
+        if not match:
+            continue
+
+        value = _frav2_number(
+            match.group(1)
+        )
+
+        if value is not None:
+            return value
+
+    return None
+
+
+def _final_response_sync_v2(
+    payload,
+    user_text,
+):
+    if not isinstance(
+        payload,
+        dict,
+    ):
+        return payload
+
+    if not _frav2_is_full_trade(
+        user_text,
+        payload,
+    ):
+        return payload
+
+
+    # ========================================================
+    # CANONICAL SHIPMENT DATA
+    # ========================================================
+
+    metrics = payload.get(
+        "logistics_metrics"
+    )
+
+    if not isinstance(
+        metrics,
+        dict,
+    ):
+        metrics = {}
+        payload[
+            "logistics_metrics"
+        ] = metrics
+
+
+    handoff = payload.get(
+        "handoff_payload"
+    )
+
+    if not isinstance(
+        handoff,
+        dict,
+    ):
+        handoff = {}
+
+
+    visualizer = payload.get(
+        "logistics_visualizer"
+    )
+
+    if not isinstance(
+        visualizer,
+        dict,
+    ):
+        visualizer = {}
+
+
+    container_data = visualizer.get(
+        "container"
+    )
+
+    if not isinstance(
+        container_data,
+        dict,
+    ):
+        container_data = {}
+
+
+    total_cbm = (
+        _frav2_number(
+            metrics.get(
+                "total_cbm"
+            )
+        )
+        or
+        _frav2_number(
+            handoff.get(
+                "total_cbm"
+            )
+        )
+        or
+        _frav2_number(
+            container_data.get(
+                "total_cbm"
+            )
+        )
+    )
+
+
+    total_weight = (
+        _frav2_explicit_weight_from_prompt(
+            user_text
+        )
+        or
+        _frav2_number(
+            handoff.get(
+                "total_weight_kg"
+            )
+        )
+        or
+        _frav2_number(
+            payload.get(
+                "logistics_quality_review",
+                {},
+            ).get(
+                "total_weight_kg"
+            )
+            if isinstance(
+                payload.get(
+                    "logistics_quality_review"
+                ),
+                dict,
+            )
+            else None
+        )
+        or
+        _frav2_number(
+            metrics.get(
+                "total_weight_kg"
+            )
+        )
+        or
+        _frav2_number(
+            container_data.get(
+                "total_weight_kg"
+            )
+        )
+    )
+
+
+    container_name = (
+        metrics.get(
+            "recommended_container"
+        )
+        or
+        handoff.get(
+            "recommended_container"
+        )
+        or
+        handoff.get(
+            "container_recommendation"
+        )
+        or
+        container_data.get(
+            "selected_container"
+        )
+    )
+
+
+    load_type = (
+        metrics.get(
+            "recommended_load_type"
+        )
+        or
+        container_data.get(
+            "recommended_load_type"
+        )
+    )
+
+
+    risk_level = (
+        metrics.get(
+            "risk_level"
+        )
+        or
+        container_data.get(
+            "risk_level"
+        )
+    )
+
+
+    risk_score = (
+        metrics.get(
+            "risk_score"
+        )
+        if metrics.get(
+            "risk_score"
+        )
+        is not None
+        else container_data.get(
+            "risk_score"
+        )
+    )
+
+
+    # FINAL_WEIGHT_FIELD_SYNC_V3
+    if total_weight is not None:
+
+        metrics[
+            "total_weight_kg"
+        ] = total_weight
+
+        container_data[
+            "total_weight_kg"
+        ] = total_weight
+
+
+        cargo_mix = visualizer.get(
+            "cargo_mix"
+        )
+
+        if (
+            isinstance(
+                cargo_mix,
+                list,
+            )
+            and len(cargo_mix) == 1
+            and isinstance(
+                cargo_mix[0],
+                dict,
+            )
+        ):
+
+            item = cargo_mix[0]
+
+            quantity = (
+                _frav2_number(
+                    item.get(
+                        "quantity"
+                    )
+                )
+                or 1
+            )
+
+            item[
+                "total_weight_kg"
+            ] = total_weight
+
+            item[
+                "unit_weight_kg"
+            ] = (
+                total_weight
+                / quantity
+            )
+
+            item[
+                "weight_estimated"
+            ] = False
+
+            item[
+                "weight_source"
+            ] = (
+                "explicit_user_or_canonical_weight"
+            )
+
+            item.pop(
+                "estimated_density_kg_per_cbm",
+                None,
+            )
+
+            item.pop(
+                "weight_estimate_warning",
+                None,
+            )
+
+
+
+    # ========================================================
+    # CARGO NAME
+    # ========================================================
+
+    cargo_name = (
+        _frav2_extract_cargo_name(
+            payload,
+            user_text,
+        )
+    )
+
+
+    cargo_mix = visualizer.get(
+        "cargo_mix"
+    )
+
+    if isinstance(
+        cargo_mix,
+        list,
+    ):
+
+        generic = {
+            "",
+            "cargo",
+            "item",
+            "product",
+            "requested cargo",
+        }
+
+        for item in cargo_mix:
+
+            if not isinstance(
+                item,
+                dict,
+            ):
+                continue
+
+            current = str(
+                item.get(
+                    "item_name"
+                )
+                or ""
+            ).strip()
+
+            if (
+                not current
+                or current.lower()
+                in generic
+            ):
+
+                item[
+                    "item_name"
+                ] = cargo_name
+
+
+    # ========================================================
+    # LOGISTICS REVIEW MUST REFLECT ACTUAL AGENT OUTPUT
+    # ========================================================
+
+    agents_called = [
+        str(agent)
+        for agent in (
+            payload.get(
+                "agents_called"
+            )
+            or []
+        )
+    ]
+
+    logistics_ran = (
+        "logistics_agent"
+        in {
+            value.lower()
+            for value
+            in agents_called
+        }
+        or
+        total_cbm is not None
+        or
+        container_name is not None
+    )
+
+
+    if logistics_ran:
+
+        logistics_review = (
+            payload.setdefault(
+                "logistics_quality_review",
+                {},
+            )
+        )
+
+        if isinstance(
+            logistics_review,
+            dict,
+        ):
+
+            logistics_review.update(
+                {
+                    "applicable": True,
+                    "status": "review_required",
+                    "summary":
+                        "Logistics planning output is available "
+                        "and usable for first-pass shipment review.",
+                    "total_cbm": total_cbm,
+                    "total_weight_kg": total_weight,
+                    "recommended_container": container_name,
+                    "recommended_load_type": load_type,
+                    "risk_level": risk_level,
+                    "risk_score": risk_score,
+                    "readiness_status":
+                        metrics.get(
+                            "readiness_status"
+                        ),
+                }
+            )
+
+
+        logistics_section = (
+            _frav2_find_ui_section(
+                payload,
+                "logistics",
+            )
+        )
+
+        if isinstance(
+            logistics_section,
+            dict,
+        ):
+
+            logistics_section[
+                "status"
+            ] = "review_required"
+
+            logistics_section[
+                "summary"
+            ] = (
+                "Logistics planning output is available "
+                "and usable for first-pass shipment review."
+            )
+
+            section_metrics = (
+                logistics_section.setdefault(
+                    "metrics",
+                    {},
+                )
+            )
+
+            if isinstance(
+                section_metrics,
+                dict,
+            ):
+
+                section_metrics.update(
+                    {
+                        "total_cbm": total_cbm,
+                        "total_weight_kg": total_weight,
+                        "recommended_container": container_name,
+                        "recommended_load_type": load_type,
+                        "risk_level": risk_level,
+                        "risk_score": risk_score,
+                        "readiness_status":
+                            metrics.get(
+                                "readiness_status"
+                            ),
+                    }
+                )
+
+
+    # ========================================================
+    # PROMOTE RICH SPECIALIST DOCUMENT DATA
+    # ========================================================
+
+    specialist_docs = (
+        _frav2_specialist_docs(
+            payload
+        )
+    )
+
+
+    top_docs = payload.setdefault(
+        "document_requirements_advice",
+        {},
+    )
+
+    if isinstance(
+        top_docs,
+        dict,
+    ):
+
+        top_docs[
+            "cargo_items_preview"
+        ] = [cargo_name]
+
+
+        for field in [
+            "required_documents",
+            "conditional_documents",
+            "missing_or_unconfirmed_documents",
+            "recommendations",
+        ]:
+
+            richer = (
+                specialist_docs.get(
+                    field
+                )
+                if isinstance(
+                    specialist_docs,
+                    dict,
+                )
+                else None
+            )
+
+            if richer:
+                top_docs[
+                    field
+                ] = _frav2_unique(
+                    richer
+                )
+
+
+    compliance = payload.get(
+        "trade_compliance_readiness"
+    )
+
+    if isinstance(
+        compliance,
+        dict,
+    ):
+
+        compliance[
+            "cargo_items_preview"
+        ] = [cargo_name]
+
+
+        if (
+            specialist_docs.get(
+                "conditional_documents"
+            )
+        ):
+
+            compliance[
+                "conditional_documents"
+            ] = _frav2_unique(
+                specialist_docs.get(
+                    "conditional_documents"
+                )
+            )
+
+
+        # Remove irrelevant battery-specific generic wording
+        # for ordinary non-battery cargo.
+        if (
+            "battery"
+            not in cargo_name.lower()
+        ):
+
+            cleaned_recommendations = []
+
+            for recommendation in (
+                compliance.get(
+                    "recommendations"
+                )
+                or []
+            ):
+
+                value = str(
+                    recommendation
+                )
+
+                if (
+                    "especially battery"
+                    in value.lower()
+                ):
+
+                    value = (
+                        "Review conditional origin, insurance, "
+                        "and handling documents before booking."
+                    )
+
+                cleaned_recommendations.append(
+                    value
+                )
+
+            compliance[
+                "recommendations"
+            ] = _frav2_unique(
+                cleaned_recommendations
+            )
+
+
+    compliance_section = (
+        _frav2_find_ui_section(
+            payload,
+            "compliance_documents",
+        )
+    )
+
+    if isinstance(
+        compliance_section,
+        dict,
+    ):
+
+        section_metrics = (
+            compliance_section.setdefault(
+                "metrics",
+                {},
+            )
+        )
+
+        if isinstance(
+            section_metrics,
+            dict,
+        ):
+
+            section_metrics[
+                "required_documents"
+            ] = _frav2_unique(
+                top_docs.get(
+                    "required_documents"
+                )
+                or []
+            )
+
+            section_metrics[
+                "conditional_documents"
+            ] = _frav2_unique(
+                top_docs.get(
+                    "conditional_documents"
+                )
+                or []
+            )
+
+
+    # ========================================================
+    # TRADER / PROVISIONAL DUTY
+    # ========================================================
+
+    trader = _frav2_trader_info(
+        payload
+    )
+
+    duty_rate = trader.get(
+        "duty_rate"
+    )
+
+
+    if (
+        duty_rate
+        is not None
+    ):
+
+        route = payload.get(
+            "trade_terms_advice"
+        )
+
+        if not isinstance(
+            route,
+            dict,
+        ):
+            route = {}
+
+
+        duty_advice = (
+            payload.setdefault(
+                "trade_duty_advice",
+                {},
+            )
+        )
+
+        if isinstance(
+            duty_advice,
+            dict,
+        ):
+
+            summary = (
+                "Trader Agent estimated duty at "
+                + _frav2_pretty(
+                    duty_rate
+                )
+                + "%."
+            )
+
+            if trader.get(
+                "provisional"
+            ):
+
+                summary += (
+                    " This rate is provisional because "
+                    "the final HS classification was "
+                    "not confirmed."
+                )
+
+
+            duty_advice.update(
+                {
+                    "applicable": True,
+                    "status":
+                        "review_required"
+                        if trader.get(
+                            "provisional"
+                        )
+                        else "clear",
+                    "product": cargo_name,
+                    "origin_country":
+                        route.get(
+                            "origin_country"
+                        )
+                        or payload.get(
+                            "origin_country"
+                        ),
+                    "destination_country":
+                        route.get(
+                            "destination_country"
+                        )
+                        or payload.get(
+                            "destination_country"
+                        ),
+                    "estimated_duty_rate_percent":
+                        duty_rate,
+                    "rate_is_provisional":
+                        bool(
+                            trader.get(
+                                "provisional"
+                            )
+                        ),
+                    "hs_classification_status":
+                        "unconfirmed"
+                        if trader.get(
+                            "provisional"
+                        )
+                        else "reviewed",
+                    "fta_status":
+                        "no_known_fta"
+                        if trader.get(
+                            "no_fta"
+                        )
+                        else "not_confirmed",
+                    "summary": summary,
+                }
+            )
+
+
+        landed = payload.get(
+            "landed_cost_advice"
+        )
+
+        if isinstance(
+            landed,
+            dict,
+        ):
+
+            known = (
+                landed.setdefault(
+                    "known_inputs",
+                    {},
+                )
+            )
+
+            if isinstance(
+                known,
+                dict,
+            ):
+
+                known[
+                    "provisional_duty_rate_percent"
+                ] = duty_rate
+
+
+            warnings = list(
+                landed.get(
+                    "warnings"
+                )
+                or []
+            )
+
+            if trader.get(
+                "provisional"
+            ):
+
+                warnings.append(
+                    "Trader Agent estimated a provisional "
+                    + _frav2_pretty(
+                        duty_rate
+                    )
+                    + "% duty rate, but final HS "
+                    "classification is still required."
+                )
+
+            landed[
+                "warnings"
+            ] = _frav2_unique(
+                warnings
+            )
+
+
+            # The final rate still needs confirmation,
+            # but the recommendation should not pretend
+            # Trader produced no estimate at all.
+            recommendations = []
+
+            for recommendation in (
+                landed.get(
+                    "recommendations"
+                )
+                or []
+            ):
+
+                value = str(
+                    recommendation
+                )
+
+                if (
+                    "get duty rate from the trader agent"
+                    in value.lower()
+                ):
+
+                    value = (
+                        "Confirm the final duty rate after "
+                        "the HS classification is verified."
+                    )
+
+                recommendations.append(
+                    value
+                )
+
+            landed[
+                "recommendations"
+            ] = _frav2_unique(
+                recommendations
+            )
+
+
+        costs_section = (
+            _frav2_find_ui_section(
+                payload,
+                "costs_insurance",
+            )
+        )
+
+        if isinstance(
+            costs_section,
+            dict,
+        ):
+
+            section_metrics = (
+                costs_section.setdefault(
+                    "metrics",
+                    {},
+                )
+            )
+
+            if isinstance(
+                section_metrics,
+                dict,
+            ):
+
+                known = (
+                    section_metrics.setdefault(
+                        "known_inputs",
+                        {},
+                    )
+                )
+
+                if isinstance(
+                    known,
+                    dict,
+                ):
+
+                    known[
+                        "provisional_duty_rate_percent"
+                    ] = duty_rate
+
+
+            bullets = list(
+                costs_section.get(
+                    "bullets"
+                )
+                or []
+            )
+
+            if trader.get(
+                "provisional"
+            ):
+
+                bullets.append(
+                    "Trader Agent estimated a provisional "
+                    + _frav2_pretty(
+                        duty_rate
+                    )
+                    + "% duty rate, but final HS "
+                    "classification is still required."
+                )
+
+            costs_section[
+                "bullets"
+            ] = _frav2_unique(
+                bullets
+            )
+
+
+    # ========================================================
+    # CLEAN INTERNAL / PSEUDO-RISK WORDING
+    # ========================================================
+
+    executive = payload.get(
+        "executive_summary"
+    )
+
+    if isinstance(
+        executive,
+        dict,
+    ):
+
+        executive[
+            "top_risks"
+        ] = _frav2_clean_list(
+            executive.get(
+                "top_risks"
+            )
+        )
+
+        executive[
+            "top_next_actions"
+        ] = _frav2_clean_list(
+            executive.get(
+                "top_next_actions"
+            )
+        )
+
+
+    booking = payload.get(
+        "booking_readiness"
+    )
+
+    if isinstance(
+        booking,
+        dict,
+    ):
+
+        booking[
+            "review_items"
+        ] = _frav2_clean_list(
+            booking.get(
+                "review_items"
+            )
+        )
+
+        booking[
+            "blockers"
+        ] = _frav2_clean_list(
+            booking.get(
+                "blockers"
+            )
+        )
+
+        booking[
+            "next_steps"
+        ] = _frav2_clean_list(
+            booking.get(
+                "next_steps"
+            )
+        )
+
+
+    action_plan = payload.get(
+        "action_plan"
+    )
+
+    if isinstance(
+        action_plan,
+        dict,
+    ):
+
+        action_plan[
+            "immediate_actions"
+        ] = _frav2_clean_list(
+            action_plan.get(
+                "immediate_actions"
+            )
+        )
+
+        action_plan[
+            "before_booking"
+        ] = _frav2_clean_list(
+            action_plan.get(
+                "before_booking"
+            )
+        )
+
+
+    executive_section = (
+        _frav2_find_ui_section(
+            payload,
+            "executive_decision",
+        )
+    )
+
+    if isinstance(
+        executive_section,
+        dict,
+    ):
+
+        executive_section[
+            "bullets"
+        ] = _frav2_clean_list(
+            executive_section.get(
+                "bullets"
+            )
+        )
+
+        executive_section[
+            "actions"
+        ] = _frav2_clean_list(
+            executive_section.get(
+                "actions"
+            )
+        )
+
+
+    next_section = (
+        _frav2_find_ui_section(
+            payload,
+            "next_actions",
+        )
+    )
+
+    if isinstance(
+        next_section,
+        dict,
+    ):
+
+        next_section[
+            "actions"
+        ] = _frav2_clean_list(
+            next_section.get(
+                "actions"
+            )
+        )
+
+
+    # ========================================================
+    # PARTNER CHECKS CONTRADICTION
+    # ========================================================
+
+    partner_section = (
+        _frav2_find_ui_section(
+            payload,
+            "partner_checks",
+        )
+    )
+
+    partner_status = payload.get(
+        "partner_review_status"
+    )
+
+    if (
+        isinstance(
+            partner_section,
+            dict,
+        )
+        and partner_status
+        in (
+            None,
+            "",
+            "unknown",
+        )
+    ):
+
+        partner_section[
+            "status"
+        ] = "unknown"
+
+        partner_section[
+            "summary"
+        ] = (
+            "No structured partner-review result "
+            "is available for this request."
+        )
+
+        partner_section[
+            "bullets"
+        ] = []
+
+        partner_section[
+            "actions"
+        ] = []
+
+
+    # ========================================================
+    # SUMMARY SHOULD NAME THE AGENTS ACTUALLY CALLED
+    # ========================================================
+
+    if agents_called:
+
+        friendly_names = {
+            "logistics_agent":
+                "Logistics",
+
+            "trader_agent":
+                "Trader",
+
+            "document_ai_agent":
+                "Document AI",
+
+            "risk_agent":
+                "Risk",
+
+            "finance_agent":
+                "Finance",
+
+            "compliance_agent":
+                "Compliance",
+
+            "shopping_agent":
+                "Shopping",
+        }
+
+        names = [
+            friendly_names.get(
+                value.lower(),
+                value,
+            )
+            for value
+            in agents_called
+        ]
+
+        payload[
+            "summary"
+        ] = (
+            "User Agent ran "
+            + ", ".join(names)
+            + " agents for the cross-border shipment."
+        )
+
+
+    # ========================================================
+    # FINAL ANSWER = DISPLAY ANSWER = FRONTEND ANSWER
+    # ========================================================
+
+    answer = (
+        payload.get(
+            "display_answer"
+        )
+        or payload.get(
+            "frontend_answer"
+        )
+        or ""
+    )
+
+    if answer:
+
+        payload[
+            "display_answer"
+        ] = answer
+
+        payload[
+            "frontend_answer"
+        ] = answer
+
+
+        final_answer = (
+            payload.setdefault(
+                "final_answer",
+                {},
+            )
+        )
+
+        if isinstance(
+            final_answer,
+            dict,
+        ):
+
+            final_answer[
+                "answer_text"
+            ] = answer
+
+            first_line = next(
+                (
+                    line.strip()
+                    for line
+                    in str(
+                        answer
+                    ).splitlines()
+                    if line.strip()
+                ),
+                "",
+            )
+
+            if first_line:
+
+                final_answer[
+                    "headline"
+                ] = first_line
+
+
+            actions = (
+                _frav2_extract_next_actions(
+                    answer
+                )
+            )
+
+            if actions:
+
+                final_answer[
+                    "next_actions"
+                ] = actions
+
+
+    # ========================================================
+    # SHORT ANSWER — SAME CANONICAL NUMBERS
+    # ========================================================
+
+    pieces = [
+        "Decision: "
+        + str(
+            payload.get(
+                "decision"
+            )
+            or "review_required"
+        )
+        + "."
+    ]
+
+    if agents_called:
+
+        pieces.append(
+            "Agents called: "
+            + ", ".join(
+                agents_called
+            )
+            + "."
+        )
+
+
+    logistics_bits = []
+
+    if total_cbm is not None:
+
+        logistics_bits.append(
+            _frav2_pretty(
+                total_cbm
+            )
+            + " CBM"
+        )
+
+    if total_weight is not None:
+
+        logistics_bits.append(
+            _frav2_pretty(
+                total_weight
+            )
+            + " kg"
+        )
+
+    if container_name:
+
+        logistics_bits.append(
+            "recommended container "
+            + str(
+                container_name
+            )
+        )
+
+    if risk_level:
+
+        logistics_bits.append(
+            "risk level "
+            + str(
+                risk_level
+            )
+        )
+
+    if logistics_bits:
+
+        pieces.append(
+            "Logistics: "
+            + ", ".join(
+                logistics_bits
+            )
+            + "."
+        )
+
+
+    payload[
+        "short_answer"
+    ] = " ".join(
+        pieces
+    )
+
+
+    return payload
+
+
+def process_text_request(
+    user_text: str,
+    include_raw_response: bool = False,
+):
+    # Run the entire older pipeline first.
+    payload = (
+        _process_text_request_before_final_response_authority_v2(
+            user_text,
+            include_raw_response,
+        )
+    )
+
+    if not isinstance(
+        payload,
+        dict,
+    ):
+        return payload
+
+
+    # Do not try to beautify a real backend failure.
+    if (
+        payload.get("status")
+        == "error"
+    ):
+        return payload
+
+
+    # Full trade plans get ONE final authoritative polish
+    # after all legacy wrappers have completed.
+    if _frav2_is_full_trade(
+        user_text,
+        payload,
+    ):
+
+        try:
+
+            payload = (
+                _final_answer_authority_polish_v2(
+                    payload,
+                    user_text,
+                )
+            )
+
+        except Exception as error:
+
+            # Do not turn answer-polish failure into HTTP 500.
+            validation = payload.setdefault(
+                "backend_validation",
+                {},
+            )
+
+            if isinstance(
+                validation,
+                dict,
+            ):
+
+                warnings = list(
+                    validation.get(
+                        "response_contract_warnings"
+                    )
+                    or []
+                )
+
+                warnings.append(
+                    "Final answer polish failed: "
+                    + str(error)
+                )
+
+                validation[
+                    "response_contract_warnings"
+                ] = _frav2_unique(
+                    warnings
+                )
+
+
+    # This is intentionally LAST.
+    return _final_response_sync_v2(
+        payload,
+        user_text,
+    )

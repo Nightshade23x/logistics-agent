@@ -47,7 +47,7 @@ export default function AnswerCard({ result }) {
       <div className="card-header answer-card-header">
         <div>
           <div className="card-title">Answer</div>
-          <div className="answer-subtitle">Clear first-pass result and next workflow steps</div>
+          <div className="answer-subtitle">First-pass plan, key decisions, and next steps</div>
         </div>
         <Badge status={status} />
       </div>

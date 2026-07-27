@@ -1,3 +1,13 @@
+// DASHBOARD_CURRENT_WORKSPACE_RESET_V1
+try {
+  localStorage.removeItem("meridian.dashboard.mode");
+  localStorage.removeItem("meridian.dashboard.text");
+  localStorage.removeItem("meridian.dashboard.json");
+  localStorage.removeItem("meridian.lastResult");
+} catch {
+  // Browser storage unavailable; continue normally.
+}
+
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";

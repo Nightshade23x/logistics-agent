@@ -282,8 +282,19 @@ export function parseAnswerSections(answerText) {
 export function buildNextStepFlow(result, actions) {
   var steps = [];
   var safeActions = Array.isArray(actions) ? actions : [];
-  var hasQuestions = safeActions.length > 0;
+  var realClarificationQuestions =
+    result && Array.isArray(result.clarification_questions)
+      ? result.clarification_questions
+      : [];
 
+  var realActionQuestions =
+    result && result.action_plan && Array.isArray(result.action_plan.user_questions)
+      ? result.action_plan.user_questions
+      : [];
+
+  var hasQuestions =
+    realClarificationQuestions.length > 0 ||
+    realActionQuestions.length > 0;
   var hasSuppliers =
     Array.isArray(result && result.supplier_options) ||
     Array.isArray(result && result.shortlisted_suppliers) ||
@@ -357,9 +368,25 @@ export function buildNextStepFlow(result, actions) {
   if (hasCosts) {
     steps.push({
       label: String(steps.length + 1),
-      title: "Review cost result",
+      title:
+        result &&
+        result.landed_cost_advice &&
+        (
+          result.landed_cost_advice.status === "blocked" ||
+          result.landed_cost_advice.status === "needs_more_information"
+        )
+          ? "Complete cost inputs"
+          : "Review cost result",
       tab: "Reports",
-      detail: "Validate landed cost, insurance, duty, taxes, and final booking readiness.",
+      detail:
+        result &&
+        result.landed_cost_advice &&
+        (
+          result.landed_cost_advice.status === "blocked" ||
+          result.landed_cost_advice.status === "needs_more_information"
+        )
+          ? "Add the missing commercial inputs before final landed cost, duty, tax, and booking review."
+          : "Validate landed cost, insurance, duty, taxes, and final booking readiness.",
       status: "next"
     });
   }

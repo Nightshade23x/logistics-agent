@@ -115,7 +115,7 @@ export default function Dashboard() {
   const navigate = useNavigate();
 
   const [mode, setMode] = useState(() => loadDashboardValue(DASHBOARD_MODE_KEY, "text"));
-  const [text, setText] = useState(() => loadDashboardValue(DASHBOARD_TEXT_KEY, SAMPLE_TEXT));
+  const [text, setText] = useState(() => loadDashboardValue(DASHBOARD_TEXT_KEY, ""));
   const [jsonText, setJsonText] = useState(() => loadDashboardValue(DASHBOARD_JSON_KEY, JSON.stringify(SAMPLE_JSON, null, 2)));
   const [files, setFiles] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -209,14 +209,6 @@ export default function Dashboard() {
           <div className="page-title">Dashboard</div>
           <div className="page-subtitle">Submit a sourcing, logistics, finance, or document request and let the agent pipeline prepare a first-pass plan.</div>
         </div>
-        <div className="page-actions">
-          <button className="btn" onClick={clearCurrentWorkspace}>
-            Clear current
-          </button>
-          <button className="btn" onClick={clearEverything}>
-            Clear all
-          </button>
-        </div>
       </div>
 
       <div className="request-panel request-panel-v2">
@@ -280,10 +272,20 @@ export default function Dashboard() {
 
             {error && <div className="error-banner">{error}</div>}
 
-            <button className="btn btn-primary run-request-v2" onClick={submit} disabled={loading}>
-              {loading && <span className="spinner" />}
-              {loading ? "Running agents..." : "Run agent pipeline"}
-            </button>
+            <div className="request-action-row-v2" style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginTop: 12 }}>
+              <button className="btn btn-primary run-request-v2" onClick={submit} disabled={loading}>
+                {loading && <span className="spinner" />}
+                {loading ? "Running agents..." : "Run agent pipeline"}
+              </button>
+
+              <button className="btn" onClick={clearCurrentWorkspace}>
+                Clear current
+              </button>
+
+              <button className="btn" onClick={clearEverything}>
+                Clear all
+              </button>
+            </div>
           </div>
         </div>
 

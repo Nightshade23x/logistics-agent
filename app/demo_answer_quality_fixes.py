@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+
+import re
 from copy import deepcopy
 
 
@@ -265,7 +267,1423 @@ def _install_supplier_profiles(payload, prompt_text, cargo_names, route):
         ]
 
 
+
+
+def _ux_is_dict(value):
+    return isinstance(value, dict)
+
+
+def _ux_number(value):
+    try:
+        if value in (None, "", [], {}):
+            return None
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _ux_fmt_number(value):
+    number = _ux_number(value)
+
+    if number is None:
+        return "not confirmed"
+
+    if abs(number - round(number)) < 1e-9:
+        return str(int(round(number)))
+
+    return f"{number:.2f}".rstrip("0").rstrip(".")
+
+
+def _ux_unique(values):
+    output = []
+    seen = set()
+
+    for value in values or []:
+        if value in (None, ""):
+            continue
+
+        value = str(value).strip()
+
+        if not value:
+            continue
+
+        key = value.lower()
+
+        if key in seen:
+            continue
+
+        seen.add(key)
+        output.append(value)
+
+    return output
+
+
+def _ux_best_docs(payload):
+    candidates = []
+
+    top = payload.get("document_requirements_advice")
+
+    if _ux_is_dict(top):
+        candidates.append(top)
+
+    specialist_responses = payload.get("specialist_responses")
+
+    if _ux_is_dict(specialist_responses):
+        document_response = specialist_responses.get(
+            "document_ai_agent"
+        )
+
+        if _ux_is_dict(document_response):
+            specialist_docs = document_response.get(
+                "document_requirements_advice"
+            )
+
+            if _ux_is_dict(specialist_docs):
+                candidates.append(specialist_docs)
+
+    if not candidates:
+        return {}
+
+    def score(candidate):
+        return (
+            3 * len(candidate.get("conditional_documents") or [])
+            + 2 * len(candidate.get("required_documents") or [])
+            + 2 * len(candidate.get("cargo_items_preview") or [])
+            + len(candidate.get("recommendations") or [])
+        )
+
+    return max(candidates, key=score)
+
+
+def _ux_cargo_names(payload, prompt_text):
+    values = []
+
+    generic = {
+        "",
+        "cargo",
+        "item",
+        "items",
+        "product",
+        "requested product",
+        "requested cargo",
+        "unknown",
+        "unknown cargo",
+        "m",
+        "cm",
+        "mm",
+        "kg",
+    }
+
+    def add(value):
+        if value is None:
+            return
+
+        value = str(value).strip(" \t\r\n,.;:-")
+
+        if not value:
+            return
+
+        if value.lower() in generic:
+            return
+
+        if len(value) <= 1:
+            return
+
+        values.append(value)
+
+    docs = _ux_best_docs(payload)
+
+    for value in docs.get("cargo_items_preview") or []:
+        add(value)
+
+    specialist_responses = payload.get("specialist_responses")
+
+    if _ux_is_dict(specialist_responses):
+        doc_agent = specialist_responses.get(
+            "document_ai_agent"
+        )
+
+        if _ux_is_dict(doc_agent):
+            specialist_docs = doc_agent.get(
+                "document_requirements_advice"
+            )
+
+            if _ux_is_dict(specialist_docs):
+                for value in (
+                    specialist_docs.get("cargo_items_preview")
+                    or []
+                ):
+                    add(value)
+
+    visualizer = payload.get("logistics_visualizer")
+
+    if _ux_is_dict(visualizer):
+        for item in visualizer.get("cargo_mix") or []:
+            if not _ux_is_dict(item):
+                continue
+
+            add(
+                item.get("item_name")
+                or item.get("name")
+                or item.get("product_name")
+            )
+
+    prompt = str(prompt_text or "")
+
+    patterns = [
+        r"\b\d+(?:\.\d+)?\s*CBM\s+(.+?)\s+from\s+",
+        r"\b\d+\s+pallets?\s+of\s+(.+?)\s+from\s+",
+        r"\bship\s+\d+\s+pallets?\s+of\s+(.+?)\s+from\s+",
+    ]
+
+    for pattern in patterns:
+        match = re.search(
+            pattern,
+            prompt,
+            flags=re.IGNORECASE,
+        )
+
+        if match:
+            add(match.group(1))
+            break
+
+    return _ux_unique(values) or ["requested cargo"]
+
+
+def _ux_route(payload):
+    origin = (
+        payload.get("origin_country")
+        or payload.get("origin")
+    )
+
+    destination = (
+        payload.get("destination_country")
+        or payload.get("destination")
+    )
+
+    incoterm = None
+
+    trade_terms = payload.get("trade_terms_advice")
+
+    if _ux_is_dict(trade_terms):
+        origin = (
+            trade_terms.get("origin_country")
+            or origin
+        )
+
+        destination = (
+            trade_terms.get("destination_country")
+            or destination
+        )
+
+        incoterm = trade_terms.get("incoterm")
+
+    incoterm = (
+        incoterm
+        or payload.get("incoterm")
+        or payload.get("trade_term")
+    )
+
+    handoff = payload.get("handoff_payload")
+
+    if _ux_is_dict(handoff):
+        origin = (
+            origin
+            or handoff.get("origin_country")
+            or handoff.get("origin")
+        )
+
+        destination = (
+            destination
+            or handoff.get("destination_country")
+            or handoff.get("destination")
+        )
+
+        incoterm = (
+            incoterm
+            or handoff.get("incoterm")
+            or handoff.get("trade_term")
+        )
+
+    return {
+        "origin": origin,
+        "destination": destination,
+        "incoterm": incoterm,
+    }
+
+
+def _ux_trader_details(payload):
+    texts = []
+
+    for summary in payload.get("agent_summaries") or []:
+
+        if not _ux_is_dict(summary):
+            continue
+
+        if (
+            str(summary.get("agent_name") or "").lower()
+            == "trader_agent"
+        ):
+            value = summary.get("summary")
+
+            if value:
+                texts.append(str(value))
+
+    specialist_responses = payload.get(
+        "specialist_responses"
+    )
+
+    trader_response = {}
+
+    if _ux_is_dict(specialist_responses):
+
+        candidate = specialist_responses.get(
+            "trader_agent"
+        )
+
+        if _ux_is_dict(candidate):
+            trader_response = candidate
+
+            if candidate.get("summary"):
+                texts.append(
+                    str(candidate.get("summary"))
+                )
+
+    combined = " ".join(texts)
+
+    duty_rate = None
+
+    def walk(value):
+        nonlocal duty_rate
+
+        if duty_rate is not None:
+            return
+
+        if isinstance(value, dict):
+
+            for key, item in value.items():
+
+                if str(key).lower() in {
+                    "duty_rate_percent",
+                    "estimated_duty_rate_percent",
+                    "import_duty_rate_percent",
+                    "duty_rate",
+                }:
+                    number = _ux_number(item)
+
+                    if number is not None:
+                        duty_rate = number
+                        return
+
+            for item in value.values():
+                walk(item)
+
+        elif isinstance(value, list):
+
+            for item in value:
+                walk(item)
+
+    walk(trader_response)
+
+    if duty_rate is None:
+        match = re.search(
+            r"(?:estimated\s+)?duty\s+rate"
+            r"(?:\s+of|\s*:)?\s*"
+            r"([0-9]+(?:\.[0-9]+)?)\s*%",
+            combined,
+            flags=re.IGNORECASE,
+        )
+
+        if match:
+            duty_rate = float(match.group(1))
+
+    lower = combined.lower()
+
+    provisional = any(
+        phrase in lower
+        for phrase in [
+            "could not be automatically classified",
+            "default duty rate was used",
+            "fallback duty rate",
+            "fallback rate",
+            "default rate",
+        ]
+    )
+
+    no_fta = any(
+        phrase in lower
+        for phrase in [
+            "no known free trade agreement applies",
+            "no known fta applies",
+            "no free trade agreement applies",
+        ]
+    )
+
+    return {
+        "duty_rate_percent": duty_rate,
+        "provisional": provisional,
+        "no_known_fta": no_fta,
+        "summary": combined,
+    }
+
+
+def _full_trade_plan_requested_v2(prompt_text, payload):
+    lower = str(prompt_text or "").lower()
+
+    if any(
+        phrase in lower
+        for phrase in [
+            "full trade plan",
+            "complete trade plan",
+            "end-to-end trade plan",
+            "full shipment plan",
+            "complete shipment plan",
+        ]
+    ):
+        return True
+
+    groups = [
+        ["logistics", "shipment", "container"],
+        ["document", "documents"],
+        ["duty", "tariff", "hs code"],
+        ["risk", "compliance"],
+        ["landed cost", "cost", "insurance"],
+    ]
+
+    hits = sum(
+        1
+        for group in groups
+        if any(term in lower for term in group)
+    )
+
+    agents = {
+        str(agent).lower()
+        for agent in payload.get("agents_called") or []
+    }
+
+    specialist_count = len(
+        agents.intersection(
+            {
+                "logistics_agent",
+                "trader_agent",
+                "document_ai_agent",
+                "risk_agent",
+                "finance_agent",
+                "compliance_agent",
+            }
+        )
+    )
+
+    return hits >= 4 and specialist_count >= 3
+
+
+def _ux_cost_name(value):
+    mapping = {
+        "procurement_value_usd":
+            "declared / cargo value",
+
+        "cargo_value_usd":
+            "declared / cargo value",
+
+        "freight_quote_usd":
+            "freight quote",
+
+        "insurance_premium_usd":
+            "insurance premium",
+
+        "duty_rate_percent":
+            "final duty rate",
+
+        "import_tax_rate_percent":
+            "applicable import tax rate",
+
+        "vat_rate_percent":
+            "applicable import tax / VAT rate",
+
+        "customs_brokerage_usd":
+            "customs brokerage / clearance fee",
+
+        "local_delivery_usd":
+            "destination local delivery",
+    }
+
+    return mapping.get(
+        str(value),
+        str(value).replace("_", " "),
+    )
+
+
+def _build_full_trade_answer_v2(
+    payload,
+    prompt_text,
+    canonical,
+):
+    route = _ux_route(payload)
+    cargo_names = _ux_cargo_names(
+        payload,
+        prompt_text,
+    )
+
+    docs = _ux_best_docs(payload)
+    trader = _ux_trader_details(payload)
+
+    landed = payload.get("landed_cost_advice")
+
+    if not _ux_is_dict(landed):
+        landed = {}
+
+    visualizer = payload.get(
+        "logistics_visualizer"
+    )
+
+    if not _ux_is_dict(visualizer):
+        visualizer = {}
+
+    container_data = visualizer.get(
+        "container"
+    )
+
+    if not _ux_is_dict(container_data):
+        container_data = {}
+
+    display_metrics = visualizer.get(
+        "display_metrics"
+    )
+
+    if not _ux_is_dict(display_metrics):
+        display_metrics = {}
+
+    total_cbm = (
+        canonical.get("total_cbm")
+        if isinstance(canonical, dict)
+        else None
+    )
+
+    total_weight = (
+        canonical.get("total_weight_kg")
+        if isinstance(canonical, dict)
+        else None
+    )
+
+    container_name = (
+        canonical.get("recommended_container")
+        if isinstance(canonical, dict)
+        else None
+    )
+
+    load_type = (
+        canonical.get("recommended_load_type")
+        if isinstance(canonical, dict)
+        else None
+    )
+
+    risk_level = (
+        canonical.get("risk_level")
+        if isinstance(canonical, dict)
+        else None
+    )
+
+    risk_score = (
+        canonical.get("risk_score")
+        if isinstance(canonical, dict)
+        else None
+    )
+
+    utilization = (
+        container_data.get("utilization_percent")
+        or display_metrics.get(
+            "utilization_percent"
+        )
+    )
+
+    required_docs = (
+        docs.get("required_documents")
+        or [
+            "Commercial invoice",
+            "Packing list",
+            "Bill of lading or airway bill",
+        ]
+    )
+
+    conditional_docs = (
+        docs.get("conditional_documents")
+        or []
+    )
+
+    missing_docs = (
+        docs.get(
+            "missing_or_unconfirmed_documents"
+        )
+        or []
+    )
+
+    missing_costs = list(
+        landed.get("missing_cost_inputs")
+        or []
+    )
+
+    duty_rate = trader.get(
+        "duty_rate_percent"
+    )
+
+    # Trader already has an estimate.
+    # Do not tell the user simultaneously that
+    # "duty rate is missing".
+    if duty_rate is not None:
+
+        missing_costs = [
+            value
+            for value in missing_costs
+            if str(value) != "duty_rate_percent"
+        ]
+
+    physically_workable = (
+        _ux_number(total_cbm) not in (None, 0)
+        and
+        _ux_number(total_weight) not in (None, 0)
+        and
+        bool(container_name)
+    )
+
+    still_open = bool(
+        missing_costs
+        or missing_docs
+        or trader.get("provisional")
+    )
+
+    if physically_workable and still_open:
+
+        opening = (
+            "First-pass verdict: this shipment is physically "
+            "workable, but it is not ready to book yet. "
+            "The logistics plan is usable; tariff "
+            "classification, commercial cost inputs, and "
+            "shipment documents still need confirmation."
+        )
+
+    elif physically_workable:
+
+        opening = (
+            "First-pass verdict: the shipment is physically "
+            "workable and the main planning inputs are "
+            "available. Complete the final document and "
+            "compliance checks before booking."
+        )
+
+    else:
+
+        opening = (
+            "First-pass verdict: the trade route can be "
+            "reviewed, but the shipment is not ready for "
+            "booking because important planning inputs are "
+            "still missing."
+        )
+
+    lines = [
+        opening,
+        "",
+        "Shipment plan:",
+        f"- Cargo: {', '.join(cargo_names)}",
+        f"- Route: "
+        f"{route.get('origin') or 'not confirmed'} → "
+        f"{route.get('destination') or 'not confirmed'}",
+        f"- Incoterm: "
+        f"{route.get('incoterm') or 'not confirmed'}",
+    ]
+
+    if _ux_number(total_cbm) is not None:
+        lines.append(
+            "- Total volume: "
+            + _ux_fmt_number(total_cbm)
+            + " CBM"
+        )
+
+    if _ux_number(total_weight) is not None:
+        lines.append(
+            "- Total weight: "
+            + _ux_fmt_number(total_weight)
+            + " kg"
+        )
+
+    if container_name:
+        lines.append(
+            f"- Recommended container: "
+            f"{container_name}"
+        )
+
+    if load_type:
+        human_load_type = (
+            str(load_type)
+            .replace("_", " ")
+            .upper()
+        )
+
+        lines.append(
+            f"- Recommended load type: "
+            f"{human_load_type}"
+        )
+
+    if _ux_number(utilization) is not None:
+        lines.append(
+            "- Estimated container utilization: "
+            + _ux_fmt_number(utilization)
+            + "%"
+        )
+
+    lines.extend(
+        [
+            "",
+            "Duty and trade treatment:",
+        ]
+    )
+
+    if duty_rate is not None:
+
+        lines.append(
+            "- Current duty estimate: approximately "
+            + _ux_fmt_number(duty_rate)
+            + "%."
+        )
+
+        if trader.get("provisional"):
+
+            lines.append(
+                "- Important: this duty figure is provisional. "
+                "The Trader Agent could not confirm the final "
+                "product classification and used a fallback/"
+                "default tariff rate. Confirm the ceramic-tile "
+                "HS classification before customs entry or "
+                "final costing."
+            )
+
+        else:
+
+            lines.append(
+                "- Confirm the final HS classification before "
+                "customs entry even if the current duty rate "
+                "remains unchanged."
+            )
+
+    else:
+
+        lines.append(
+            "- A reliable final duty rate is not available yet. "
+            "Confirm the HS code / tariff classification before "
+            "customs entry and final costing."
+        )
+
+    if trader.get("no_known_fta"):
+
+        lines.append(
+            "- FTA: the Trader Agent did not identify a known "
+            "free-trade agreement applying to this India–USA "
+            "shipment."
+        )
+
+    incoterm = str(
+        route.get("incoterm") or ""
+    ).upper()
+
+    if incoterm == "CIF":
+
+        lines.extend(
+            [
+                "",
+                "CIF responsibilities:",
+                "- The seller normally arranges the main "
+                "carriage and minimum cargo insurance.",
+                "- Confirm the exact risk-transfer point and "
+                "the actual insurance coverage. CIF does not "
+                "automatically mean the seller carries transit "
+                "risk all the way to the final destination.",
+            ]
+        )
+
+    lines.extend(
+        [
+            "",
+            "Documents and compliance:",
+        ]
+    )
+
+    for doc in _ux_unique(required_docs):
+        lines.append(
+            f"- Required: {doc}"
+        )
+
+    for doc in _ux_unique(conditional_docs):
+        lines.append(
+            f"- Check / conditional: {doc}"
+        )
+
+    if missing_docs:
+
+        lines.append(
+            "- Current status: required shipment documents "
+            "are still missing or unconfirmed, so compliance "
+            "is not final."
+        )
+
+    lines.extend(
+        [
+            "",
+            "Risk:",
+        ]
+    )
+
+    if risk_level:
+
+        risk_text = (
+            str(risk_level)
+            .replace("_", " ")
+            .lower()
+        )
+
+        if _ux_number(risk_score) is not None:
+
+            lines.append(
+                "- Current operational/logistics risk: "
+                f"{risk_text} "
+                f"({_ux_fmt_number(risk_score)}/10)."
+            )
+
+        else:
+
+            lines.append(
+                "- Current operational/logistics risk: "
+                f"{risk_text}."
+            )
+
+    else:
+
+        lines.append(
+            "- Operational logistics risk has not been "
+            "fully scored."
+        )
+
+    if (
+        trader.get("provisional")
+        or missing_docs
+        or missing_costs
+    ):
+
+        lines.append(
+            "- This does not mean the entire trade is cleared "
+            "or low-risk. Tariff, document, insurance, and "
+            "commercial checks remain open."
+        )
+
+    lines.extend(
+        [
+            "",
+            "Landed cost:",
+        ]
+    )
+
+    subtotal = landed.get(
+        "estimated_subtotal_known_usd"
+    )
+
+    if _ux_number(subtotal) is not None:
+
+        lines.append(
+            "- Currently calculable subtotal: "
+            + _ux_fmt_number(subtotal)
+            + " USD."
+        )
+
+    else:
+
+        lines.append(
+            "- A final landed-cost figure cannot yet be "
+            "calculated from the information provided."
+        )
+
+    if missing_costs:
+
+        cost_labels = _ux_unique(
+            [
+                _ux_cost_name(value)
+                for value in missing_costs
+            ]
+        )
+
+        lines.append(
+            "- Still needed: "
+            + ", ".join(cost_labels)
+            + "."
+        )
+
+    if (
+        duty_rate is not None
+        and trader.get("provisional")
+    ):
+
+        lines.append(
+            "- Do not treat the current "
+            + _ux_fmt_number(duty_rate)
+            + "% duty estimate as final until the HS "
+            "classification is confirmed."
+        )
+
+    if incoterm == "CIF":
+
+        lines.append(
+            "- Even though CIF normally includes seller-"
+            "arranged freight and minimum insurance, obtain "
+            "the actual freight and insurance values used for "
+            "the final customs / landed-cost calculation."
+        )
+
+    lines.extend(
+        [
+            "",
+            "What this means:",
+        ]
+    )
+
+    if physically_workable:
+
+        lines.append(
+            "- The current container plan is usable for "
+            "quoting and first-pass shipment planning."
+        )
+
+    if still_open:
+
+        lines.append(
+            "- Do not treat this shipment as booking-ready, "
+            "customs-cleared, or fully costed until the open "
+            "checks above are resolved."
+        )
+
+    lines.extend(
+        [
+            "",
+            "Next actions, in order:",
+        ]
+    )
+
+    step = 1
+
+    if (
+        trader.get("provisional")
+        or duty_rate is None
+    ):
+
+        lines.append(
+            f"- {step}) Confirm the ceramic-tile HS "
+            "classification and final duty rate."
+        )
+        step += 1
+
+    if missing_costs:
+
+        lines.append(
+            f"- {step}) Confirm the declared cargo value and "
+            "the remaining freight, insurance, tax, "
+            "brokerage, and local-delivery inputs required "
+            "for landed cost."
+        )
+        step += 1
+
+    if required_docs or conditional_docs:
+
+        lines.append(
+            f"- {step}) Prepare the required shipment "
+            "documents and verify the conditional origin/"
+            "insurance documents."
+        )
+        step += 1
+
+    if physically_workable and container_name:
+
+        lines.append(
+            f"- {step}) Obtain the freight quote for the "
+            f"recommended {container_name} and confirm final "
+            "packed dimensions before booking."
+        )
+        step += 1
+
+    lines.append(
+        f"- {step}) Rerun landed-cost and compliance checks. "
+        "Once those are clear, proceed to final booking."
+    )
+
+
+    # FULL_TRADE_REPORT_SYNC_V3
+    #
+    # The user-facing answer and the exported JSON should tell
+    # the same story. The original pipeline can contain richer
+    # specialist data alongside older generic top-level fields.
+    # Synchronize those fields here for full-trade requests.
+
+    # --------------------------------------------------------
+    # A. Synchronize the real product name
+    # --------------------------------------------------------
+
+    primary_cargo_name = (
+        cargo_names[0]
+        if cargo_names
+        else "requested cargo"
+    )
+
+    visualizer_sync = payload.get(
+        "logistics_visualizer"
+    )
+
+    if isinstance(visualizer_sync, dict):
+
+        cargo_mix_sync = visualizer_sync.get(
+            "cargo_mix"
+        )
+
+        if isinstance(cargo_mix_sync, list):
+
+            generic_names = {
+                "",
+                "cargo",
+                "item",
+                "product",
+                "requested cargo",
+                "requested product",
+            }
+
+            for cargo_item in cargo_mix_sync:
+
+                if not isinstance(cargo_item, dict):
+                    continue
+
+                current_name = str(
+                    cargo_item.get("item_name")
+                    or ""
+                ).strip()
+
+                if current_name.lower() in generic_names:
+
+                    cargo_item[
+                        "item_name"
+                    ] = primary_cargo_name
+
+
+    # --------------------------------------------------------
+    # B. Promote richer Document Agent output
+    # --------------------------------------------------------
+
+    top_docs_sync = payload.setdefault(
+        "document_requirements_advice",
+        {},
+    )
+
+    if isinstance(top_docs_sync, dict):
+
+        top_docs_sync["applicable"] = True
+
+        top_docs_sync[
+            "cargo_items_preview"
+        ] = list(cargo_names)
+
+        top_docs_sync[
+            "required_documents"
+        ] = _ux_unique(
+            required_docs
+        )
+
+        top_docs_sync[
+            "conditional_documents"
+        ] = _ux_unique(
+            conditional_docs
+        )
+
+        if missing_docs:
+
+            top_docs_sync[
+                "missing_or_unconfirmed_documents"
+            ] = _ux_unique(
+                missing_docs
+            )
+
+
+    # --------------------------------------------------------
+    # C. Synchronize compliance cargo/docs
+    # --------------------------------------------------------
+
+    compliance_sync = payload.get(
+        "trade_compliance_readiness"
+    )
+
+    if isinstance(compliance_sync, dict):
+
+        compliance_sync[
+            "cargo_items_preview"
+        ] = list(cargo_names)
+
+        compliance_sync[
+            "conditional_documents"
+        ] = _ux_unique(
+            conditional_docs
+        )
+
+
+    # --------------------------------------------------------
+    # D. Fix false "No Logistics Agent response"
+    # --------------------------------------------------------
+
+    logistics_review_sync = payload.setdefault(
+        "logistics_quality_review",
+        {},
+    )
+
+    if (
+        isinstance(logistics_review_sync, dict)
+        and (
+            _ux_number(total_cbm) is not None
+            or _ux_number(total_weight) is not None
+            or container_name
+        )
+    ):
+
+        logistics_review_sync.update(
+            {
+                "applicable": True,
+                "status": "review_required",
+                "summary": (
+                    "Logistics planning output is available "
+                    "and usable for first-pass shipment review."
+                ),
+                "total_cbm": total_cbm,
+                "total_weight_kg": total_weight,
+                "recommended_container": container_name,
+                "recommended_load_type": load_type,
+                "risk_level": risk_level,
+                "risk_score": risk_score,
+                "readiness_status": (
+                    canonical.get(
+                        "readiness_status"
+                    )
+                    if isinstance(
+                        canonical,
+                        dict,
+                    )
+                    else None
+                ),
+            }
+        )
+
+
+    # --------------------------------------------------------
+    # E. Store Trader output in a structured report section
+    # --------------------------------------------------------
+
+    trade_duty_sync = payload.setdefault(
+        "trade_duty_advice",
+        {},
+    )
+
+    if isinstance(trade_duty_sync, dict):
+
+        if duty_rate is not None:
+
+            duty_summary = (
+                "Trader Agent estimated duty at "
+                + _ux_fmt_number(duty_rate)
+                + "%."
+            )
+
+            if trader.get("provisional"):
+
+                duty_summary += (
+                    " This rate is provisional because "
+                    "the final HS classification was "
+                    "not confirmed."
+                )
+
+        else:
+
+            duty_summary = (
+                "Final duty could not be confirmed "
+                "because HS classification remains open."
+            )
+
+        trade_duty_sync.update(
+            {
+                "applicable": True,
+                "status": (
+                    "review_required"
+                    if (
+                        trader.get("provisional")
+                        or duty_rate is None
+                    )
+                    else "clear"
+                ),
+                "product": primary_cargo_name,
+                "origin_country": route.get(
+                    "origin"
+                ),
+                "destination_country": route.get(
+                    "destination"
+                ),
+                "estimated_duty_rate_percent": (
+                    duty_rate
+                ),
+                "rate_is_provisional": bool(
+                    trader.get("provisional")
+                ),
+                "hs_classification_status": (
+                    "unconfirmed"
+                    if trader.get("provisional")
+                    else "reviewed"
+                ),
+                "fta_status": (
+                    "no_known_fta"
+                    if trader.get("no_known_fta")
+                    else "not_confirmed"
+                ),
+                "summary": duty_summary,
+            }
+        )
+
+
+    # --------------------------------------------------------
+    # F. Preserve provisional duty inside landed-cost report
+    # without pretending it is a final customs rate.
+    # --------------------------------------------------------
+
+    if isinstance(landed, dict):
+
+        known_costs_sync = landed.setdefault(
+            "known_inputs",
+            {},
+        )
+
+        if (
+            isinstance(known_costs_sync, dict)
+            and duty_rate is not None
+        ):
+
+            known_costs_sync[
+                "provisional_duty_rate_percent"
+            ] = duty_rate
+
+        if (
+            duty_rate is not None
+            and trader.get("provisional")
+        ):
+
+            landed_warnings = list(
+                landed.get("warnings")
+                or []
+            )
+
+            landed_warnings.append(
+                "Trader Agent estimated a provisional "
+                + _ux_fmt_number(duty_rate)
+                + "% duty rate, but final HS "
+                "classification is still required."
+            )
+
+            landed["warnings"] = _ux_unique(
+                landed_warnings
+            )
+
+
+    # --------------------------------------------------------
+    # G. Synchronize UI sections used by Reports
+    # --------------------------------------------------------
+
+    ui_sections_sync = payload.get(
+        "ui_sections"
+    )
+
+    if isinstance(ui_sections_sync, list):
+
+        for section in ui_sections_sync:
+
+            if not isinstance(section, dict):
+                continue
+
+            section_id = section.get(
+                "section_id"
+            )
+
+            metrics_sync = section.get(
+                "metrics"
+            )
+
+            if not isinstance(
+                metrics_sync,
+                dict,
+            ):
+                metrics_sync = {}
+                section["metrics"] = metrics_sync
+
+
+            if section_id == "logistics":
+
+                section["status"] = (
+                    "review_required"
+                )
+
+                section["summary"] = (
+                    "Logistics planning output is "
+                    "available for first-pass review."
+                )
+
+                metrics_sync.update(
+                    {
+                        "total_cbm": total_cbm,
+                        "total_weight_kg": (
+                            total_weight
+                        ),
+                        "recommended_container": (
+                            container_name
+                        ),
+                        "recommended_load_type": (
+                            load_type
+                        ),
+                        "risk_level": risk_level,
+                        "risk_score": risk_score,
+                    }
+                )
+
+
+            elif (
+                section_id
+                == "compliance_documents"
+            ):
+
+                metrics_sync[
+                    "required_documents"
+                ] = _ux_unique(
+                    required_docs
+                )
+
+                metrics_sync[
+                    "conditional_documents"
+                ] = _ux_unique(
+                    conditional_docs
+                )
+
+
+            elif (
+                section_id
+                == "costs_insurance"
+            ):
+
+                known_ui = metrics_sync.get(
+                    "known_inputs"
+                )
+
+                if not isinstance(
+                    known_ui,
+                    dict,
+                ):
+                    known_ui = {}
+                    metrics_sync[
+                        "known_inputs"
+                    ] = known_ui
+
+                if duty_rate is not None:
+
+                    known_ui[
+                        "provisional_duty_rate_percent"
+                    ] = duty_rate
+
+                    metrics_sync[
+                        "provisional_duty_rate_percent"
+                    ] = duty_rate
+
+
+            elif (
+                section_id
+                == "partner_checks"
+            ):
+
+                partner_status = payload.get(
+                    "partner_review_status"
+                )
+
+                if partner_status in (
+                    None,
+                    "",
+                    "unknown",
+                ):
+
+                    section[
+                        "status"
+                    ] = "unknown"
+
+                    section[
+                        "summary"
+                    ] = (
+                        "No structured partner-review "
+                        "result is available for this request."
+                    )
+
+                    section["bullets"] = []
+                    section["actions"] = []
+
+
+            elif (
+                section_id
+                == "executive_decision"
+            ):
+
+                bad_not_applicable = {
+                    "shopping review was not applicable.",
+                    "logistics review was not applicable.",
+                }
+
+                section["bullets"] = [
+                    value
+                    for value in (
+                        section.get("bullets")
+                        or []
+                    )
+                    if str(value).strip().lower()
+                    not in bad_not_applicable
+                ]
+
+
+    # --------------------------------------------------------
+    # H. Remove "not applicable" pseudo-risks from executive
+    # summary. These are not actual shipment risks.
+    # --------------------------------------------------------
+
+    executive_sync = payload.get(
+        "executive_summary"
+    )
+
+    if isinstance(executive_sync, dict):
+
+        bad_not_applicable = {
+            "shopping review was not applicable.",
+            "logistics review was not applicable.",
+        }
+
+        executive_sync["top_risks"] = [
+            value
+            for value in (
+                executive_sync.get("top_risks")
+                or []
+            )
+            if str(value).strip().lower()
+            not in bad_not_applicable
+        ]
+
+
+    return "\n".join(lines)
+
+
 def _build_answer(payload, prompt_text, canonical):
+    # FULL TRADE ANSWER V3 ROUTING
+    if _full_trade_plan_requested_v2(prompt_text, payload):
+        return _build_full_trade_answer_v2(
+            payload,
+            prompt_text,
+            canonical,
+        )
+
     route = _get_route(payload)
     cargo_names = _get_cargo_names(payload, prompt_text)
     docs = payload.get("document_requirements_advice") if _is_dict(payload.get("document_requirements_advice")) else {}
