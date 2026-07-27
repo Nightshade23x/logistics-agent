@@ -4545,3 +4545,3149 @@ def process_text_request(
         payload,
         user_text,
     )
+
+
+# ============================================================
+# FINAL_NP_EDGE_CASES_V1
+#
+# Narrow final-boundary normalization for:
+#
+# N) multiple explicit aggregate cargo clauses
+# P) overweight / payload-limit shipments
+#
+# The stabilized full-trade V2 response is deliberately left
+# untouched.
+# ============================================================
+
+_process_text_request_before_np_edge_cases_v1 = (
+    process_text_request
+)
+
+
+def _np_num_v1(value):
+    try:
+        if value in (
+            None,
+            "",
+        ):
+            return None
+
+        return float(value)
+
+    except (
+        TypeError,
+        ValueError,
+    ):
+        return None
+
+
+def _np_pretty_v1(value):
+    number = _np_num_v1(
+        value
+    )
+
+    if number is None:
+        return ""
+
+    if abs(
+        number - round(number)
+    ) < 1e-9:
+        return str(
+            int(round(number))
+        )
+
+    return (
+        f"{number:.2f}"
+        .rstrip("0")
+        .rstrip(".")
+    )
+
+
+def _np_direct_cbm_items_v1(
+    user_text,
+):
+    """
+    Parse clauses such as:
+
+      10 CBM ceramic tiles weighing 1200 kg
+      and 4 CBM pillows weighing 350 kg
+
+    This intentionally activates only when TWO OR MORE complete
+    CBM + item + kg clauses are present.
+    """
+
+    text = str(
+        user_text or ""
+    )
+
+    pattern = re.compile(
+        r"(?P<cbm>[0-9]+(?:\.[0-9]+)?)"
+        r"\s*CBM\s+"
+        r"(?:of\s+)?"
+        r"(?P<name>.*?)"
+        r"\s+weigh(?:ing|s)?\s+"
+        r"(?P<weight>[0-9]+(?:\.[0-9]+)?)"
+        r"\s*kg"
+        r"\s*"
+        r"(?="
+        r"(?:,?\s*(?:and|plus|&)\s+"
+        r"[0-9]+(?:\.[0-9]+)?\s*CBM\b)"
+        r"|"
+        r"\s+from\b"
+        r"|"
+        r"[.;]"
+        r"|"
+        r"$"
+        r")",
+        flags=re.IGNORECASE,
+    )
+
+    items = []
+
+    for match in pattern.finditer(
+        text
+    ):
+
+        cbm = _np_num_v1(
+            match.group(
+                "cbm"
+            )
+        )
+
+        weight = _np_num_v1(
+            match.group(
+                "weight"
+            )
+        )
+
+        name = str(
+            match.group(
+                "name"
+            )
+            or ""
+        ).strip(
+            " \t\r\n,.;:-"
+        )
+
+        name = re.sub(
+            r"^(?:of\s+)",
+            "",
+            name,
+            flags=re.IGNORECASE,
+        ).strip()
+
+        if (
+            cbm is None
+            or cbm <= 0
+            or weight is None
+            or weight <= 0
+            or not name
+        ):
+            continue
+
+        items.append(
+            {
+                "item_name": name,
+                "quantity": 1,
+                "total_cbm": cbm,
+                "unit_cbm": cbm,
+                "total_weight_kg": weight,
+                "unit_weight_kg": weight,
+                "aggregate_volume_only": True,
+                "dimensions_are_aggregate": True,
+                "display_dimensions_estimated": True,
+                "weight_estimated": False,
+                "weight_source":
+                    "explicit_user_item_weight",
+                "category_tags": [
+                    "general_cargo"
+                ],
+            }
+        )
+
+
+    # One clause can also be a normal single-shipment sentence.
+    # Do not take over that path.
+    if len(items) < 2:
+        return []
+
+    return items
+
+
+def _np_set_totals_v1(
+    obj,
+    total_cbm,
+    total_weight,
+):
+    if not isinstance(
+        obj,
+        dict,
+    ):
+        return
+
+    obj[
+        "total_cbm"
+    ] = total_cbm
+
+    obj[
+        "total_weight_kg"
+    ] = total_weight
+
+
+def _np_ui_section_v1(
+    payload,
+    section_id,
+):
+    sections = payload.get(
+        "ui_sections"
+    )
+
+    if not isinstance(
+        sections,
+        list,
+    ):
+        return None
+
+    for section in sections:
+
+        if (
+            isinstance(
+                section,
+                dict,
+            )
+            and section.get(
+                "section_id"
+            )
+            == section_id
+        ):
+            return section
+
+    return None
+
+
+def _np_sync_answer_v1(
+    payload,
+    answer,
+):
+    if not answer:
+        return
+
+    payload[
+        "display_answer"
+    ] = answer
+
+    payload[
+        "frontend_answer"
+    ] = answer
+
+    final_answer = payload.get(
+        "final_answer"
+    )
+
+    if not isinstance(
+        final_answer,
+        dict,
+    ):
+        final_answer = {}
+        payload[
+            "final_answer"
+        ] = final_answer
+
+    final_answer[
+        "answer_text"
+    ] = answer
+
+    first_line = next(
+        (
+            line.strip()
+            for line
+            in str(
+                answer
+            ).splitlines()
+            if line.strip()
+        ),
+        "",
+    )
+
+    if first_line:
+        final_answer[
+            "headline"
+        ] = first_line
+
+
+def _np_remove_cbm_question_list_v1(
+    values,
+):
+    result = []
+
+    for value in values or []:
+
+        text = str(
+            value or ""
+        ).strip()
+
+        lower = text.lower()
+
+        is_cbm_question = (
+            "cbm" in lower
+            and
+            (
+                "dimension" in lower
+                or
+                "packed" in lower
+            )
+        )
+
+        if is_cbm_question:
+            continue
+
+        result.append(
+            value
+        )
+
+    return result
+
+
+def _np_remove_cbm_questions_v1(
+    payload,
+):
+    payload[
+        "clarification_questions"
+    ] = _np_remove_cbm_question_list_v1(
+        payload.get(
+            "clarification_questions"
+        )
+        or []
+    )
+
+
+    action_plan = payload.get(
+        "action_plan"
+    )
+
+    if isinstance(
+        action_plan,
+        dict,
+    ):
+        action_plan[
+            "user_questions"
+        ] = _np_remove_cbm_question_list_v1(
+            action_plan.get(
+                "user_questions"
+            )
+            or []
+        )
+
+
+    booking = payload.get(
+        "booking_readiness"
+    )
+
+    if isinstance(
+        booking,
+        dict,
+    ):
+        booking[
+            "missing_information"
+        ] = _np_remove_cbm_question_list_v1(
+            booking.get(
+                "missing_information"
+            )
+            or []
+        )
+
+
+def _np_strip_cbm_question_from_answer_v1(
+    answer,
+):
+    text = str(
+        answer or ""
+    )
+
+    # Current normal logistics answer.
+    text = re.sub(
+        r"\n\nAnswer these next:\s*\n"
+        r"-\s*[^\n]*"
+        r"(?:CBM|cbm)"
+        r"[^\n]*"
+        r"(?:dimension|Dimension)"
+        r"[^\n]*"
+        r"(?=\n\n|\Z)",
+        "",
+        text,
+        flags=re.IGNORECASE,
+    )
+
+    # Defensive cleanup if only the bullet survived.
+    text = re.sub(
+        r"(?m)^-\s*"
+        r"[^\n]*CBM[^\n]*dimensions?"
+        r"[^\n]*\n?",
+        "",
+        text,
+        flags=re.IGNORECASE,
+    )
+
+    return (
+        text
+        .replace(
+            "\n\n\n",
+            "\n\n",
+        )
+        .strip()
+    )
+
+
+def _np_apply_multi_item_v1(
+    payload,
+    user_text,
+    items,
+):
+    total_cbm = sum(
+        float(
+            item[
+                "total_cbm"
+            ]
+        )
+        for item in items
+    )
+
+    total_weight = sum(
+        float(
+            item[
+                "total_weight_kg"
+            ]
+        )
+        for item in items
+    )
+
+    names = [
+        item[
+            "item_name"
+        ]
+        for item in items
+    ]
+
+
+    # ========================================================
+    # CANONICAL TOP-LEVEL METRICS
+    # ========================================================
+
+    metrics = payload.get(
+        "logistics_metrics"
+    )
+
+    if not isinstance(
+        metrics,
+        dict,
+    ):
+        metrics = {}
+        payload[
+            "logistics_metrics"
+        ] = metrics
+
+    _np_set_totals_v1(
+        metrics,
+        total_cbm,
+        total_weight,
+    )
+
+
+    handoff = payload.get(
+        "handoff_payload"
+    )
+
+    if isinstance(
+        handoff,
+        dict,
+    ):
+        _np_set_totals_v1(
+            handoff,
+            total_cbm,
+            total_weight,
+        )
+
+
+    review = payload.get(
+        "logistics_quality_review"
+    )
+
+    if isinstance(
+        review,
+        dict,
+    ):
+        _np_set_totals_v1(
+            review,
+            total_cbm,
+            total_weight,
+        )
+
+
+    # ========================================================
+    # VISUALIZER
+    # ========================================================
+
+    visualizer = payload.get(
+        "logistics_visualizer"
+    )
+
+    if not isinstance(
+        visualizer,
+        dict,
+    ):
+        visualizer = {}
+        payload[
+            "logistics_visualizer"
+        ] = visualizer
+
+
+    container = visualizer.get(
+        "container"
+    )
+
+    if not isinstance(
+        container,
+        dict,
+    ):
+        container = {}
+        visualizer[
+            "container"
+        ] = container
+
+
+    capacity = (
+        _np_num_v1(
+            container.get(
+                "capacity_cbm"
+            )
+        )
+        or 33.2
+    )
+
+    max_payload = _np_num_v1(
+        container.get(
+            "max_payload_kg"
+        )
+    )
+
+
+    _np_set_totals_v1(
+        container,
+        total_cbm,
+        total_weight,
+    )
+
+    container[
+        "total_items"
+    ] = len(
+        items
+    )
+
+
+    normalized_items = []
+
+    for item in items:
+
+        clone = dict(
+            item
+        )
+
+        cbm = float(
+            clone[
+                "total_cbm"
+            ]
+        )
+
+        edge = cbm ** (
+            1.0 / 3.0
+        )
+
+        clone[
+            "dimensions_m"
+        ] = {
+            "length": round(
+                edge,
+                6,
+            ),
+            "width": round(
+                edge,
+                6,
+            ),
+            "height": round(
+                edge,
+                6,
+            ),
+        }
+
+        normalized_items.append(
+            clone
+        )
+
+
+    visualizer[
+        "cargo_mix"
+    ] = normalized_items
+
+
+    utilization = (
+        total_cbm
+        / capacity
+        * 100
+        if capacity > 0
+        else None
+    )
+
+    remaining = max(
+        capacity - total_cbm,
+        0,
+    )
+
+
+    display_metrics = (
+        visualizer.get(
+            "display_metrics"
+        )
+    )
+
+    if not isinstance(
+        display_metrics,
+        dict,
+    ):
+        display_metrics = {}
+        visualizer[
+            "display_metrics"
+        ] = display_metrics
+
+
+    display_metrics.update(
+        {
+            "loaded_cbm":
+                round(
+                    total_cbm,
+                    6,
+                ),
+
+            "container_cbm":
+                capacity,
+
+            "remaining_cbm":
+                round(
+                    remaining,
+                    6,
+                ),
+
+            "utilization_percent":
+                round(
+                    utilization,
+                    2,
+                )
+                if utilization
+                is not None
+                else None,
+
+            "basis":
+                "shipment_total_cbm",
+        }
+    )
+
+
+    if utilization is not None:
+
+        container[
+            "utilization_percent"
+        ] = round(
+            utilization,
+            2,
+        )
+
+
+    fit = visualizer.get(
+        "fit_check"
+    )
+
+    if not isinstance(
+        fit,
+        dict,
+    ):
+        fit = {}
+        visualizer[
+            "fit_check"
+        ] = fit
+
+
+    if (
+        total_cbm <= capacity
+        and
+        (
+            max_payload is None
+            or
+            total_weight
+            <= max_payload
+        )
+    ):
+        fit[
+            "status"
+        ] = "fits_selected_container"
+
+        fit[
+            "warnings"
+        ] = [
+            "No major physical container fit issues detected."
+        ]
+
+        fit[
+            "recommendations"
+        ] = [
+            "Cargo appears physically suitable for standard container loading."
+        ]
+
+
+    # ========================================================
+    # DOC / COMPLIANCE ITEM PREVIEWS
+    # ========================================================
+
+    for key in [
+        "document_requirements_advice",
+        "trade_compliance_readiness",
+    ]:
+
+        section = payload.get(
+            key
+        )
+
+        if isinstance(
+            section,
+            dict,
+        ):
+            section[
+                "item_count"
+            ] = len(
+                items
+            )
+
+            section[
+                "cargo_items_preview"
+            ] = names[:8]
+
+
+    specialists = payload.get(
+        "specialist_responses"
+    )
+
+    if isinstance(
+        specialists,
+        dict,
+    ):
+
+        doc_agent = specialists.get(
+            "document_ai_agent"
+        )
+
+        if isinstance(
+            doc_agent,
+            dict,
+        ):
+
+            doc = doc_agent.get(
+                "document_requirements_advice"
+            )
+
+            if isinstance(
+                doc,
+                dict,
+            ):
+                doc[
+                    "item_count"
+                ] = len(
+                    items
+                )
+
+                doc[
+                    "cargo_items_preview"
+                ] = names[:8]
+
+
+    # ========================================================
+    # OTHER DUPLICATED REPORT TOTALS
+    # ========================================================
+
+    landed = payload.get(
+        "landed_cost_advice"
+    )
+
+    if isinstance(
+        landed,
+        dict,
+    ):
+
+        known = landed.get(
+            "known_inputs"
+        )
+
+        if isinstance(
+            known,
+            dict,
+        ):
+            _np_set_totals_v1(
+                known,
+                total_cbm,
+                total_weight,
+            )
+
+
+    executive = payload.get(
+        "executive_summary"
+    )
+
+    if isinstance(
+        executive,
+        dict,
+    ):
+
+        snapshot = executive.get(
+            "shipment_snapshot"
+        )
+
+        if isinstance(
+            snapshot,
+            dict,
+        ):
+            _np_set_totals_v1(
+                snapshot,
+                total_cbm,
+                total_weight,
+            )
+
+
+    for section_id in [
+        "shipment_snapshot",
+        "logistics",
+    ]:
+
+        ui = _np_ui_section_v1(
+            payload,
+            section_id,
+        )
+
+        if isinstance(
+            ui,
+            dict,
+        ):
+
+            section_metrics = ui.get(
+                "metrics"
+            )
+
+            if not isinstance(
+                section_metrics,
+                dict,
+            ):
+                section_metrics = {}
+                ui[
+                    "metrics"
+                ] = section_metrics
+
+            _np_set_totals_v1(
+                section_metrics,
+                total_cbm,
+                total_weight,
+            )
+
+
+    # ========================================================
+    # REMOVE FALSE CBM CLARIFICATION
+    # ========================================================
+
+    _np_remove_cbm_questions_v1(
+        payload
+    )
+
+
+    # ========================================================
+    # AGENT SUMMARY
+    # ========================================================
+
+    summaries = payload.get(
+        "agent_summaries"
+    )
+
+    if isinstance(
+        summaries,
+        list,
+    ):
+
+        for summary in summaries:
+
+            if not isinstance(
+                summary,
+                dict,
+            ):
+                continue
+
+            if (
+                summary.get(
+                    "agent_name"
+                )
+                == "logistics_agent"
+            ):
+
+                recommendation = (
+                    metrics.get(
+                        "recommended_container"
+                    )
+                    or "not confirmed"
+                )
+
+                summary[
+                    "summary"
+                ] = (
+                    "Logistics plan status: "
+                    + str(
+                        summary.get(
+                            "status"
+                        )
+                        or payload.get(
+                            "status"
+                        )
+                        or "review_required"
+                    )
+                    + ". Total cargo is "
+                    + _np_pretty_v1(
+                        total_cbm
+                    )
+                    + " CBM and "
+                    + _np_pretty_v1(
+                        total_weight
+                    )
+                    + " kg. Recommended container: "
+                    + str(
+                        recommendation
+                    )
+                    + "."
+                )
+
+
+    # ========================================================
+    # CUSTOMER ANSWER
+    # ========================================================
+
+    answer = str(
+        payload.get(
+            "display_answer"
+        )
+        or payload.get(
+            "frontend_answer"
+        )
+        or payload.get(
+            "final_answer",
+            {},
+        ).get(
+            "answer_text"
+        )
+        or ""
+    )
+
+
+    if answer:
+
+        cargo_block = (
+            "Cargo:\n"
+            "- Items: "
+            + ", ".join(
+                names
+            )
+            + "\n"
+            "- Total volume: "
+            + _np_pretty_v1(
+                total_cbm
+            )
+            + " CBM\n"
+            "- Total weight: "
+            + _np_pretty_v1(
+                total_weight
+            )
+            + " kg"
+        )
+
+
+        answer, count = re.subn(
+            r"Cargo:\s*\n"
+            r".*?"
+            r"(?=\n\nContainer and loading plan:)",
+            cargo_block,
+            answer,
+            count=1,
+            flags=re.IGNORECASE
+            | re.DOTALL,
+        )
+
+
+        if (
+            utilization
+            is not None
+        ):
+
+            answer = re.sub(
+                r"(?m)^-\s*Estimated container utilization:"
+                r"[^\n]*$",
+                "- Estimated container utilization: "
+                + _np_pretty_v1(
+                    round(
+                        utilization,
+                        2,
+                    )
+                )
+                + "%",
+                answer,
+                count=1,
+                flags=re.IGNORECASE,
+            )
+
+
+        answer = (
+            _np_strip_cbm_question_from_answer_v1(
+                answer
+            )
+        )
+
+
+        _np_sync_answer_v1(
+            payload,
+            answer,
+        )
+
+
+    # ========================================================
+    # SHORT ANSWER
+    # ========================================================
+
+    recommendation = metrics.get(
+        "recommended_container"
+    )
+
+    risk = metrics.get(
+        "risk_level"
+    )
+
+    parts = [
+        "Decision: "
+        + str(
+            payload.get(
+                "decision"
+            )
+            or "review_required"
+        )
+        + "."
+    ]
+
+    agents = payload.get(
+        "agents_called"
+    )
+
+    if isinstance(
+        agents,
+        list,
+    ) and agents:
+
+        parts.append(
+            "Agents called: "
+            + ", ".join(
+                str(value)
+                for value
+                in agents
+            )
+            + "."
+        )
+
+
+    logistics_bits = [
+        _np_pretty_v1(
+            total_cbm
+        )
+        + " CBM",
+
+        _np_pretty_v1(
+            total_weight
+        )
+        + " kg",
+    ]
+
+    if recommendation:
+        logistics_bits.append(
+            "recommended container "
+            + str(
+                recommendation
+            )
+        )
+
+    if risk:
+        logistics_bits.append(
+            "risk level "
+            + str(
+                risk
+            )
+        )
+
+
+    parts.append(
+        "Logistics: "
+        + ", ".join(
+            logistics_bits
+        )
+        + "."
+    )
+
+    payload[
+        "short_answer"
+    ] = " ".join(
+        parts
+    )
+
+
+    return payload
+
+
+def _np_apply_payload_limit_v1(
+    payload,
+):
+    metrics = payload.get(
+        "logistics_metrics"
+    )
+
+    visualizer = payload.get(
+        "logistics_visualizer"
+    )
+
+    if not (
+        isinstance(
+            metrics,
+            dict,
+        )
+        and isinstance(
+            visualizer,
+            dict,
+        )
+    ):
+        return payload
+
+
+    container = visualizer.get(
+        "container"
+    )
+
+    if not isinstance(
+        container,
+        dict,
+    ):
+        return payload
+
+
+    total_weight = (
+        _np_num_v1(
+            metrics.get(
+                "total_weight_kg"
+            )
+        )
+        or
+        _np_num_v1(
+            container.get(
+                "total_weight_kg"
+            )
+        )
+    )
+
+    max_payload = _np_num_v1(
+        container.get(
+            "max_payload_kg"
+        )
+    )
+
+
+    if (
+        total_weight is None
+        or max_payload is None
+        or max_payload <= 0
+        or total_weight <= max_payload
+    ):
+        return payload
+
+
+    overage = (
+        total_weight
+        - max_payload
+    )
+
+
+    fit = visualizer.get(
+        "fit_check"
+    )
+
+    if not isinstance(
+        fit,
+        dict,
+    ):
+        fit = {}
+        visualizer[
+            "fit_check"
+        ] = fit
+
+
+    reference_container = (
+        fit.get(
+            "selected_container_checked"
+        )
+        or
+        container.get(
+            "selected_container"
+        )
+        or
+        metrics.get(
+            "recommended_container"
+        )
+        or
+        "standard reference container"
+    )
+
+
+    # Avoid inheriting an earlier speculative
+    # flat-rack/open-top recommendation.
+    if any(
+        phrase
+        in str(
+            reference_container
+        ).lower()
+        for phrase in [
+            "special equipment",
+            "flat rack",
+            "open-top",
+            "open top",
+            "multiple containers",
+        ]
+    ):
+        reference_container = (
+            fit.get(
+                "selected_container_checked"
+            )
+            or "20ft Standard Container"
+        )
+
+
+    recommendation = (
+        "Multiple containers or specialist "
+        "heavy-cargo planning required"
+    )
+
+
+    # ========================================================
+    # CANONICAL CONTAINER / READINESS
+    # ========================================================
+
+    metrics[
+        "recommended_container"
+    ] = recommendation
+
+    metrics[
+        "readiness_status"
+    ] = (
+        "not_ready_payload_limit_exceeded"
+    )
+
+
+    container[
+        "selected_container"
+    ] = recommendation
+
+
+    fit[
+        "status"
+    ] = "payload_limit_exceeded"
+
+    fit[
+        "selected_container_checked"
+    ] = reference_container
+
+    fit[
+        "warnings"
+    ] = [
+        (
+            "Shipment weight of "
+            + _np_pretty_v1(
+                total_weight
+            )
+            + " kg exceeds the "
+            + _np_pretty_v1(
+                max_payload
+            )
+            + " kg reference payload limit."
+        )
+    ]
+
+    fit[
+        "recommendations"
+    ] = [
+        (
+            "Confirm item-level weights and dimensions "
+            "and determine whether the shipment can be "
+            "split across multiple containers."
+        ),
+        (
+            "If the cargo cannot be split, obtain "
+            "specialist heavy-cargo and carrier equipment "
+            "approval before booking."
+        ),
+    ]
+
+
+    payload[
+        "payload_constraint"
+    ] = {
+        "applicable": True,
+        "status": "blocked",
+        "shipment_weight_kg":
+            total_weight,
+        "reference_payload_kg":
+            max_payload,
+        "payload_overage_kg":
+            overage,
+        "reference_container":
+            reference_container,
+        "recommended_plan":
+            recommendation,
+    }
+
+
+    # ========================================================
+    # LOGISTICS REVIEW
+    # ========================================================
+
+    review = payload.get(
+        "logistics_quality_review"
+    )
+
+    if isinstance(
+        review,
+        dict,
+    ):
+
+        review[
+            "status"
+        ] = "blocked"
+
+        review[
+            "recommended_container"
+        ] = recommendation
+
+        review[
+            "readiness_status"
+        ] = (
+            "not_ready_payload_limit_exceeded"
+        )
+
+        review[
+            "summary"
+        ] = (
+            "Shipment exceeds the reference container "
+            "payload limit and requires multiple-container "
+            "or specialist heavy-cargo planning."
+        )
+
+
+        blockers = [
+            str(value)
+            for value in (
+                review.get(
+                    "blockers"
+                )
+                or []
+            )
+            if str(
+                value
+            ).strip()
+        ]
+
+        message = (
+            "Shipment weight exceeds the reference "
+            "container payload limit."
+        )
+
+        if not any(
+            message.lower()
+            == value.lower()
+            for value in blockers
+        ):
+            blockers.append(
+                message
+            )
+
+        review[
+            "blockers"
+        ] = blockers
+
+
+    # ========================================================
+    # DUPLICATED RECOMMENDATION FIELDS
+    # ========================================================
+
+    handoff = payload.get(
+        "handoff_payload"
+    )
+
+    if isinstance(
+        handoff,
+        dict,
+    ):
+        handoff[
+            "recommended_container"
+        ] = recommendation
+
+        handoff[
+            "container_recommendation"
+        ] = recommendation
+
+
+    landed = payload.get(
+        "landed_cost_advice"
+    )
+
+    if isinstance(
+        landed,
+        dict,
+    ):
+
+        known = landed.get(
+            "known_inputs"
+        )
+
+        if isinstance(
+            known,
+            dict,
+        ):
+            known[
+                "recommended_container"
+            ] = recommendation
+
+
+    executive = payload.get(
+        "executive_summary"
+    )
+
+    if isinstance(
+        executive,
+        dict,
+    ):
+
+        snapshot = executive.get(
+            "shipment_snapshot"
+        )
+
+        if isinstance(
+            snapshot,
+            dict,
+        ):
+            snapshot[
+                "recommended_container"
+            ] = recommendation
+
+
+    for section_id in [
+        "shipment_snapshot",
+        "logistics",
+    ]:
+
+        section = _np_ui_section_v1(
+            payload,
+            section_id,
+        )
+
+        if isinstance(
+            section,
+            dict,
+        ):
+
+            section_metrics = section.get(
+                "metrics"
+            )
+
+            if not isinstance(
+                section_metrics,
+                dict,
+            ):
+                section_metrics = {}
+                section[
+                    "metrics"
+                ] = section_metrics
+
+            section_metrics[
+                "recommended_container"
+            ] = recommendation
+
+            if (
+                section_id
+                == "logistics"
+            ):
+                section[
+                    "status"
+                ] = "blocked"
+
+                section[
+                    "summary"
+                ] = (
+                    "Shipment exceeds the reference "
+                    "container payload limit and requires "
+                    "multiple-container or specialist "
+                    "heavy-cargo planning."
+                )
+
+
+    # ========================================================
+    # AGENT SUMMARY
+    # ========================================================
+
+    summaries = payload.get(
+        "agent_summaries"
+    )
+
+    if isinstance(
+        summaries,
+        list,
+    ):
+
+        for summary in summaries:
+
+            if not isinstance(
+                summary,
+                dict,
+            ):
+                continue
+
+            if (
+                summary.get(
+                    "agent_name"
+                )
+                == "logistics_agent"
+            ):
+
+                cbm = metrics.get(
+                    "total_cbm"
+                )
+
+                summary[
+                    "status"
+                ] = (
+                    "critical_review_required"
+                )
+
+                summary[
+                    "summary"
+                ] = (
+                    "Logistics plan status: "
+                    "critical_review_required. "
+                    "Total cargo is "
+                    + _np_pretty_v1(
+                        cbm
+                    )
+                    + " CBM and "
+                    + _np_pretty_v1(
+                        total_weight
+                    )
+                    + " kg. "
+                    "The shipment exceeds the "
+                    + _np_pretty_v1(
+                        max_payload
+                    )
+                    + " kg reference payload limit; "
+                    + recommendation
+                    + "."
+                )
+
+
+    # ========================================================
+    # CUSTOMER ANSWER
+    # ========================================================
+
+    answer = str(
+        payload.get(
+            "display_answer"
+        )
+        or payload.get(
+            "frontend_answer"
+        )
+        or payload.get(
+            "final_answer",
+            {},
+        ).get(
+            "answer_text"
+        )
+        or ""
+    )
+
+
+    if answer:
+
+        utilization = container.get(
+            "utilization_percent"
+        )
+
+        container_block = (
+            "Container and loading plan:\n"
+            "- Recommended container: "
+            + recommendation
+            + "\n"
+            "- Reference container checked: "
+            + str(
+                reference_container
+            )
+            + "\n"
+            "- Shipment weight: "
+            + _np_pretty_v1(
+                total_weight
+            )
+            + " kg\n"
+            "- Reference payload limit: "
+            + _np_pretty_v1(
+                max_payload
+            )
+            + " kg\n"
+            "- Payload overage: "
+            + _np_pretty_v1(
+                overage
+            )
+            + " kg"
+        )
+
+
+        if (
+            _np_num_v1(
+                utilization
+            )
+            is not None
+        ):
+            container_block += (
+                "\n"
+                "- Volume utilization against the "
+                "reference container: "
+                + _np_pretty_v1(
+                    utilization
+                )
+                + "% "
+                "(volume only; payload limit is exceeded)"
+            )
+
+
+        container_block += (
+            "\n"
+            "- Fit check: payload limit exceeded"
+            "\n"
+            "- Do not book this shipment as one "
+            "standard container load."
+        )
+
+
+        answer = re.sub(
+            r"Container and loading plan:\s*\n"
+            r".*?"
+            r"(?=\n\nRisk and compliance:)",
+            container_block,
+            answer,
+            count=1,
+            flags=re.IGNORECASE
+            | re.DOTALL,
+        )
+
+
+        risk_message = (
+            "- Critical loading constraint: "
+            + _np_pretty_v1(
+                total_weight
+            )
+            + " kg exceeds the "
+            + _np_pretty_v1(
+                max_payload
+            )
+            + " kg reference payload limit. "
+            "The general risk score does not override "
+            "this physical loading blocker."
+        )
+
+
+        answer = re.sub(
+            r"(?m)^-\s*Risk level:"
+            r"[^\n]*$",
+            lambda match: (
+                match.group(0)
+                + "\n"
+                + risk_message
+            ),
+            answer,
+            count=1,
+            flags=re.IGNORECASE,
+        )
+
+
+        next_steps = (
+            "Recommended next steps:\n"
+            "- Confirm item-level weights and packed "
+            "dimensions and determine whether the cargo "
+            "can be split across multiple containers.\n"
+            "- Obtain a carrier / specialist heavy-cargo "
+            "quote and verify actual equipment and payload "
+            "limits before booking.\n"
+            "- Confirm the Incoterm, cargo value, shipment "
+            "documents, and remaining commercial inputs "
+            "before final booking."
+        )
+
+
+        answer = re.sub(
+            r"Recommended next steps:\s*\n"
+            r".*?\Z",
+            next_steps,
+            answer,
+            count=1,
+            flags=re.IGNORECASE
+            | re.DOTALL,
+        )
+
+
+        _np_sync_answer_v1(
+            payload,
+            answer.strip(),
+        )
+
+
+    # ========================================================
+    # FINAL ANSWER STATUS / BLOCKERS
+    # ========================================================
+
+    final_answer = payload.get(
+        "final_answer"
+    )
+
+    if isinstance(
+        final_answer,
+        dict,
+    ):
+
+        final_answer[
+            "status"
+        ] = "blocked"
+
+        blockers = [
+            str(value)
+            for value in (
+                final_answer.get(
+                    "blockers"
+                )
+                or []
+            )
+            if str(
+                value
+            ).strip()
+        ]
+
+        clear_message = (
+            "Shipment exceeds the reference "
+            "container payload limit."
+        )
+
+        if not any(
+            clear_message.lower()
+            == value.lower()
+            for value in blockers
+        ):
+            blockers.insert(
+                0,
+                clear_message,
+            )
+
+        final_answer[
+            "blockers"
+        ] = blockers
+
+
+    action_plan = payload.get(
+        "action_plan"
+    )
+
+    if isinstance(
+        action_plan,
+        dict,
+    ):
+
+        actions = [
+            str(value)
+            for value in (
+                action_plan.get(
+                    "immediate_actions"
+                )
+                or []
+            )
+            if str(
+                value
+            ).strip()
+        ]
+
+
+        # Drop implementation-ish logistics blocker wording.
+        actions = [
+            value
+            for value in actions
+            if value.lower()
+            not in {
+                "logistics has blockers.",
+                "shipment readiness status is "
+                "not_ready_blockers_found.",
+            }
+        ]
+
+
+        heavy_action = (
+            "Resolve the payload-limit issue with "
+            "multiple-container or specialist heavy-cargo "
+            "planning before booking."
+        )
+
+        if not any(
+            heavy_action.lower()
+            == value.lower()
+            for value in actions
+        ):
+            actions.insert(
+                0,
+                heavy_action,
+            )
+
+        action_plan[
+            "immediate_actions"
+        ] = actions
+
+
+    # ========================================================
+    # SHORT ANSWER
+    # ========================================================
+
+    cbm = metrics.get(
+        "total_cbm"
+    )
+
+    agents = payload.get(
+        "agents_called"
+    ) or []
+
+    payload[
+        "short_answer"
+    ] = (
+        "Decision: review_required. "
+        "Agents called: "
+        + ", ".join(
+            str(value)
+            for value in agents
+        )
+        + ". Logistics: "
+        + _np_pretty_v1(
+            cbm
+        )
+        + " CBM, "
+        + _np_pretty_v1(
+            total_weight
+        )
+        + " kg, recommended plan "
+        + recommendation
+        + "."
+    )
+
+
+    return payload
+
+
+def _np_edge_case_normalize_v1(
+    payload,
+    user_text,
+):
+    if not isinstance(
+        payload,
+        dict,
+    ):
+        return payload
+
+
+    # Protect the stabilized rich full-trade V2 path.
+    try:
+        if (
+            "_frav2_is_full_trade"
+            in globals()
+            and
+            _frav2_is_full_trade(
+                user_text,
+                payload,
+            )
+        ):
+            return payload
+
+    except Exception:
+        pass
+
+
+    # N: parse and synchronize repeated explicit
+    # CBM + item + weight clauses.
+    items = _np_direct_cbm_items_v1(
+        user_text
+    )
+
+    if items:
+        payload = _np_apply_multi_item_v1(
+            payload,
+            user_text,
+            items,
+        )
+
+
+    # P: after N normalization, independently check
+    # whether the final shipment weight exceeds the
+    # reference payload.
+    payload = _np_apply_payload_limit_v1(
+        payload
+    )
+
+
+    return payload
+
+
+def process_text_request(
+    user_text: str,
+    include_raw_response: bool = False,
+):
+    payload = (
+        _process_text_request_before_np_edge_cases_v1(
+            user_text,
+            include_raw_response,
+        )
+    )
+
+    return _np_edge_case_normalize_v1(
+        payload,
+        user_text,
+    )
+
+
+# ============================================================
+# FINAL_NP_CLEANUP_V2
+#
+# Cleanup pass after FINAL_NP_EDGE_CASES_V1.
+#
+# Narrow scope:
+# - direct multi-item aggregate cargo
+# - payload-limit shipments
+#
+# Full-trade V2 remains untouched.
+# ============================================================
+
+_process_text_request_before_np_cleanup_v2 = (
+    process_text_request
+)
+
+
+def _npc2_is_full_trade(
+    payload,
+    user_text,
+):
+    try:
+        return bool(
+            _frav2_is_full_trade(
+                user_text,
+                payload,
+            )
+        )
+
+    except Exception:
+        return False
+
+
+def _npc2_unique(
+    values,
+):
+    result = []
+    seen = set()
+
+    for value in values or []:
+
+        if value in (
+            None,
+            "",
+        ):
+            continue
+
+        text = str(
+            value
+        ).strip()
+
+        if not text:
+            continue
+
+        key = text.lower()
+
+        if key in seen:
+            continue
+
+        seen.add(
+            key
+        )
+
+        result.append(
+            text
+        )
+
+    return result
+
+
+def _npc2_remove_cbm_questions(
+    values,
+):
+    result = []
+
+    for value in values or []:
+
+        text = str(
+            value or ""
+        ).strip()
+
+        lower = text.lower()
+
+        asks_cbm = (
+            "cbm" in lower
+            and
+            (
+                "dimension" in lower
+                or
+                "packed" in lower
+            )
+        )
+
+        if asks_cbm:
+            continue
+
+        result.append(
+            text
+        )
+
+    return _npc2_unique(
+        result
+    )
+
+
+def _npc2_incoterm_question():
+    return (
+        "Which Incoterm should be used for this shipment: "
+        "EXW, FOB, CIF, DAP, DDP, or another term?"
+    )
+
+
+def _npc2_is_incoterm_question(
+    value,
+):
+    lower = str(
+        value or ""
+    ).lower()
+
+    return (
+        "incoterm" in lower
+        and
+        (
+            "which" in lower
+            or
+            "confirm" in lower
+            or
+            "shipping term" in lower
+        )
+    )
+
+
+def _npc2_dedupe_incoterm_questions(
+    payload,
+):
+    canonical = (
+        _npc2_incoterm_question()
+    )
+
+    trade = payload.get(
+        "trade_terms_advice"
+    )
+
+    document = payload.get(
+        "document_requirements_advice"
+    )
+
+    action_plan = payload.get(
+        "action_plan"
+    )
+
+
+    trade_has_question = False
+    document_has_question = False
+
+
+    if isinstance(
+        trade,
+        dict,
+    ):
+
+        current = (
+            trade.get(
+                "user_questions"
+            )
+            or []
+        )
+
+        trade_has_question = any(
+            _npc2_is_incoterm_question(
+                value
+            )
+            for value in current
+        )
+
+        if trade_has_question:
+            trade[
+                "user_questions"
+            ] = [
+                canonical
+            ]
+
+
+    if isinstance(
+        document,
+        dict,
+    ):
+
+        current = (
+            document.get(
+                "user_questions"
+            )
+            or []
+        )
+
+        document_has_question = any(
+            _npc2_is_incoterm_question(
+                value
+            )
+            for value in current
+        )
+
+
+        # Trade Terms owns the Incoterm clarification.
+        # Documents should not ask it a second time.
+        document[
+            "user_questions"
+        ] = [
+            value
+            for value in current
+            if not _npc2_is_incoterm_question(
+                value
+            )
+        ]
+
+
+    if isinstance(
+        action_plan,
+        dict,
+    ):
+
+        current = (
+            action_plan.get(
+                "user_questions"
+            )
+            or []
+        )
+
+        cleaned = [
+            value
+            for value in current
+            if not _npc2_is_incoterm_question(
+                value
+            )
+        ]
+
+        if (
+            trade_has_question
+            or document_has_question
+        ):
+            cleaned.append(
+                canonical
+            )
+
+        action_plan[
+            "user_questions"
+        ] = _npc2_unique(
+            cleaned
+        )
+
+
+def _npc2_sync_multi_item(
+    payload,
+    user_text,
+):
+    try:
+        parsed = (
+            _np_direct_cbm_items_v1(
+                user_text
+            )
+        )
+
+    except Exception:
+        parsed = []
+
+
+    if len(
+        parsed
+    ) < 2:
+        return payload
+
+
+    total_cbm = sum(
+        float(
+            item[
+                "total_cbm"
+            ]
+        )
+        for item in parsed
+    )
+
+    total_weight = sum(
+        float(
+            item[
+                "total_weight_kg"
+            ]
+        )
+        for item in parsed
+    )
+
+
+    visualizer = payload.get(
+        "logistics_visualizer"
+    )
+
+    if isinstance(
+        visualizer,
+        dict,
+    ):
+
+        existing = (
+            visualizer.get(
+                "cargo_mix"
+            )
+            or []
+        )
+
+        old_by_name = {}
+
+        for item in existing:
+
+            if not isinstance(
+                item,
+                dict,
+            ):
+                continue
+
+            name = str(
+                item.get(
+                    "item_name"
+                )
+                or ""
+            ).strip().lower()
+
+            if name:
+                old_by_name[
+                    name
+                ] = item
+
+
+        fixed = []
+
+        for parsed_item in parsed:
+
+            item = dict(
+                parsed_item
+            )
+
+            name = str(
+                item.get(
+                    "item_name"
+                )
+                or ""
+            ).strip()
+
+            old = old_by_name.get(
+                name.lower(),
+                {},
+            )
+
+
+            dimensions = old.get(
+                "dimensions_m"
+            )
+
+            if isinstance(
+                dimensions,
+                dict,
+            ):
+                item[
+                    "dimensions_m"
+                ] = dimensions
+
+
+            tags = old.get(
+                "category_tags"
+            )
+
+            if isinstance(
+                tags,
+                list,
+            ) and tags:
+                item[
+                    "category_tags"
+                ] = list(
+                    tags
+                )
+
+
+            # Explicit per-item weight from user always wins.
+            item[
+                "weight_estimated"
+            ] = False
+
+            item[
+                "weight_source"
+            ] = (
+                "explicit_user_item_weight"
+            )
+
+            item.pop(
+                "estimated_density_kg_per_cbm",
+                None,
+            )
+
+            item.pop(
+                "weight_estimate_warning",
+                None,
+            )
+
+            fixed.append(
+                item
+            )
+
+
+        visualizer[
+            "cargo_mix"
+        ] = fixed
+
+
+        container = visualizer.get(
+            "container"
+        )
+
+        if isinstance(
+            container,
+            dict,
+        ):
+            container[
+                "total_cbm"
+            ] = total_cbm
+
+            container[
+                "total_weight_kg"
+            ] = total_weight
+
+            container[
+                "total_items"
+            ] = len(
+                fixed
+            )
+
+
+        display = visualizer.get(
+            "display_metrics"
+        )
+
+        if isinstance(
+            display,
+            dict,
+        ):
+            display[
+                "loaded_cbm"
+            ] = total_cbm
+
+
+    review = payload.get(
+        "logistics_quality_review"
+    )
+
+    if isinstance(
+        review,
+        dict,
+    ):
+
+        freight = review.get(
+            "freight_mode_advice"
+        )
+
+        if isinstance(
+            freight,
+            dict,
+        ):
+
+            freight[
+                "total_cbm"
+            ] = total_cbm
+
+            freight[
+                "total_weight_kg"
+            ] = total_weight
+
+
+    return payload
+
+
+def _npc2_remove_stale_fcl_advice(
+    values,
+):
+    result = []
+
+    stale_phrases = [
+        "compare fcl quotes for 20ft",
+        "compare fcl quotes for 20 ft",
+        "use the logistics container recommendation "
+        "as a quote baseline",
+    ]
+
+    for value in values or []:
+
+        text = str(
+            value or ""
+        ).strip()
+
+        lower = text.lower()
+
+        if any(
+            phrase in lower
+            for phrase in stale_phrases
+        ):
+            continue
+
+        result.append(
+            text
+        )
+
+    return _npc2_unique(
+        result
+    )
+
+
+def _npc2_payload_cleanup(
+    payload,
+):
+    constraint = payload.get(
+        "payload_constraint"
+    )
+
+    if not (
+        isinstance(
+            constraint,
+            dict,
+        )
+        and constraint.get(
+            "status"
+        )
+        == "blocked"
+    ):
+        return payload
+
+
+    shipment_weight = (
+        constraint.get(
+            "shipment_weight_kg"
+        )
+    )
+
+    limit = constraint.get(
+        "reference_payload_kg"
+    )
+
+    overage = constraint.get(
+        "payload_overage_kg"
+    )
+
+    reference = (
+        constraint.get(
+            "reference_container"
+        )
+        or "reference container"
+    )
+
+    recommendation = (
+        constraint.get(
+            "recommended_plan"
+        )
+        or
+        "Multiple containers or specialist "
+        "heavy-cargo planning required"
+    )
+
+
+    # ========================================================
+    # REMOVE FALSE VOLUME QUESTION
+    # ========================================================
+
+    payload[
+        "clarification_questions"
+    ] = _npc2_remove_cbm_questions(
+        payload.get(
+            "clarification_questions"
+        )
+        or []
+    )
+
+
+    action_plan = payload.get(
+        "action_plan"
+    )
+
+    if isinstance(
+        action_plan,
+        dict,
+    ):
+
+        action_plan[
+            "user_questions"
+        ] = _npc2_remove_cbm_questions(
+            action_plan.get(
+                "user_questions"
+            )
+            or []
+        )
+
+
+        action_plan[
+            "immediate_actions"
+        ] = _npc2_remove_stale_fcl_advice(
+            action_plan.get(
+                "immediate_actions"
+            )
+            or []
+        )
+
+
+    booking = payload.get(
+        "booking_readiness"
+    )
+
+    if isinstance(
+        booking,
+        dict,
+    ):
+
+        booking[
+            "missing_information"
+        ] = _npc2_remove_cbm_questions(
+            booking.get(
+                "missing_information"
+            )
+            or []
+        )
+
+
+        raw_blockers = (
+            booking.get(
+                "blockers"
+            )
+            or []
+        )
+
+        booking[
+            "blockers"
+        ] = _npc2_unique(
+            [
+                value
+                for value
+                in raw_blockers
+                if str(
+                    value
+                ).strip().lower()
+                not in {
+                    "logistics has blockers.",
+                    "shipment readiness status is "
+                    "not_ready_blockers_found.",
+                }
+            ]
+        )
+
+
+        clear_blocker = (
+            "Shipment weight exceeds the reference "
+            "container payload limit."
+        )
+
+        if clear_blocker not in booking[
+            "blockers"
+        ]:
+            booking[
+                "blockers"
+            ].insert(
+                0,
+                clear_blocker,
+            )
+
+
+    # ========================================================
+    # FREIGHT MODE SHOULD NOT SAY NORMAL FCL IS "CLEAR"
+    # ========================================================
+
+    review = payload.get(
+        "logistics_quality_review"
+    )
+
+    if isinstance(
+        review,
+        dict,
+    ):
+
+        review[
+            "status"
+        ] = "blocked"
+
+        review[
+            "summary"
+        ] = (
+            "The shipment exceeds the reference "
+            "single-container payload limit and requires "
+            "multiple-container or specialist "
+            "heavy-cargo planning."
+        )
+
+
+        review[
+            "recommendations"
+        ] = _npc2_remove_stale_fcl_advice(
+            review.get(
+                "recommendations"
+            )
+            or []
+        )
+
+
+        freight = review.get(
+            "freight_mode_advice"
+        )
+
+        if isinstance(
+            freight,
+            dict,
+        ):
+
+            freight[
+                "status"
+            ] = "review_required"
+
+            freight[
+                "summary"
+            ] = (
+                "A normal one-container FCL plan is not "
+                "feasible because the shipment exceeds "
+                "the reference payload limit."
+            )
+
+            freight[
+                "primary_mode"
+            ] = (
+                "sea_multi_container_or_"
+                "specialist_heavy_cargo"
+            )
+
+
+            freight[
+                "mode_options"
+            ] = [
+                {
+                    "mode":
+                        "sea_multi_container_fcl",
+
+                    "fit":
+                        "requires_planning",
+
+                    "reason":
+                        "The shipment may be split across "
+                        "multiple containers only after "
+                        "item-level weight distribution and "
+                        "carrier payload limits are confirmed.",
+                },
+                {
+                    "mode":
+                        "specialist_heavy_cargo",
+
+                    "fit":
+                        "requires_carrier_confirmation",
+
+                    "reason":
+                        "Use specialist equipment or "
+                        "heavy-cargo handling if the cargo "
+                        "cannot be safely divided into "
+                        "standard container loads.",
+                },
+            ]
+
+
+            freight[
+                "recommendations"
+            ] = [
+                (
+                    "Confirm item-level weights and packed "
+                    "dimensions and determine whether the "
+                    "shipment can be divided across multiple "
+                    "containers."
+                ),
+                (
+                    "Obtain carrier or specialist "
+                    "heavy-cargo approval before booking."
+                ),
+            ]
+
+
+    # ========================================================
+    # REPORT LOGISTICS SECTION MUST REMAIN BLOCKED
+    # ========================================================
+
+    sections = payload.get(
+        "ui_sections"
+    )
+
+    if isinstance(
+        sections,
+        list,
+    ):
+
+        for section in sections:
+
+            if not isinstance(
+                section,
+                dict,
+            ):
+                continue
+
+
+            if (
+                section.get(
+                    "section_id"
+                )
+                == "logistics"
+            ):
+
+                section[
+                    "status"
+                ] = "blocked"
+
+                section[
+                    "summary"
+                ] = (
+                    "The shipment exceeds the reference "
+                    "single-container payload limit and "
+                    "requires multiple-container or "
+                    "specialist heavy-cargo planning."
+                )
+
+                section[
+                    "actions"
+                ] = [
+                    (
+                        "Confirm item-level weights and packed "
+                        "dimensions and determine whether the "
+                        "cargo can be split across multiple "
+                        "containers."
+                    ),
+                    (
+                        "Obtain carrier or specialist "
+                        "heavy-cargo approval before booking."
+                    ),
+                ]
+
+
+            if (
+                section.get(
+                    "section_id"
+                )
+                == "executive_decision"
+            ):
+
+                section[
+                    "actions"
+                ] = _npc2_remove_stale_fcl_advice(
+                    section.get(
+                        "actions"
+                    )
+                    or []
+                )
+
+
+    # ========================================================
+    # EXECUTIVE / FINAL ACTIONS
+    # ========================================================
+
+    executive = payload.get(
+        "executive_summary"
+    )
+
+    if isinstance(
+        executive,
+        dict,
+    ):
+
+        executive[
+            "top_next_actions"
+        ] = _npc2_remove_stale_fcl_advice(
+            executive.get(
+                "top_next_actions"
+            )
+            or []
+        )
+
+
+    final_answer = payload.get(
+        "final_answer"
+    )
+
+    if not isinstance(
+        final_answer,
+        dict,
+    ):
+        final_answer = {}
+        payload[
+            "final_answer"
+        ] = final_answer
+
+
+    final_answer[
+        "status"
+    ] = "blocked"
+
+    final_answer[
+        "next_actions"
+    ] = [
+        (
+            "Confirm item-level weights and packed "
+            "dimensions and determine whether the cargo "
+            "can be split across multiple containers."
+        ),
+        (
+            "Obtain a carrier or specialist heavy-cargo "
+            "quote and verify actual equipment and payload "
+            "limits before booking."
+        ),
+        (
+            "Confirm the Incoterm, cargo value, shipment "
+            "documents, and remaining commercial inputs "
+            "before final booking."
+        ),
+    ]
+
+
+    # ========================================================
+    # FINAL VERDICT
+    # ========================================================
+
+    verdict = payload.get(
+        "final_verdict"
+    )
+
+    if isinstance(
+        verdict,
+        dict,
+    ):
+
+        verdict[
+            "verdict"
+        ] = "critical_review_required"
+
+        verdict[
+            "blockers"
+        ] = _npc2_unique(
+            [
+                (
+                    "Shipment weight exceeds the "
+                    "reference container payload limit."
+                )
+            ]
+            +
+            list(
+                verdict.get(
+                    "blockers"
+                )
+                or []
+            )
+        )
+
+
+    # ========================================================
+    # CUSTOMER ANSWER
+    # ========================================================
+
+    answer = str(
+        payload.get(
+            "display_answer"
+        )
+        or payload.get(
+            "frontend_answer"
+        )
+        or final_answer.get(
+            "answer_text"
+        )
+        or ""
+    )
+
+
+    if answer:
+
+        # Clean duplicate cargo wording.
+        visualizer = payload.get(
+            "logistics_visualizer"
+        )
+
+        cargo_names = []
+
+        if isinstance(
+            visualizer,
+            dict,
+        ):
+
+            for item in (
+                visualizer.get(
+                    "cargo_mix"
+                )
+                or []
+            ):
+
+                if not isinstance(
+                    item,
+                    dict,
+                ):
+                    continue
+
+                name = str(
+                    item.get(
+                        "item_name"
+                    )
+                    or ""
+                ).strip()
+
+                if (
+                    name
+                    and name.lower()
+                    not in {
+                        value.lower()
+                        for value in cargo_names
+                    }
+                ):
+                    cargo_names.append(
+                        name
+                    )
+
+
+        if cargo_names:
+
+            answer = re.sub(
+                r"(?m)^-\s*Items:[^\n]*$",
+                "- Items: "
+                + ", ".join(
+                    cargo_names
+                ),
+                answer,
+                count=1,
+            )
+
+
+        # False CBM section.
+        answer = re.sub(
+            r"\n\nAnswer these next:\s*\n"
+            r"-\s*[^\n]*"
+            r"(?:CBM|cbm)"
+            r"[^\n]*"
+            r"(?:dimension|Dimension)"
+            r"[^\n]*"
+            r"(?=\n\n|\Z)",
+            "",
+            answer,
+            flags=re.IGNORECASE,
+        )
+
+
+        opening = (
+            "This shipment is not feasible as a single "
+            "standard-container load. The stated "
+            + str(
+                int(
+                    float(
+                        shipment_weight
+                    )
+                )
+            )
+            + " kg exceeds the "
+            + str(
+                int(
+                    float(
+                        limit
+                    )
+                )
+            )
+            + " kg reference payload limit by "
+            + str(
+                int(
+                    float(
+                        overage
+                    )
+                )
+            )
+            + " kg. Split the cargo across multiple "
+            "containers or obtain specialist heavy-cargo "
+            "and carrier approval before booking."
+        )
+
+
+        answer = re.sub(
+            r"\A.*?"
+            r"(?=\n\nRoute and terms:)",
+            opening,
+            answer,
+            count=1,
+            flags=re.DOTALL,
+        )
+
+
+        answer = (
+            answer
+            .replace(
+                "\n\n\n",
+                "\n\n",
+            )
+            .strip()
+        )
+
+
+        payload[
+            "display_answer"
+        ] = answer
+
+        payload[
+            "frontend_answer"
+        ] = answer
+
+        final_answer[
+            "answer_text"
+        ] = answer
+
+        final_answer[
+            "headline"
+        ] = opening
+
+
+    return payload
+
+
+def _npc2_cleanup(
+    payload,
+    user_text,
+):
+    if not isinstance(
+        payload,
+        dict,
+    ):
+        return payload
+
+
+    if _npc2_is_full_trade(
+        payload,
+        user_text,
+    ):
+        return payload
+
+
+    metrics = payload.get(
+        "logistics_metrics"
+    )
+
+    total_cbm = None
+
+    if isinstance(
+        metrics,
+        dict,
+    ):
+        total_cbm = metrics.get(
+            "total_cbm"
+        )
+
+
+    # If CBM is already explicitly/canonically known,
+    # no packed-CBM question should survive.
+    if total_cbm not in (
+        None,
+        "",
+        0,
+    ):
+
+        payload[
+            "clarification_questions"
+        ] = _npc2_remove_cbm_questions(
+            payload.get(
+                "clarification_questions"
+            )
+            or []
+        )
+
+        action_plan = payload.get(
+            "action_plan"
+        )
+
+        if isinstance(
+            action_plan,
+            dict,
+        ):
+
+            action_plan[
+                "user_questions"
+            ] = _npc2_remove_cbm_questions(
+                action_plan.get(
+                    "user_questions"
+                )
+                or []
+            )
+
+
+    payload = _npc2_sync_multi_item(
+        payload,
+        user_text,
+    )
+
+
+    _npc2_dedupe_incoterm_questions(
+        payload
+    )
+
+
+    payload = _npc2_payload_cleanup(
+        payload
+    )
+
+
+    return payload
+
+
+def process_text_request(
+    user_text: str,
+    include_raw_response: bool = False,
+):
+    payload = (
+        _process_text_request_before_np_cleanup_v2(
+            user_text,
+            include_raw_response,
+        )
+    )
+
+    return _npc2_cleanup(
+        payload,
+        user_text,
+    )

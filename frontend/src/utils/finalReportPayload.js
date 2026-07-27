@@ -125,6 +125,218 @@ function syncSection(result, id, callback) {
 }
 
 
+
+// FINAL_NP_EXPORT_CLEANUP_V2
+function finalNpDirectItemsV2(textValue) {
+  const text = String(textValue || "");
+
+  const pattern =
+    /([0-9]+(?:\.[0-9]+)?)\s*CBM\s+(?:of\s+)?(.*?)\s+weigh(?:ing|s)?\s+([0-9]+(?:\.[0-9]+)?)\s*kg\s*(?=(?:,?\s*(?:and|plus|&)\s+[0-9]+(?:\.[0-9]+)?\s*CBM\b)|\s+from\b|[.;]|$)/gi;
+
+  const items = [];
+
+  let match;
+
+  while ((match = pattern.exec(text)) !== null) {
+    const cbm = Number(match[1]);
+    const name = String(match[2] || "").trim();
+    const weight = Number(match[3]);
+
+    if (
+      Number.isFinite(cbm) &&
+      cbm > 0 &&
+      Number.isFinite(weight) &&
+      weight > 0 &&
+      name
+    ) {
+      items.push({
+        item_name: name,
+        quantity: 1,
+        total_cbm: cbm,
+        unit_cbm: cbm,
+        total_weight_kg: weight,
+        unit_weight_kg: weight,
+        aggregate_volume_only: true,
+        dimensions_are_aggregate: true,
+        display_dimensions_estimated: true,
+        weight_estimated: false,
+        weight_source: "explicit_user_item_weight",
+        category_tags: ["general_cargo"],
+      });
+    }
+  }
+
+  return items.length >= 2
+    ? items
+    : [];
+}
+
+
+function finalNpCleanReportV2(result) {
+  if (
+    !result ||
+    typeof result !== "object"
+  ) {
+    return result;
+  }
+
+  const prompt = String(
+    result?.request_metadata?.input_source || ""
+  );
+
+  const parsedItems =
+    finalNpDirectItemsV2(prompt);
+
+
+  // ---------------------------------------------------------
+  // N: direct multi-item aggregate data
+  // ---------------------------------------------------------
+
+  if (parsedItems.length >= 2) {
+    const totalCbm = parsedItems.reduce(
+      (sum, item) => sum + item.total_cbm,
+      0
+    );
+
+    const totalWeight = parsedItems.reduce(
+      (sum, item) => sum + item.total_weight_kg,
+      0
+    );
+
+    const visualizer =
+      result.logistics_visualizer;
+
+    if (
+      visualizer &&
+      typeof visualizer === "object"
+    ) {
+      const previous = Array.isArray(
+        visualizer.cargo_mix
+      )
+        ? visualizer.cargo_mix
+        : [];
+
+      const previousByName =
+        new Map(
+          previous
+            .filter(
+              (item) =>
+                item &&
+                typeof item === "object"
+            )
+            .map(
+              (item) => [
+                String(
+                  item.item_name || ""
+                ).toLowerCase(),
+                item,
+              ]
+            )
+        );
+
+
+      visualizer.cargo_mix =
+        parsedItems.map((item) => {
+          const previousItem =
+            previousByName.get(
+              item.item_name.toLowerCase()
+            ) || {};
+
+          return {
+            ...previousItem,
+            ...item,
+
+            dimensions_m:
+              previousItem.dimensions_m ||
+              item.dimensions_m,
+
+            category_tags:
+              Array.isArray(
+                previousItem.category_tags
+              ) &&
+              previousItem.category_tags.length
+                ? previousItem.category_tags
+                : item.category_tags,
+          };
+        });
+
+
+      if (
+        visualizer.container &&
+        typeof visualizer.container === "object"
+      ) {
+        visualizer.container.total_cbm =
+          totalCbm;
+
+        visualizer.container.total_weight_kg =
+          totalWeight;
+
+        visualizer.container.total_items =
+          parsedItems.length;
+      }
+
+
+      if (
+        visualizer.display_metrics &&
+        typeof visualizer.display_metrics === "object"
+      ) {
+        visualizer.display_metrics.loaded_cbm =
+          totalCbm;
+      }
+    }
+
+
+    const freight =
+      result?.logistics_quality_review
+        ?.freight_mode_advice;
+
+    if (
+      freight &&
+      typeof freight === "object"
+    ) {
+      freight.total_cbm =
+        totalCbm;
+
+      freight.total_weight_kg =
+        totalWeight;
+    }
+  }
+
+
+  // ---------------------------------------------------------
+  // P: preserve blocked payload-limit report state
+  // ---------------------------------------------------------
+
+  const payloadBlocked =
+    result?.payload_constraint?.status ===
+    "blocked";
+
+  if (payloadBlocked) {
+    const sections =
+      Array.isArray(result.ui_sections)
+        ? result.ui_sections
+        : [];
+
+    const logistics =
+      sections.find(
+        (section) =>
+          section &&
+          section.section_id === "logistics"
+      );
+
+    if (logistics) {
+      logistics.status = "blocked";
+
+      logistics.summary =
+        "The shipment exceeds the reference single-container payload limit and requires multiple-container or specialist heavy-cargo planning.";
+    }
+  }
+
+
+  return result;
+}
+
+
 export function normalizeFinalReportPayload(input) {
   if (
     !input ||
@@ -538,6 +750,8 @@ export function normalizeFinalReportPayload(input) {
     }
   );
 
+
+  result = finalNpCleanReportV2(result);
 
   return result;
 }
