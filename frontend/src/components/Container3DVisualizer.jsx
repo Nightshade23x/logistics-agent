@@ -631,6 +631,105 @@ function utilization(boxes, container) {
   };
 }
 
+function preferBackendDisplayMetrics(result, fallback = {}) {
+  const visualizer = getVisualizer(result) || {};
+
+  // The backend already knows the canonical shipment CBM.
+  //
+  // The browser 3D algorithm is only a visual placement preview.
+  // Some boxes can be marked as overflow when the browser layout
+  // cannot place them, but that must NOT reduce the shipment CBM
+  // shown to the user.
+  const backend =
+    (
+      visualizer.display_metrics &&
+      typeof visualizer.display_metrics === "object"
+        ? visualizer.display_metrics
+        : null
+    ) ||
+    (
+      visualizer.utilization &&
+      typeof visualizer.utilization === "object"
+        ? visualizer.utilization
+        : null
+    );
+
+  if (!backend) {
+    return fallback;
+  }
+
+  const loadedCbm = asNumber(
+    backend.loaded_cbm ??
+      backend.total_cbm ??
+      visualizer?.container?.total_cbm ??
+      result?.logistics_metrics?.total_cbm,
+    null
+  );
+
+  const containerCbm = asNumber(
+    backend.container_cbm ??
+      visualizer?.container?.capacity_cbm ??
+      fallback?.container_cbm,
+    null
+  );
+
+  if (!(loadedCbm > 0) || !(containerCbm > 0)) {
+    return fallback;
+  }
+
+  const utilizationPercent = asNumber(
+    backend.utilization_percent,
+    (loadedCbm / containerCbm) * 100
+  );
+
+  const remainingCbm = asNumber(
+    backend.remaining_cbm,
+    Math.max(0, containerCbm - loadedCbm)
+  );
+
+  return {
+    ...fallback,
+
+    // Keep the browser-computed number for debugging if needed.
+    browser_visualized_cbm:
+      fallback?.visualized_cbm ?? null,
+
+    // Existing frontend uses visualized_cbm for the "Loaded"
+    // number. Make that field canonical for display purposes.
+    visualized_cbm:
+      Number(loadedCbm.toFixed(2)),
+
+    loaded_cbm:
+      Number(loadedCbm.toFixed(2)),
+
+    container_cbm:
+      Number(containerCbm.toFixed(2)),
+
+    remaining_cbm:
+      Number(
+        Math.max(0, remainingCbm).toFixed(2)
+      ),
+
+    utilization_percent:
+      Number(
+        utilizationPercent.toFixed(2)
+      ),
+
+    remaining_percent:
+      Number(
+        Math.max(
+          0,
+          100 - utilizationPercent
+        ).toFixed(2)
+      ),
+
+    basis:
+      backend.basis ||
+      "shipment_total_cbm",
+  };
+}
+
+
 function buildLayout(result) {
   const container = inferContainer(result);
   const cargoMix = normalizeCargoMix(result);
@@ -663,7 +762,7 @@ function buildLayout(result) {
     boxes: packed.boxes,
     loading_sequence: ordered.sequence,
     usedBackendSequence: ordered.usedBackendSequence,
-    utilization: util,
+    utilization: preferBackendDisplayMetrics(result, util),
     notes,
   };
 }
@@ -954,7 +1053,7 @@ export default function Container3DVisualizer({ result }) {
           <div className="container3d-space-head">
             <div>
               <div className="container3d-space-title">{util.utilization_percent ?? 0}% used</div>
-              <div className="container3d-muted">Based on visualized packed volume</div>
+              <div className="container3d-muted">Based on total shipment CBM from backend</div>
             </div>
             <div className="container3d-space-badge">{util.remaining_percent ?? 100}% free</div>
           </div>

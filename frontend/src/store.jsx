@@ -51,6 +51,11 @@ export function StoreProvider({ children }) {
     [history]
   );
 
+  const clearCurrent = useCallback(() => {
+    setResultState(null);
+    localStorage.removeItem(RESULT_KEY);
+  }, []);
+
   const clearAll = useCallback(() => {
     setResultState(null);
     setHistoryState([]);
@@ -59,7 +64,7 @@ export function StoreProvider({ children }) {
   }, []);
 
   return (
-    <StoreContext.Provider value={{ result, history, setResult, loadFromHistory, clearAll }}>
+    <StoreContext.Provider value={{ result, history, setResult, loadFromHistory, clearCurrent, clearAll }}>
       {children}
     </StoreContext.Provider>
   );

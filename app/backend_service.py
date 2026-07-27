@@ -1680,3 +1680,21 @@ try:
 except Exception:
     pass
 
+# Demo answer quality and nested-metric consistency wrapper
+try:
+    from app.demo_answer_quality_fixes import polish_demo_response as _demo_polish_response
+
+    if "_demo_answer_quality_previous_process_text_request" not in globals():
+        _demo_answer_quality_previous_process_text_request = process_text_request
+
+        def process_text_request(*args, **kwargs):
+            prompt_text = ""
+            if args:
+                prompt_text = str(args[0])
+            else:
+                prompt_text = str(kwargs.get("text") or kwargs.get("prompt") or kwargs.get("user_request") or "")
+
+            payload = _demo_answer_quality_previous_process_text_request(*args, **kwargs)
+            return _demo_polish_response(payload, prompt_text)
+except Exception:
+    pass

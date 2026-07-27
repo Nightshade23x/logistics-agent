@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api.js";
 import Badge from "../components/Badge.jsx";
@@ -7,7 +7,7 @@ import NeedMoreInfoCard from "../components/NeedMoreInfoCard.jsx";
 import { useStore } from "../store.jsx";
 import { humanizeKey, humanizeStatus } from "../utils/displayFormat.js";
 
-const SAMPLE_TEXT = "I need 50 TVs, 5 scooters, and 100 ceramic tiles. Prefer suppliers from India. Avoid China. Budget 13000 USD.";
+const SAMPLE_TEXT = "";
 
 const SAMPLE_JSON = {
   items: [
@@ -92,16 +92,87 @@ function ResultDecisionStrip({ result, onBreakdown }) {
   );
 }
 
+const DASHBOARD_MODE_KEY = "meridian.dashboard.mode";
+const DASHBOARD_TEXT_KEY = "meridian.dashboard.text";
+const DASHBOARD_JSON_KEY = "meridian.dashboard.json";
+
+function loadDashboardValue(key, fallback) {
+  try {
+    const saved = localStorage.getItem(key);
+
+    return saved === null
+      ? fallback
+      : saved;
+
+  } catch {
+    return fallback;
+  }
+}
+
+
 export default function Dashboard() {
-  const { result, history, setResult, loadFromHistory, clearAll } = useStore();
+  const { result, history, setResult, loadFromHistory, clearCurrent, clearAll } = useStore();
   const navigate = useNavigate();
 
-  const [mode, setMode] = useState("text");
-  const [text, setText] = useState(SAMPLE_TEXT);
-  const [jsonText, setJsonText] = useState(JSON.stringify(SAMPLE_JSON, null, 2));
+  const [mode, setMode] = useState(() => loadDashboardValue(DASHBOARD_MODE_KEY, "text"));
+  const [text, setText] = useState(() => loadDashboardValue(DASHBOARD_TEXT_KEY, SAMPLE_TEXT));
+  const [jsonText, setJsonText] = useState(() => loadDashboardValue(DASHBOARD_JSON_KEY, JSON.stringify(SAMPLE_JSON, null, 2)));
   const [files, setFiles] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [showCurrentResult, setShowCurrentResult] = useState(() => Boolean(result));
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        DASHBOARD_MODE_KEY,
+        mode
+      );
+
+      localStorage.setItem(
+        DASHBOARD_TEXT_KEY,
+        text
+      );
+
+      localStorage.setItem(
+        DASHBOARD_JSON_KEY,
+        jsonText
+      );
+
+    } catch {
+      // Keep the app usable if browser storage is unavailable.
+    }
+  }, [mode, text, jsonText]);
+
+
+  useEffect(() => {
+    if (result) {
+      setShowCurrentResult(true);
+    }
+  }, [result]);
+
+
+  function resetDashboardDraft() {
+    setMode("text");
+    setText("");
+    setJsonText("");
+    setFiles(null);
+    setError(null);
+    setShowCurrentResult(false);
+  }
+
+
+  function clearCurrentWorkspace() {
+    clearCurrent();
+    resetDashboardDraft();
+  }
+
+
+  function clearEverything() {
+    clearAll();
+    resetDashboardDraft();
+  }
+
 
   async function submit() {
     setError(null);
@@ -118,6 +189,7 @@ export default function Dashboard() {
         payload = await api.requestDocuments(files || []);
       }
 
+      setShowCurrentResult(true);
       setResult(payload, {
         label: mode === "text" ? text.slice(0, 60) : mode === "json" ? "JSON request" : "Document upload"
       });
@@ -138,8 +210,11 @@ export default function Dashboard() {
           <div className="page-subtitle">Submit a sourcing, logistics, finance, or document request and let the agent pipeline prepare a first-pass plan.</div>
         </div>
         <div className="page-actions">
-          <button className="btn" onClick={clearAll} disabled={!result && history.length === 0}>
-            Clear history
+          <button className="btn" onClick={clearCurrentWorkspace}>
+            Clear current
+          </button>
+          <button className="btn" onClick={clearEverything}>
+            Clear all
           </button>
         </div>
       </div>
@@ -240,10 +315,10 @@ export default function Dashboard() {
         </div>
       </div>
 
-      <ResultDecisionStrip result={result} onBreakdown={() => navigate("/shipments")} />
+      <ResultDecisionStrip result={showCurrentResult ? result : null} onBreakdown={() => navigate("/shipments")} />
 
-      {result && <AnswerCard result={result} />}
-      {result && <NeedMoreInfoCard result={result} originalText={text} onResult={setResult} />}
+      {showCurrentResult && result && <AnswerCard result={result} />}
+      {showCurrentResult && result && <NeedMoreInfoCard result={result} originalText={text} onResult={(payload, meta) => { setShowCurrentResult(true); setResult(payload, meta); }} />}
 
       <div className="recent-requests-dropdown">
         <details>
@@ -270,7 +345,7 @@ export default function Dashboard() {
                   </div>
 
                   {history.map((h) => (
-                    <div className="shipment-row" key={h.id} onClick={() => { loadFromHistory(h.id); navigate("/shipments"); }}>
+                    <div className="shipment-row" key={h.id} onClick={() => { loadFromHistory(h.id); setShowCurrentResult(true); navigate("/shipments"); }}>
                       <div className="shipment-id">{String(h.label).slice(0, 64)}</div>
                       <div className="shipment-route">{humanizeKey(h.requestType)}</div>
                       <div className="shipment-route">{humanizeKey(h.detectedIntent)}</div>
