@@ -3,7 +3,7 @@ try {
   localStorage.removeItem("meridian.dashboard.mode");
   localStorage.removeItem("meridian.dashboard.text");
   localStorage.removeItem("meridian.dashboard.json");
-  localStorage.removeItem("meridian.lastResult");
+  // Keep the current result available to other open tabs.
 } catch {
   // Browser storage unavailable; continue normally.
 }

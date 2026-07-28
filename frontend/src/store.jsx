@@ -26,6 +26,44 @@ export function StoreProvider({ children }) {
     localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
   }, [history]);
 
+  useEffect(() => {
+    function parseStorageValue(value, fallback) {
+      if (!value) return fallback;
+
+      try {
+        return JSON.parse(value);
+      } catch {
+        return fallback;
+      }
+    }
+
+    function handleStorage(event) {
+      if (event.key === RESULT_KEY) {
+        setResultState(
+          parseStorageValue(event.newValue, null)
+        );
+      }
+
+      if (event.key === HISTORY_KEY) {
+        setHistoryState(
+          parseStorageValue(event.newValue, [])
+        );
+      }
+    }
+
+    window.addEventListener(
+      "storage",
+      handleStorage
+    );
+
+    return () => {
+      window.removeEventListener(
+        "storage",
+        handleStorage
+      );
+    };
+  }, []);
+
   const setResult = useCallback((payload, meta) => {
     setResultState(payload);
     setHistoryState((prev) => {

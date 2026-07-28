@@ -3705,3 +3705,235 @@ def _build_trader_input_from_text(text):
         "target_market": route.get("country_to"),
     }
 
+# DIRECT_VOLUME_ACTIVE_RESCUE_V18F
+#
+# Final narrow rescue for direct non-CBM shipment requests. This is defined
+# after the existing final-v11 User Agent export, so it is the active binding.
+
+_build_logistics_input_from_text_before_direct_volume_v18e = (
+    _build_logistics_input_from_text
+)
+
+
+def _build_logistics_input_from_text(text):
+    parsed, logistics_input = (
+        _build_logistics_input_from_text_before_direct_volume_v18e(
+            text
+        )
+    )
+
+    try:
+        from app.text_shipment_parser import (
+            parse_shipment_text as _direct_volume_parse_v18e,
+        )
+
+        canonical = _direct_volume_parse_v18e(text)
+    except Exception:
+        return parsed, logistics_input
+
+    items = (
+        canonical.get("items")
+        if isinstance(canonical, dict)
+        else None
+    )
+
+    direct_items = [
+        item
+        for item in (items or [])
+        if isinstance(item, dict)
+        and bool(item.get("source_volume_unit"))
+    ]
+
+    if not direct_items:
+        return parsed, logistics_input
+
+    normalized_items = []
+
+    for item in direct_items:
+        quantity = item.get("quantity", 1)
+
+        try:
+            quantity_number = float(quantity or 1)
+        except Exception:
+            quantity_number = 1.0
+
+        if quantity_number <= 0:
+            quantity_number = 1.0
+
+        total_cbm = float(item.get("total_cbm") or 0)
+        unit_cbm = float(
+            item.get("unit_cbm")
+            or (
+                total_cbm
+                / quantity_number
+            )
+        )
+
+        name = (
+            item.get("name")
+            or item.get("item_name")
+            or "Unknown item"
+        )
+
+        normalized_items.append(
+            {
+                "name": str(name),
+                "item_name": str(name),
+                "quantity": (
+                    int(quantity_number)
+                    if quantity_number.is_integer()
+                    else quantity_number
+                ),
+                "unit_cbm": unit_cbm,
+                "total_cbm": total_cbm,
+                "weight_kg": 0.0,
+                "unit_weight_kg": 0.0,
+                "total_weight_kg": 0.0,
+                "aggregate_volume_only": True,
+                "dimensions_are_aggregate": True,
+                "display_dimensions_estimated": True,
+                "source_volume": item.get(
+                    "source_volume"
+                ),
+                "source_volume_unit": item.get(
+                    "source_volume_unit"
+                ),
+                "category_tags": list(
+                    item.get("category_tags")
+                    or ["general_cargo"]
+                ),
+            }
+        )
+
+    logistics_input = dict(
+        logistics_input
+        if isinstance(logistics_input, dict)
+        else {}
+    )
+
+    logistics_input["items"] = normalized_items
+    logistics_input["total_cbm"] = round(
+        sum(
+            float(item["total_cbm"])
+            for item in normalized_items
+        ),
+        8,
+    )
+    logistics_input["total_weight_kg"] = 0.0
+
+    for key in (
+        "origin",
+        "origin_country",
+        "country_from",
+        "destination",
+        "destination_country",
+        "country_to",
+        "target_market",
+    ):
+        value = canonical.get(key)
+
+        if value is not None:
+            logistics_input[key] = value
+
+    logistics_input.setdefault(
+        "shipment_id",
+        "TEXT-SHIPMENT-REQUEST",
+    )
+    logistics_input.setdefault(
+        "customer",
+        "Unknown Customer",
+    )
+    logistics_input.setdefault(
+        "notes",
+        "Shipment data parsed from natural language text.",
+    )
+
+    return canonical, logistics_input
+
+
+_run_user_agent_from_text_before_direct_volume_v18e = (
+    run_user_agent_from_text
+)
+
+
+def run_user_agent_from_text(user_text):
+    response = (
+        _run_user_agent_from_text_before_direct_volume_v18e(
+            user_text
+        )
+    )
+
+    if not isinstance(response, dict):
+        return response
+
+    if (
+        response.get("detected_intent") == "logistics"
+        or "logistics_agent"
+        in (response.get("agents_called") or [])
+    ):
+        return response
+
+    text = str(user_text or "")
+    lowered = text.lower()
+
+    if not any(
+        marker in lowered
+        for marker in (
+            "ship ",
+            "send ",
+            "export ",
+            "import ",
+            "freight ",
+        )
+    ):
+        return response
+
+    try:
+        from app.text_shipment_parser import (
+            parse_shipment_text as _direct_volume_parse_v18e,
+        )
+
+        parsed = _direct_volume_parse_v18e(text)
+    except Exception:
+        return response
+
+    items = (
+        parsed.get("items")
+        if isinstance(parsed, dict)
+        else None
+    )
+
+    has_direct_volume = (
+        isinstance(items, list)
+        and any(
+            isinstance(item, dict)
+            and bool(item.get("source_volume_unit"))
+            for item in items
+        )
+    )
+
+    if not has_direct_volume:
+        return response
+
+    routing = {
+        "source": "direct_volume_parser_rescue",
+        "trained_router_decision": {
+            "intent": "logistics",
+            "reason": (
+                "The request contains a shipping verb, "
+                "route and parser-confirmed direct cargo "
+                "volume."
+            ),
+        },
+    }
+
+    return _run_text_logistics_flow(
+        text=text,
+        detected_intent="logistics",
+        routing=routing,
+        summary=(
+            "User Agent recognized a direct-volume "
+            "shipment request and ran Logistics Agent."
+        ),
+        agents_called=[],
+    )

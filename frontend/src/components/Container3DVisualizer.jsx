@@ -146,7 +146,13 @@ function extractTags(item) {
   if (["glass", "bottle", "tv", "television", "mirror", "ceramic"].some((w) => nameText.includes(w))) inferred.push("fragile");
   if (["scooter", "battery", "lithium", "electric"].some((w) => nameText.includes(w))) inferred.push("hazardous", "battery");
   if (["mattress", "sofa", "dining", "furniture"].some((w) => nameText.includes(w))) inferred.push("bulky");
-  if (["machinery", "engine", "tiles"].some((w) => nameText.includes(w))) inferred.push("heavy");
+  const weightKnown = item.weight_known !== false &&
+    item.measurement_status?.weight_known !== false;
+
+  if (
+    weightKnown &&
+    ["machinery", "engine", "tiles"].some((w) => nameText.includes(w))
+  ) inferred.push("heavy");
 
   const existing = new Set(result.map((t) => cleanText(t).replaceAll(" ", "_")));
   for (const tag of inferred) {
@@ -198,6 +204,49 @@ function heuristicDimensions(name, tags) {
 }
 
 function extractDimensions(item, name, tags, quantity) {
+  const aggregateOnly =
+    item.aggregate_volume_only === true ||
+    item.dimensions_are_aggregate === true ||
+    item.display_dimensions_estimated === true ||
+    item.packed_dimensions_known === false;
+
+  if (aggregateOnly) {
+    if (item.dimensions_m && typeof item.dimensions_m === "object") {
+      const l = asNumber(item.dimensions_m.length, null);
+      const w = asNumber(item.dimensions_m.width, null);
+      const h = asNumber(item.dimensions_m.height, null);
+
+      if (l && w && h) {
+        return [
+          l,
+          w,
+          h,
+          "advisory aggregate-volume representation",
+        ];
+      }
+    }
+
+    const totalCbm = asNumber(
+      item.total_cbm ?? item.cbm,
+      null
+    );
+
+    if (totalCbm && totalCbm > 0) {
+      const unitVolume =
+        totalCbm / Math.max(1, quantity);
+      const side = Math.cbrt(
+        Math.max(unitVolume, 0.001)
+      );
+
+      return [
+        side,
+        side,
+        side,
+        "advisory aggregate-volume representation",
+      ];
+    }
+  }
+
   if (item.dimensions_m && typeof item.dimensions_m === "object") {
     const l = asNumber(item.dimensions_m.length, null);
     const w = asNumber(item.dimensions_m.width, null);
@@ -1144,20 +1193,51 @@ function ThreeScene({ layout }) {
       updateBounds(box);
     }
 
-    groupBounds.forEach((bounds, cargoName) => {
+    const labelEntries = [...groupBounds.entries()]
+      .sort(([nameA], [nameB]) =>
+        String(nameA).localeCompare(String(nameB))
+      );
+    const occupiedLabels = [];
+
+    labelEntries.forEach(([cargoName, bounds], index) => {
       const centerX = (bounds.minX + bounds.maxX) / 2;
       const centerZ = (bounds.minZ + bounds.maxZ) / 2;
-      const labelY = bounds.maxY + 0.58;
+      const labelX =
+        centerX + ((index % 3) - 1) * 0.38;
+      const labelZ =
+        centerZ + (index % 2 === 0 ? -0.18 : 0.18);
+      let labelY = bounds.maxY + 0.58;
       const color = bounds.color || "#ffffff";
 
+      for (const existing of occupiedLabels) {
+        const horizontalDistance = Math.hypot(
+          labelX - existing.x,
+          labelZ - existing.z
+        );
+
+        while (
+          horizontalDistance < 0.95 &&
+          Math.abs(labelY - existing.y) < 0.36
+        ) {
+          labelY += 0.42;
+        }
+      }
+
+      occupiedLabels.push({
+        x: labelX,
+        y: labelY,
+        z: labelZ,
+      });
+
       const label = makeLabelSprite(cargoName, color);
-      label.position.set(centerX, labelY, centerZ);
+      label.frustumCulled = false;
+      label.position.set(labelX, labelY, labelZ);
       scene.add(label);
 
       addPointerLine(
         scene,
         { x: centerX, y: bounds.maxY + 0.03, z: centerZ },
-        { x: centerX, y: labelY - 0.17, z: centerZ },
+        { x: labelX, y: labelY - 0.17, z: labelZ },
         color
       );
     });

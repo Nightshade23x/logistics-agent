@@ -1305,3 +1305,48 @@ try:
 
 except Exception:
     pass
+
+# FINALIZED_BACKEND_PAYLOAD_IDEMPOTENCY_V20
+#
+# api_server.py runs cleanup_frontend_response as HTTP middleware after the
+# backend_service route has already produced its final frontend payload.
+# Re-running the historical cleanup chain can reinterpret authoritative cargo
+# totals. Final backend_service payloads are therefore returned unchanged.
+# Direct/specialist payloads without the backend_service marker still use the
+# existing cleanup chain.
+
+_cleanup_frontend_response_before_idempotency_v20 = (
+    cleanup_frontend_response
+)
+
+
+def _v20_is_final_backend_service_payload(payload):
+    if not isinstance(payload, dict):
+        return False
+
+    metadata = payload.get("request_metadata")
+
+    if not isinstance(metadata, dict):
+        return False
+
+    if metadata.get("served_by") != "backend_service":
+        return False
+
+    metrics = payload.get("logistics_metrics")
+    visualizer = payload.get("logistics_visualizer")
+
+    return (
+        isinstance(metrics, dict)
+        or isinstance(visualizer, dict)
+        or payload.get("backend_validation") is not None
+    )
+
+
+def cleanup_frontend_response(payload, original_text=None):
+    if _v20_is_final_backend_service_payload(payload):
+        return payload
+
+    return _cleanup_frontend_response_before_idempotency_v20(
+        payload,
+        original_text,
+    )

@@ -1349,11 +1349,29 @@ def parse_shipment_text(text: str):
 
     from app.unit_converter import convert_volume_to_cbm
 
-    result["items"] = [direct_item]
-    result["total_cbm"] = convert_volume_to_cbm(
-        direct_item["total_cbm"],
-        direct_item["volume_unit"],
+    source_volume = float(direct_item["total_cbm"])
+    source_volume_unit = str(direct_item["volume_unit"])
+    canonical_cbm = convert_volume_to_cbm(
+        source_volume,
+        source_volume_unit,
     )
+
+    direct_item["source_volume"] = source_volume
+    direct_item["source_volume_unit"] = source_volume_unit
+    direct_item["cbm"] = canonical_cbm
+    direct_item["unit_cbm"] = canonical_cbm
+    direct_item["total_cbm"] = canonical_cbm
+    direct_item["volume_unit"] = "cbm"
+    direct_item["cbm_unit"] = "cbm"
+    direct_item["weight_kg"] = 0.0
+    direct_item["unit_weight_kg"] = 0.0
+    direct_item["total_weight_kg"] = 0.0
+    direct_item["weight_estimated"] = False
+    direct_item["weight_source"] = "not_provided"
+
+    result["items"] = [direct_item]
+    result["total_cbm"] = canonical_cbm
+    result["total_weight_kg"] = 0.0
 
     issues = result.get("issues")
 
@@ -1373,5 +1391,137 @@ def parse_shipment_text(text: str):
                 for fragment in stale_fragments
             )
         ]
+
+    return result
+
+# EXPLICIT_TOTAL_WEIGHT_PARSER_AUTHORITY_V20
+#
+# Some broad trade prompts were parsed with a real cargo item plus a synthetic
+# item named "kg" whose quantity was the supplied total weight. Remove that
+# measurement-token pseudo-item and attach an explicitly labelled total weight
+# to the real cargo item.
+
+_parse_shipment_text_before_explicit_weight_v20 = (
+    parse_shipment_text
+)
+
+
+def _v20_explicit_total_weight_kg(text):
+    import re
+
+    raw = str(text or "")
+
+    match = re.search(
+        r"\btotal\s+(?:packed\s+)?weight\s*"
+        r"(?:is|=|:)?\s*"
+        r"([0-9][0-9,]*(?:\.[0-9]+)?)\s*"
+        r"(kg|kgs|kilograms?|lb|lbs|pounds?)\b",
+        raw,
+        flags=re.IGNORECASE,
+    )
+
+    if not match:
+        return None
+
+    value = float(
+        match.group(1).replace(",", "")
+    )
+    unit = match.group(2).lower()
+
+    if unit in {
+        "lb",
+        "lbs",
+        "pound",
+        "pounds",
+    }:
+        value *= 0.45359237
+
+    return value
+
+
+def parse_shipment_text(text: str):
+    result = (
+        _parse_shipment_text_before_explicit_weight_v20(
+            text
+        )
+    )
+
+    if not isinstance(result, dict):
+        return result
+
+    explicit_weight = _v20_explicit_total_weight_kg(
+        text
+    )
+
+    if explicit_weight is None:
+        return result
+
+    items = result.get("items")
+
+    if not isinstance(items, list):
+        return result
+
+    measurement_names = {
+        "kg",
+        "kgs",
+        "kilogram",
+        "kilograms",
+        "lb",
+        "lbs",
+        "pound",
+        "pounds",
+    }
+
+    real_items = [
+        item
+        for item in items
+        if not (
+            isinstance(item, dict)
+            and str(
+                item.get("name")
+                or item.get("item_name")
+                or ""
+            ).strip().lower()
+            in measurement_names
+        )
+    ]
+
+    if not real_items:
+        return result
+
+    result["items"] = real_items
+    result["total_weight_kg"] = explicit_weight
+
+    if len(real_items) == 1:
+        item = real_items[0]
+
+        if isinstance(item, dict):
+            quantity = item.get("quantity", 1)
+
+            try:
+                quantity_number = float(
+                    quantity or 1
+                )
+            except Exception:
+                quantity_number = 1.0
+
+            if quantity_number <= 0:
+                quantity_number = 1.0
+
+            item["total_weight_kg"] = (
+                explicit_weight
+            )
+            item["unit_weight_kg"] = (
+                explicit_weight
+                / quantity_number
+            )
+            item["weight_kg"] = (
+                explicit_weight
+                / quantity_number
+            )
+            item["weight_source"] = (
+                "explicit_total_weight"
+            )
+            item["weight_estimated"] = False
 
     return result

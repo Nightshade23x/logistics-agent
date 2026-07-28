@@ -7721,3 +7721,401 @@ try:
         return _apply_container_planning_consistency_v6(payload, prompt_text)
 except Exception:
     pass
+
+# DIRECT_VOLUME_CONTAINER_SEMANTICS_V19
+#
+# Final browser-facing authority for aggregate-volume shipment requests that
+# do not include total packed weight or package dimensions. Internal planning
+# may use zero as a calculation placeholder, but the UI must not present that
+# placeholder as a confirmed cargo weight or a complete physical fit check.
+
+_process_text_request_before_direct_volume_semantics_v19 = (
+    process_text_request
+)
+
+
+def _dv19_prompt_from_call(args, kwargs):
+    if args:
+        return str(args[0] or "")
+
+    for key in (
+        "user_text",
+        "text",
+        "prompt",
+        "user_request",
+        "request_text",
+        "input_text",
+        "query",
+        "message",
+    ):
+        if kwargs.get(key) is not None:
+            return str(kwargs.get(key) or "")
+
+    return ""
+
+
+def _dv19_is_volume_only_request(prompt):
+    import re
+
+    text = str(prompt or "")
+
+    has_volume = re.search(
+        r"\b[0-9][0-9,]*(?:\.[0-9]+)?\s*"
+        r"(?:cbm|m3|m\^3|m³|"
+        r"cubic\s+meters?|cubic\s+metres?|"
+        r"ft3|ft\^3|ft³|cubic\s+feet|cubic\s+foot)\b",
+        text,
+        flags=re.IGNORECASE,
+    )
+
+    has_weight = re.search(
+        r"\b[0-9][0-9,]*(?:\.[0-9]+)?\s*"
+        r"(?:kg|kgs|kilograms?|lb|lbs|pounds?)\b",
+        text,
+        flags=re.IGNORECASE,
+    )
+
+    has_dimensions = re.search(
+        r"\b[0-9]+(?:\.[0-9]+)?\s*"
+        r"(?:m|cm|mm|ft|feet|in|inch(?:es)?)?\s*"
+        r"(?:x|×)\s*"
+        r"[0-9]+(?:\.[0-9]+)?\s*"
+        r"(?:m|cm|mm|ft|feet|in|inch(?:es)?)?\s*"
+        r"(?:x|×)\s*"
+        r"[0-9]+(?:\.[0-9]+)?",
+        text,
+        flags=re.IGNORECASE,
+    )
+
+    return bool(
+        has_volume
+        and not has_weight
+        and not has_dimensions
+    )
+
+
+def _dv19_unique_strings(values):
+    output = []
+    seen = set()
+
+    for value in values:
+        text = str(value or "").strip()
+        key = text.lower()
+
+        if text and key not in seen:
+            output.append(text)
+            seen.add(key)
+
+    return output
+
+
+def _dv19_remove_unknown_weight_tags(item):
+    if not isinstance(item, dict):
+        return
+
+    blocked = {
+        "heavy",
+        "weight_based_heavy",
+        "overweight",
+    }
+
+    for key in (
+        "category_tags",
+        "cargo_categories",
+        "tags",
+        "labels",
+    ):
+        value = item.get(key)
+
+        if isinstance(value, list):
+            item[key] = [
+                entry
+                for entry in value
+                if str(entry or "").strip().lower().replace(
+                    " ",
+                    "_",
+                )
+                not in blocked
+            ]
+
+    item["weight_kg"] = None
+    item["unit_weight_kg"] = None
+    item["total_weight_kg"] = None
+    item["weight_known"] = False
+    item["packed_dimensions_known"] = False
+    item["aggregate_volume_only"] = True
+    item["dimensions_are_aggregate"] = True
+    item["display_dimensions_estimated"] = True
+    item["dimension_source"] = (
+        "advisory aggregate-volume representation"
+    )
+
+    measurement = item.get("measurement_status")
+
+    if not isinstance(measurement, dict):
+        measurement = {}
+        item["measurement_status"] = measurement
+
+    measurement.update(
+        {
+            "volume_known": True,
+            "weight_known": False,
+            "packed_dimensions_known": False,
+        }
+    )
+
+
+def _dv19_clean_direct_volume_strings(value):
+    import re
+
+    if isinstance(value, dict):
+        for key in list(value.keys()):
+            value[key] = _dv19_clean_direct_volume_strings(
+                value[key]
+            )
+        return value
+
+    if isinstance(value, list):
+        return [
+            _dv19_clean_direct_volume_strings(item)
+            for item in value
+        ]
+
+    if isinstance(value, str):
+        text = re.sub(
+            r"\b0(?:\.0+)?\s*kg\b",
+            "weight not confirmed",
+            value,
+            flags=re.IGNORECASE,
+        )
+
+        text = re.sub(
+            r"\bready for review with high risk\b",
+            "needs cargo weight and packed dimensions",
+            text,
+            flags=re.IGNORECASE,
+        )
+
+        text = re.sub(
+            r"\bfits selected container\b",
+            (
+                "volume fits; payload and package fit "
+                "remain unverified"
+            ),
+            text,
+            flags=re.IGNORECASE,
+        )
+
+        return text
+
+    return value
+
+
+def _dv19_apply_volume_only_semantics(payload, prompt):
+    if (
+        not isinstance(payload, dict)
+        or not _dv19_is_volume_only_request(prompt)
+    ):
+        return payload
+
+    payload = _dv19_clean_direct_volume_strings(
+        payload
+    )
+
+    payload["status"] = (
+        "partial_plan_needs_more_information"
+    )
+    payload["decision"] = "review_required"
+
+    measurement = payload.get(
+        "cargo_measurement_status"
+    )
+
+    if not isinstance(measurement, dict):
+        measurement = {}
+        payload["cargo_measurement_status"] = (
+            measurement
+        )
+
+    measurement.update(
+        {
+            "volume_known": True,
+            "weight_known": False,
+            "packed_dimensions_known": False,
+            "fit_basis": "aggregate_volume_only",
+            "readiness_status": (
+                "needs_cargo_weight_and_dimensions"
+            ),
+        }
+    )
+
+    metrics = payload.get("logistics_metrics")
+
+    if not isinstance(metrics, dict):
+        metrics = {}
+        payload["logistics_metrics"] = metrics
+
+    metrics["total_weight_kg"] = None
+    metrics["weight_known"] = False
+    metrics["packed_dimensions_known"] = False
+    metrics["readiness_status"] = (
+        "needs_cargo_weight_and_dimensions"
+    )
+
+    visualizer = payload.get(
+        "logistics_visualizer"
+    )
+
+    if not isinstance(visualizer, dict):
+        visualizer = {}
+        payload["logistics_visualizer"] = visualizer
+
+    container = visualizer.get("container")
+
+    if not isinstance(container, dict):
+        container = {}
+        visualizer["container"] = container
+
+    container["total_weight_kg"] = None
+    container["weight_known"] = False
+    container["packed_dimensions_known"] = False
+    container["readiness_status"] = (
+        "needs_cargo_weight_and_dimensions"
+    )
+
+    if metrics.get("risk_level") is not None:
+        container["risk_level"] = metrics.get(
+            "risk_level"
+        )
+
+    if metrics.get("risk_score") is not None:
+        container["risk_score"] = metrics.get(
+            "risk_score"
+        )
+
+    cargo_mix = visualizer.get("cargo_mix")
+
+    if isinstance(cargo_mix, list):
+        for item in cargo_mix:
+            _dv19_remove_unknown_weight_tags(item)
+
+    fit_check = visualizer.get("fit_check")
+
+    if not isinstance(fit_check, dict):
+        fit_check = {}
+        visualizer["fit_check"] = fit_check
+
+    fit_check.update(
+        {
+            "status": (
+                "volume_fits_payload_unverified"
+            ),
+            "warnings": [
+                (
+                    "Volume fits the selected container, "
+                    "but payload fit cannot be verified "
+                    "until total packed weight is provided."
+                ),
+                (
+                    "Package-level fit and door clearance "
+                    "cannot be verified until packed "
+                    "dimensions are provided."
+                ),
+            ],
+            "recommendations": [
+                (
+                    "Provide total packed weight and "
+                    "package dimensions before booking."
+                )
+            ],
+            "item_fit_results": [],
+            "weight_known": False,
+            "packed_dimensions_known": False,
+        }
+    )
+
+    layout_notes = visualizer.get("layout_notes")
+
+    if not isinstance(layout_notes, list):
+        layout_notes = []
+
+    visualizer["layout_notes"] = (
+        _dv19_unique_strings(
+            layout_notes
+            + [
+                (
+                    "Cargo geometry is an advisory "
+                    "aggregate-volume representation; "
+                    "packed dimensions are not confirmed."
+                ),
+                (
+                    "Payload fit is unverified because "
+                    "total packed weight is missing."
+                ),
+            ]
+        )
+    )
+
+    hints = visualizer.get("frontend_hints")
+
+    if not isinstance(hints, dict):
+        hints = {}
+        visualizer["frontend_hints"] = hints
+
+    hints["show_fit_warnings"] = True
+    hints["weight_display"] = "not_confirmed"
+    hints["dimension_display"] = (
+        "advisory_representation"
+    )
+
+    handoff = payload.get("handoff_payload")
+
+    if isinstance(handoff, dict):
+        handoff["total_weight_kg"] = None
+        handoff["weight_known"] = False
+        handoff["packed_dimensions_known"] = False
+        handoff["readiness_status"] = (
+            "needs_cargo_weight_and_dimensions"
+        )
+
+    missing = [
+        "Confirm total packed weight.",
+        "Confirm package-level packed dimensions.",
+    ]
+
+    existing_preview = payload.get(
+        "missing_information_preview"
+    )
+
+    if not isinstance(existing_preview, list):
+        existing_preview = []
+
+    payload["missing_information_preview"] = (
+        _dv19_unique_strings(
+            existing_preview + missing
+        )
+    )
+    payload["missing_information_count"] = len(
+        payload["missing_information_preview"]
+    )
+
+    return payload
+
+
+def process_text_request(*args, **kwargs):
+    prompt = _dv19_prompt_from_call(
+        args,
+        kwargs,
+    )
+
+    payload = (
+        _process_text_request_before_direct_volume_semantics_v19(
+            *args,
+            **kwargs,
+        )
+    )
+
+    return _dv19_apply_volume_only_semantics(
+        payload,
+        prompt,
+    )

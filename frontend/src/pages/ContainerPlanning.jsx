@@ -81,6 +81,7 @@ export function getContainerPlanningMetrics(result) {
   const display = visualizer?.display_metrics || visualizer?.utilization || {};
   const handoff = result?.handoff_payload || {};
   const review = result?.logistics_quality_review || {};
+  const measurement = result?.cargo_measurement_status || {};
   const cargo = Array.isArray(visualizer?.cargo_mix)
     ? visualizer.cargo_mix
     : [];
@@ -107,6 +108,25 @@ export function getContainerPlanningMetrics(result) {
     finiteNumber(metrics.total_weight_kg) ??
     cargoWeight;
 
+  const weightKnown =
+    measurement.weight_known ??
+    metrics.weight_known ??
+    container.weight_known ??
+    handoff.weight_known ??
+    true;
+
+  const packedDimensionsKnown =
+    measurement.packed_dimensions_known ??
+    metrics.packed_dimensions_known ??
+    container.packed_dimensions_known ??
+    handoff.packed_dimensions_known ??
+    true;
+
+  const readinessStatus =
+    measurement.readiness_status ??
+    metrics.readiness_status ??
+    null;
+
   const utilizationPercent =
     finiteNumber(display.utilization_percent) ??
     finiteNumber(container.utilization_percent) ??
@@ -118,6 +138,9 @@ export function getContainerPlanningMetrics(result) {
     totalCbm,
     totalWeightKg,
     utilizationPercent,
+    weightKnown,
+    packedDimensionsKnown,
+    readinessStatus,
   };
 }
 
@@ -189,7 +212,12 @@ export default function ContainerPlanning() {
             <>
               <div className="kpi-grid">
                 <Kpi label="Total CBM" value={canonical.totalCbm} unit="m³" tone="blue" />
-                <Kpi label="Total Weight" value={canonical.totalWeightKg} unit="kg" tone="teal" />
+                <Kpi
+                  label="Total Weight"
+                  value={canonical.weightKnown ? canonical.totalWeightKg : "Not confirmed"}
+                  unit={canonical.weightKnown ? "kg" : ""}
+                  tone="teal"
+                />
                 <Kpi label="Risk Score" value={lm.risk_score} unit={`(${lm.risk_level})`} tone={lm.risk_level === "high" ? "red" : "amber"} />
                 <Kpi label="Utilization" value={canonical.utilizationPercent} unit="%" />
               </div>
@@ -199,7 +227,7 @@ export default function ContainerPlanning() {
                   <div className="card">
                     <div className="card-header">
                       <div className="card-title">{c?.selected_container} — Load Layout</div>
-                      <Badge status={lm.readiness_status} />
+                      <Badge status={canonical.readinessStatus || lm.readiness_status} />
                     </div>
                     <div className="card-body">
                       <Container3DVisualizer result={result} />
