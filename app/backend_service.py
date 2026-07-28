@@ -7691,3 +7691,33 @@ def process_text_request(
         payload,
         user_text,
     )
+
+# CONTAINER_PLANNING_CONSISTENCY_V6
+# Final narrow consistency layer for direct multi-item cargo and explicit
+# oversized physical cargo. This runs after the existing answer authority.
+try:
+    from app.container_planning_consistency_fixes import (
+        apply_container_planning_consistency as _apply_container_planning_consistency_v6,
+    )
+
+    _process_text_request_before_container_planning_consistency_v6 = process_text_request
+
+    def process_text_request(*args, **kwargs):
+        prompt_text = ""
+        if args:
+            prompt_text = str(args[0] or "")
+        else:
+            prompt_text = str(
+                kwargs.get("text")
+                or kwargs.get("prompt")
+                or kwargs.get("user_request")
+                or ""
+            )
+
+        payload = _process_text_request_before_container_planning_consistency_v6(
+            *args,
+            **kwargs,
+        )
+        return _apply_container_planning_consistency_v6(payload, prompt_text)
+except Exception:
+    pass

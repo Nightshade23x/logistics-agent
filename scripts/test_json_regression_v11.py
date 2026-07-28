@@ -814,9 +814,80 @@ def main() -> int:
             print("-", problem)
         return 1
 
-    print("ALL TEN JSON REGRESSION CASES PASSED")
+    print("ALL ELEVEN JSON REGRESSION CASES PASSED")
     return 0
 
+
+
+
+# CONTAINER_PLANNING_OVERSIZE_Q11_V6
+CASES.append(
+    {
+        "name": "q11",
+        "prompt": (
+            "Ship one industrial machine from India to USA. "
+            "Its packed dimensions are 8 m x 3 m x 3 m and it weighs 9000 kg. "
+            "It is non-stackable."
+        ),
+    }
+)
+
+
+def validate_q11(payload: dict[str, Any]) -> list[str]:
+    problems = []
+    metrics = get_metrics(payload)
+    visualizer = get_visualizer(payload)
+
+    if not near(metrics.get("total_cbm"), 72):
+        problems.append(f"Q11 total_cbm should be 72: {metrics}")
+
+    if not near(metrics.get("total_weight_kg"), 9000):
+        problems.append(f"Q11 total_weight_kg should be 9000: {metrics}")
+
+    if metrics.get("readiness_status") != "not_ready_oversized_dimensions":
+        problems.append(f"Q11 readiness should be oversized-blocked: {metrics}")
+
+    cargo = visualizer.get("cargo_mix") if isinstance(visualizer, dict) else []
+    item = cargo[0] if isinstance(cargo, list) and cargo else None
+    if not isinstance(item, dict):
+        problems.append("Q11 industrial machine cargo item missing")
+    else:
+        if str(item.get("item_name") or "").lower() != "industrial machine":
+            problems.append(f"Q11 wrong cargo name: {item}")
+        if not near(item.get("total_weight_kg"), 9000):
+            problems.append(f"Q11 item weight should be 9000: {item}")
+        dims = item.get("dimensions_m") if isinstance(item.get("dimensions_m"), dict) else {}
+        if not near(dims.get("length"), 8) or not near(dims.get("width"), 3) or not near(dims.get("height"), 3):
+            problems.append(f"Q11 dimensions should be 8 x 3 x 3 m: {dims}")
+
+    fit = visualizer.get("fit_check") if isinstance(visualizer, dict) else {}
+    if not isinstance(fit, dict) or fit.get("status") != "does_not_fit_standard_container":
+        problems.append(f"Q11 fit status incorrect: {fit}")
+
+    answer = str(payload.get("display_answer") or "")
+    lower_answer = answer.lower()
+    for expected in ("industrial machine", "9000", "special equipment"):
+        if expected not in lower_answer:
+            problems.append(f"Q11 answer missing {expected!r}")
+
+    if "ready for standard review" in lower_answer:
+        problems.append("Q11 must not say ready for standard review")
+
+    dumped = json.dumps(payload, ensure_ascii=False, default=str).lower()
+    if "compare fcl quotes for 20ft" in dumped:
+        problems.append("Q11 stale standard-container quote advice remains")
+
+    questions = payload.get("clarification_questions")
+    if isinstance(questions, list):
+        for question in questions:
+            lower = str(question).lower()
+            if "dimension" in lower or "weight" in lower:
+                problems.append(f"Q11 asks for already provided data: {question}")
+
+    return problems
+
+
+VALIDATORS["q11"] = validate_q11
 
 if __name__ == "__main__":
     raise SystemExit(main())

@@ -277,6 +277,10 @@ function normalizeCargoMix(result) {
         length_m: Math.max(0.05, length_m),
         width_m: Math.max(0.05, width_m),
         height_m: Math.max(0.05, height_m),
+        total_cbm: asNumber(item.total_cbm ?? item.cbm ?? item.volume_cbm, null),
+        unit_cbm: asNumber(item.unit_cbm ?? item.cbm_per_unit ?? item.volume_cbm_per_unit, null),
+        aggregate_volume_only: item.aggregate_volume_only === true,
+        dimensions_are_aggregate: item.dimensions_are_aggregate === true,
         tags,
         color: cargoColorForItem(name, idx),
         stackable,
@@ -337,6 +341,7 @@ function extractLoadingSequence(result) {
   return unique;
 }
 
+// CONTAINER_LAYOUT_POLISH_V5
 function orderCargo(result, cargoMix) {
   const sequence = extractLoadingSequence(result);
 
@@ -352,13 +357,16 @@ function orderCargo(result, cargoMix) {
       return [base, -volume, item.original_index];
     };
 
+    const sortedCargo = [...cargoMix].sort((a, b) => {
+      const aa = priority(a);
+      const bb = priority(b);
+      return aa[0] - bb[0] || aa[1] - bb[1] || aa[2] - bb[2];
+    });
+
     return {
-      cargo: [...cargoMix].sort((a, b) => {
-        const aa = priority(a);
-        const bb = priority(b);
-        return aa[0] - bb[0] || aa[1] - bb[1] || aa[2] - bb[2];
-      }),
-      sequence: cargoMix.map((item) => item.name),
+      cargo: sortedCargo,
+      loading_order_source: "safety_generated",
+      sequence: sortedCargo.map((item) => item.name),
       usedBackendSequence: false,
     };
   }
@@ -367,13 +375,21 @@ function orderCargo(result, cargoMix) {
 
   const matchIndex = (item) => {
     const itemName = cleanText(item.name);
-    const idx = normSeq.findIndex((seqName) => itemName === seqName || itemName.includes(seqName) || seqName.includes(itemName));
+    const idx = normSeq.findIndex(
+      (seqName) =>
+        itemName === seqName ||
+        itemName.includes(seqName) ||
+        seqName.includes(itemName)
+    );
     return idx >= 0 ? idx : 10000 + item.original_index;
   };
 
+  const sortedCargo = [...cargoMix].sort((a, b) => matchIndex(a) - matchIndex(b));
+
   return {
-    cargo: [...cargoMix].sort((a, b) => matchIndex(a) - matchIndex(b)),
-    sequence,
+    cargo: sortedCargo,
+    loading_order_source: "backend_sequence",
+    sequence: sequence.length ? sequence : sortedCargo.map((item) => item.name),
     usedBackendSequence: true,
   };
 }
@@ -439,15 +455,18 @@ function boxesOverlap(a, b, clearance = 0.006) {
 }
 
 function canStack(unit, base) {
+  // Aggregate preview blocks represent volume cells, not literal cartons.
+  if (unit.aggregate_preview && base.aggregate_preview) return true;
+
   if (hasTag(unit.tags, "hazardous", "battery", "non_stackable")) return false;
   if (hasTag(base.tags, "hazardous", "battery", "non_stackable", "fragile")) return false;
   if (unit.name === base.name) return true;
+
   return hasTag(unit.tags, "soft", "stackable") && !hasTag(base.tags, "fragile");
 }
 
 function candidatePositions(placed, unit, margin, gap) {
   const candidates = [[margin, margin, 0]];
-
   const xs = new Set([margin]);
   const zs = new Set([margin]);
 
@@ -461,7 +480,9 @@ function candidatePositions(placed, unit, margin, gap) {
     candidates.push([b.min_x, b.max_z + gap, 0]);
     candidates.push([b.max_x + gap, b.max_z + gap, 0]);
 
-    if (canStack(unit, b)) candidates.push([b.min_x, b.min_z, b.max_y]);
+    // Leave a real clearance between vertical layers. The old code used
+    // b.max_y directly, so the overlap clearance rejected valid stacking.
+    if (canStack(unit, b)) candidates.push([b.min_x, b.min_z, b.max_y + gap]);
   }
 
   for (const x of [...xs].sort((a, b) => a - b)) {
@@ -502,9 +523,9 @@ function tryPlaceUnit(unit, placed, containerLength, containerWidth, containerHe
       };
 
       if (candidate.min_x < margin || candidate.min_z < margin) continue;
-      if (candidate.max_x > containerLength - margin) continue;
-      if (candidate.max_z > containerWidth - margin) continue;
-      if (candidate.max_y > containerHeight - margin) continue;
+      if (candidate.max_x > containerLength - margin + 0.0001) continue;
+      if (candidate.max_z > containerWidth - margin + 0.0001) continue;
+      if (candidate.max_y > containerHeight - margin + 0.0001) continue;
       if (placed.some((other) => boxesOverlap(candidate, other))) continue;
 
       const currentMaxX = Math.max(margin, ...placed.map((b) => b.max_x));
@@ -519,7 +540,11 @@ function tryPlaceUnit(unit, placed, containerLength, containerWidth, containerHe
       const extendsWidth = Math.max(0, newMaxZ - currentMaxZ);
       const extendsHeight = Math.max(0, newMaxY - currentMaxY);
 
-      const score = extendsLength * 10 + extendsWidth * 4 + extendsHeight * 1.5 + newMaxX * newMaxZ * Math.max(newMaxY, 0.01) * 0.01;
+      // Prefer the orientation that creates the most usable floor slots, then fill the floor before stacking.
+      const lengthSlots = Math.max(1, Math.floor((containerLength - margin * 2 + gap) / (l + gap)));
+      const widthSlots = Math.max(1, Math.floor((containerWidth - margin * 2 + gap) / (w + gap)));
+      const orientationPenalty = 1000 / Math.max(1, lengthSlots * widthSlots);
+      const score = y * 1000 + orientationPenalty + extendsLength * 10 + extendsWidth * 4 + extendsHeight * 20 + newMaxX * newMaxZ * Math.max(newMaxY, 0.01) * 0.01;
 
       const placedCandidate = {
         ...candidate,
@@ -545,64 +570,158 @@ function tryPlaceUnit(unit, placed, containerLength, containerWidth, containerHe
   return best?.box || null;
 }
 
+// BOUNDED_CONTAINER_LAYOUT_V4
+//
+// The visual preview must never create cargo geometry outside the physical
+// reference container. Aggregate CBM is represented by bounded volume cells,
+// not by one cube-root-derived fake carton.
+function shouldUseAggregatePreview(unit) {
+  const totalCbm = asNumber(unit.total_cbm, null);
+  if (!(totalCbm > 0)) return false;
+
+  if (unit.aggregate_volume_only === true || unit.dimensions_are_aggregate === true) return true;
+
+  return (
+    unit.quantity === 1 &&
+    String(unit.dimension_source || "").toLowerCase() === "estimated from cbm" &&
+    totalCbm > 1.5
+  );
+}
+
+function makeAggregatePreviewUnits(unit, container, margin, gap, maxBlocks = 80) {
+  const totalCbm = asNumber(unit.total_cbm, null);
+  if (!(totalCbm > 0)) return [];
+
+  const rows = container.length_m >= 9 ? 8 : 4;
+  const columns = 2;
+  const layers = 4;
+
+  const usableLength = Math.max(0.2, container.length_m - margin * 2);
+  const usableWidth = Math.max(0.2, container.width_m - margin * 2);
+  const usableHeight = Math.max(0.2, container.height_m - margin);
+
+  const blockLength = Math.max(0.05, (usableLength - gap * (rows - 1)) / rows);
+  const blockWidth = Math.max(0.05, (usableWidth - gap * (columns - 1)) / columns);
+  const blockHeight = Math.max(0.05, (usableHeight - gap * (layers - 1)) / layers);
+  const fullBlockCbm = blockLength * blockWidth * blockHeight;
+
+  if (!(fullBlockCbm > 0)) return [];
+
+  const blockCount = Math.min(maxBlocks, Math.ceil(totalCbm / fullBlockCbm));
+  const blocks = [];
+  let remainingCbm = totalCbm;
+
+  for (let index = 0; index < blockCount && remainingCbm > 0.0001; index += 1) {
+    const targetCbm = Math.min(fullBlockCbm, remainingCbm);
+    const currentHeight = Math.min(
+      blockHeight,
+      Math.max(0.01, targetCbm / (blockLength * blockWidth))
+    );
+    const representedCbm = blockLength * blockWidth * currentHeight;
+
+    blocks.push({
+      ...unit,
+      copy: index + 1,
+      representative: index === 0,
+      aggregate_preview: true,
+      length_m: blockLength,
+      width_m: blockWidth,
+      height_m: currentHeight,
+      dimension_source: "aggregate CBM preview cell",
+    });
+
+    remainingCbm = Math.max(0, remainingCbm - representedCbm);
+  }
+
+  return blocks;
+}
+
+function boxInsideContainer(box, container, tolerance = 0.0001) {
+  const minX = box.x - box.length / 2;
+  const maxX = box.x + box.length / 2;
+  const minY = box.y - box.height / 2;
+  const maxY = box.y + box.height / 2;
+  const minZ = box.z - box.width / 2;
+  const maxZ = box.z + box.width / 2;
+
+  return (
+    minX >= -container.length_m / 2 - tolerance &&
+    maxX <= container.length_m / 2 + tolerance &&
+    minY >= -tolerance &&
+    maxY <= container.height_m + tolerance &&
+    minZ >= -container.width_m / 2 - tolerance &&
+    maxZ <= container.width_m / 2 + tolerance
+  );
+}
+
 function packUnits(units, container) {
   const margin = 0.12;
   const gap = 0.025;
-  const placed = [];
+  const queue = [];
   const notes = [];
-  let overflowCount = 0;
+  const expandedAggregateItems = new Set();
 
   for (const unit of units) {
-    const box = tryPlaceUnit(unit, placed, container.length_m, container.width_m, container.height_m, margin, gap);
+    if (shouldUseAggregatePreview(unit)) {
+      const aggregateKey = String(unit.original_index ?? unit.name);
+      if (expandedAggregateItems.has(aggregateKey)) continue;
+      expandedAggregateItems.add(aggregateKey);
 
-    if (box) {
-      placed.push(box);
+      const blocks = makeAggregatePreviewUnits(unit, container, margin, gap);
+      queue.push(...blocks);
+      notes.push(
+        `${unit.name}: ${unit.total_cbm} CBM is represented by ${blocks.length} bounded volume cells in this advisory layout.`
+      );
       continue;
     }
 
-    const [l, w, rotated] = fitOrientation(unit.length_m, unit.width_m, container.length_m, container.width_m);
-    const h = Math.min(unit.height_m, container.height_m - margin);
-    const x = Math.max(margin, container.length_m - margin - l);
-    const z = Math.max(margin, container.width_m - margin - w);
-
-    overflowCount += 1;
-    placed.push({
-      min_x: x,
-      max_x: x + l,
-      min_y: 0,
-      max_y: h,
-      min_z: z,
-      max_z: z + w,
-      name: unit.name,
-      copy: unit.copy || 1,
-      quantity: unit.quantity,
-      x: x + l / 2 - container.length_m / 2,
-      y: h / 2,
-      z: z + w / 2 - container.width_m / 2,
-      length: l,
-      width: w,
-      height: h,
-      color: unit.color,
-      tags: unit.tags,
-      overflow: true,
-      representative_preview: true,
-      notes: ["overflow"].concat(rotated ? ["rotated_on_floor"] : []),
-    });
+    queue.push(unit);
   }
 
-  const requestedNames = [...new Set(units.map((unit) => unit.name))];
-  const visibleNames = new Set(placed.map((box) => box.name));
-  const missingNames = requestedNames.filter((name) => !visibleNames.has(name));
+  const placed = [];
+  let omittedCount = 0;
 
-  if (missingNames.length) {
-    notes.push(`Forced visible preview added for: ${missingNames.join(", ")}.`);
+  for (const unit of queue) {
+    const box = tryPlaceUnit(
+      unit,
+      placed,
+      container.length_m,
+      container.width_m,
+      container.height_m,
+      margin,
+      gap
+    );
+
+    if (box) {
+      placed.push({
+        ...box,
+        aggregate_preview: Boolean(unit.aggregate_preview),
+      });
+    } else {
+      // Never fabricate an overflow mesh outside the reference container.
+      omittedCount += 1;
+    }
   }
 
-  if (overflowCount) {
-    notes.push(`Overflow preview: ${overflowCount} visual unit(s) could not be placed cleanly. Verify exact carton dimensions before booking.`);
+  const boundedBoxes = placed.filter((box) => boxInsideContainer(box, container));
+  const rejectedOutOfBounds = placed.length - boundedBoxes.length;
+
+  if (omittedCount) {
+    notes.push(
+      `${omittedCount} visual unit(s) were omitted because no valid non-overlapping position remained inside the reference container.`
+    );
   }
 
-  return { boxes: placed, notes };
+  if (rejectedOutOfBounds) {
+    notes.push(`Safety guard rejected ${rejectedOutOfBounds} out-of-bounds visual unit(s).`);
+  }
+
+  return {
+    boxes: boundedBoxes,
+    notes,
+    omittedCount,
+    rejectedOutOfBounds,
+  };
 }
 
 function utilization(boxes, container) {
@@ -730,39 +849,107 @@ function preferBackendDisplayMetrics(result, fallback = {}) {
 }
 
 
-function buildLayout(result) {
+function isPayloadBlocked(result) {
+  const visualizer = getVisualizer(result) || {};
+  const readiness = String(result?.logistics_metrics?.readiness_status || "").toLowerCase();
+  const fitStatus = String(visualizer?.fit_check?.status || "").toLowerCase();
+
+  return (
+    readiness === "not_ready_payload_limit_exceeded" ||
+    fitStatus === "payload_limit_exceeded"
+  );
+}
+
+export function buildLayout(result) {
   const container = inferContainer(result);
   const cargoMix = normalizeCargoMix(result);
   const ordered = orderCargo(result, cargoMix);
   const expanded = expandUnits(ordered.cargo);
   const packed = packUnits(expanded.units, container);
-  const util = utilization(packed.boxes, container);
+  const browserUtil = utilization(packed.boxes, container);
+  const displayUtil = preferBackendDisplayMetrics(result, browserUtil);
+  const payloadBlocked = isPayloadBlocked(result);
+
+  const shipmentWeightKg = asNumber(
+    result?.logistics_metrics?.total_weight_kg ??
+      result?.logistics_visualizer?.container?.total_weight_kg,
+    null
+  );
+
+  const referencePayloadKg = asNumber(
+    result?.payload_constraint?.reference_payload_kg ??
+      result?.logistics_visualizer?.fit_check?.reference_payload_kg ??
+      result?.logistics_visualizer?.container?.max_payload_kg,
+    null
+  );
+
+  const payloadUsagePercent =
+    shipmentWeightKg > 0 && referencePayloadKg > 0
+      ? Number(((shipmentWeightKg / referencePayloadKg) * 100).toFixed(2))
+      : null;
 
   const estimatedItems = ordered.cargo
-    .filter((item) => String(item.dimension_source || "").startsWith("estimated"))
+    .filter(
+      (item) =>
+        !shouldUseAggregatePreview(item) &&
+        String(item.dimension_source || "").startsWith("estimated")
+    )
     .map((item) => item.name);
 
-  const notes = [
+  const notes = [];
+
+  if (payloadBlocked) {
+    notes.push(
+      "Reference-only volume layout: the blocks show how much container space the shipment occupies, but the shipment exceeds the single-container payload limit."
+    );
+
+    if (payloadUsagePercent !== null) {
+      notes.push(
+        `Volume use is ${displayUtil.utilization_percent ?? 0}%, while reference payload use is ${payloadUsagePercent}% (${shipmentWeightKg} kg against ${referencePayloadKg} kg). The shipment must be split because of weight, not lack of space.`
+      );
+    }
+  }
+
+  notes.push(
     ordered.usedBackendSequence
-      ? "Placement follows the logistics agent loading order."
-      : "No explicit loading order was found, so safety priority was used.",
-  ];
+      ? "Loading order follows the logistics agent sequence."
+      : "A safety-prioritized loading order was generated from the cargo characteristics."
+  );
 
   if (estimatedItems.length) {
-    notes.push(`Estimated packed sizes were used for ${estimatedItems.join(", ")}. Replace these with supplier carton dimensions before final booking.`);
+    notes.push(
+      `Estimated packed sizes were used for ${estimatedItems.join(", ")}. Replace these with supplier carton dimensions before final booking.`
+    );
   }
 
   notes.push(...expanded.notes, ...packed.notes);
   notes.push("This is an advisory loading view, not a certified stuffing plan.");
-  notes.push("Before booking, confirm carton dimensions, lashing, axle/load distribution, carrier limits, and dangerous-goods rules.");
+  notes.push(
+    "Before booking, confirm carton dimensions, lashing, axle/load distribution, carrier limits, and dangerous-goods rules."
+  );
 
   return {
     container,
     cargo_mix: ordered.cargo,
     boxes: packed.boxes,
     loading_sequence: ordered.sequence,
+    loading_order_source: ordered.loading_order_source,
     usedBackendSequence: ordered.usedBackendSequence,
-    utilization: preferBackendDisplayMetrics(result, util),
+    utilization: displayUtil,
+    payload_blocked: payloadBlocked,
+    payload_usage_percent: payloadUsagePercent,
+    reference_payload_kg: referencePayloadKg,
+    shipment_weight_kg: shipmentWeightKg,
+    layout_status: payloadBlocked
+      ? "reference_only_payload_blocked"
+      : packed.omittedCount > 0
+        ? "partial_bounded_preview"
+        : "bounded_preview",
+    packing_summary: {
+      visual_units: packed.boxes.length,
+      omitted_units: packed.omittedCount,
+      rejected_out_of_bounds: packed.rejectedOutOfBounds,
+    },
     notes,
   };
 }
@@ -1022,7 +1209,7 @@ export default function Container3DVisualizer({ result }) {
         <summary className="container3d-panel-summary">
           <span>3D loading details</span>
           <small>
-            {util.utilization_percent ?? 0}% used - {util.remaining_percent ?? 100}% free - {layout.boxes.length} visual units
+            {util.utilization_percent ?? 0}% volume used - {util.remaining_percent ?? 100}% volume free - {layout.boxes.length} visual units
           </small>
         </summary>
         <div className="container3d-panel-content">

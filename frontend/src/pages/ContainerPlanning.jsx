@@ -3,6 +3,124 @@ import Kpi from "../components/Kpi.jsx";
 import ResultGate from "../components/ResultGate.jsx";
 import Container3DVisualizer from "../components/Container3DVisualizer.jsx";
 
+
+// CONTAINER_PLANNING_METRICS_V7
+//
+// Shipment-level totals are authoritative. Item rows may contain stale
+// estimates from an earlier planning pass, so they are only a last resort.
+// For direct multi-item prompts, the explicit user-entered weights win.
+function finiteNumber(value) {
+  if (value === null || value === undefined || value === "") return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function completeCargoTotal(cargo, key) {
+  if (!Array.isArray(cargo) || !cargo.length) return null;
+  const values = cargo.map((item) => finiteNumber(item?.[key]));
+  if (values.some((value) => value === null)) return null;
+  return values.reduce((sum, value) => sum + value, 0);
+}
+
+function containerPlanningRequestText(result) {
+  const candidates = [
+    result?.request_metadata?.input_source,
+    result?.request_metadata?.original_text,
+    result?.request_metadata?.request_text,
+    result?.original_prompt,
+    result?.request_text,
+    result?.user_request,
+    result?.prompt,
+    result?.input_text,
+  ];
+
+  for (const value of candidates) {
+    const text = String(value ?? "").trim();
+    if (text) return text;
+  }
+
+  return "";
+}
+
+export function directMultiItemTotals(result) {
+  const text = containerPlanningRequestText(result);
+  if (!text) return null;
+
+  const pattern =
+    /([0-9]+(?:\.[0-9]+)?)\s*CBM\s+(?:of\s+)?(.*?)\s+weigh(?:ing|s)?\s+([0-9]+(?:\.[0-9]+)?)\s*kg\s*(?=(?:,?\s*(?:and|plus|&)\s+[0-9]+(?:\.[0-9]+)?\s*CBM\b)|\s+from\b|[.;]|$)/gi;
+
+  const items = [];
+  let match;
+
+  while ((match = pattern.exec(text)) !== null) {
+    const cbm = Number(match[1]);
+    const weightKg = Number(match[3]);
+
+    if (
+      Number.isFinite(cbm) &&
+      cbm > 0 &&
+      Number.isFinite(weightKg) &&
+      weightKg > 0
+    ) {
+      items.push({ cbm, weightKg });
+    }
+  }
+
+  if (items.length < 2) return null;
+
+  return {
+    totalCbm: items.reduce((sum, item) => sum + item.cbm, 0),
+    totalWeightKg: items.reduce((sum, item) => sum + item.weightKg, 0),
+  };
+}
+
+export function getContainerPlanningMetrics(result) {
+  const visualizer = result?.logistics_visualizer || {};
+  const metrics = result?.logistics_metrics || {};
+  const container = visualizer?.container || {};
+  const display = visualizer?.display_metrics || visualizer?.utilization || {};
+  const handoff = result?.handoff_payload || {};
+  const review = result?.logistics_quality_review || {};
+  const cargo = Array.isArray(visualizer?.cargo_mix)
+    ? visualizer.cargo_mix
+    : [];
+
+  const explicit = directMultiItemTotals(result);
+  const cargoCbm = completeCargoTotal(cargo, "total_cbm");
+  const cargoWeight = completeCargoTotal(cargo, "total_weight_kg");
+
+  const totalCbm =
+    finiteNumber(explicit?.totalCbm) ??
+    finiteNumber(display.loaded_cbm) ??
+    finiteNumber(display.total_cbm) ??
+    finiteNumber(container.total_cbm) ??
+    finiteNumber(handoff.total_cbm) ??
+    finiteNumber(review.total_cbm) ??
+    finiteNumber(metrics.total_cbm) ??
+    cargoCbm;
+
+  const totalWeightKg =
+    finiteNumber(explicit?.totalWeightKg) ??
+    finiteNumber(container.total_weight_kg) ??
+    finiteNumber(handoff.total_weight_kg) ??
+    finiteNumber(review.total_weight_kg) ??
+    finiteNumber(metrics.total_weight_kg) ??
+    cargoWeight;
+
+  const utilizationPercent =
+    finiteNumber(display.utilization_percent) ??
+    finiteNumber(container.utilization_percent) ??
+    (totalCbm !== null && finiteNumber(container.capacity_cbm)
+      ? Number(((totalCbm / Number(container.capacity_cbm)) * 100).toFixed(2))
+      : null);
+
+  return {
+    totalCbm,
+    totalWeightKg,
+    utilizationPercent,
+  };
+}
+
 const ZONE_TONES = ["", "teal", "amber"];
 
 function ContainerViz({ container, zoneLayout }) {
@@ -66,13 +184,14 @@ export default function ContainerPlanning() {
             );
           }
           const c = lv.container;
+          const canonical = getContainerPlanningMetrics(result);
           return (
             <>
               <div className="kpi-grid">
-                <Kpi label="Total CBM" value={lm.total_cbm} unit="m³" tone="blue" />
-                <Kpi label="Total Weight" value={lm.total_weight_kg} unit="kg" tone="teal" />
+                <Kpi label="Total CBM" value={canonical.totalCbm} unit="m³" tone="blue" />
+                <Kpi label="Total Weight" value={canonical.totalWeightKg} unit="kg" tone="teal" />
                 <Kpi label="Risk Score" value={lm.risk_score} unit={`(${lm.risk_level})`} tone={lm.risk_level === "high" ? "red" : "amber"} />
-                <Kpi label="Utilization" value={c?.utilization_percent} unit="%" />
+                <Kpi label="Utilization" value={canonical.utilizationPercent} unit="%" />
               </div>
 
               <div className="content-grid">
