@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from pathlib import Path
 import sys
@@ -22,7 +22,8 @@ def test_frontend_payload_for_shopping_json_flow():
     assert payload["decision"] == "review_required"
     assert "shopping_agent" in payload["agents_called"]
     assert "logistics_agent" in payload["agents_called"]
-    assert "partner_review_service" in payload["agents_called"]
+    assert "partner_review_service" not in payload["agents_called"]
+    assert payload["partner_review_status"] == "partner_review_not_configured"
     assert payload["logistics_metrics"]["total_cbm"] == 19.41
     assert payload["logistics_metrics"]["recommended_container"] == "20ft Standard Container"
     assert payload["partner_review_status"] == "partner_review_not_configured"
@@ -32,6 +33,7 @@ def test_frontend_payload_for_shopping_json_flow():
 
     raw_payload = build_frontend_payload(response, include_raw_response=True)
     assert raw_payload["raw_response"]["agent_name"] == "user_agent"
+    assert raw_payload["raw_response"]["review_services_called"] == ["partner_review_service"]
 
 
 def main() -> None:

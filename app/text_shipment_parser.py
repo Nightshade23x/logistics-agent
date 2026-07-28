@@ -1230,3 +1230,148 @@ def parse_shipment_text(text: str):
         ]
 
     return result
+
+# DIRECT_VOLUME_UNIT_RESCUE_V12
+#
+# Preserve direct non-CBM volume inputs such as:
+#
+#   10 cubic feet of tiles
+#
+# The item resolver owns unit conversion. The parser therefore keeps the raw
+# item volume plus its source unit, while exposing a canonical top-level CBM
+# total for downstream summaries.
+
+_parse_shipment_text_before_direct_volume_unit_v12 = parse_shipment_text
+
+
+def _direct_volume_v12_number(value):
+    try:
+        return float(str(value).replace(",", "").strip())
+    except Exception:
+        return None
+
+
+def _direct_volume_v12_extract(text):
+    import re as _re
+
+    raw = str(text or "").strip()
+
+    pattern = _re.compile(
+        r"^\s*"
+        r"(?:(?:estimate\s+freight\s+for|ship|send|export|import)\s+)?"
+        r"(?P<volume>[0-9][0-9,]*(?:\.[0-9]+)?)\s*"
+        r"(?P<unit>"
+        r"cbm|m3|m\^3|m³|"
+        r"cubic\s+meters?|cubic\s+metres?|"
+        r"ft3|ft\^3|ft³|cubic\s+feet|cubic\s+foot"
+        r")"
+        r"\s+(?:of\s+)?"
+        r"(?P<name>.+?)"
+        r"\s*[.;]?\s*$",
+        flags=_re.IGNORECASE,
+    )
+
+    match = pattern.match(raw)
+
+    if not match:
+        return None
+
+    volume = _direct_volume_v12_number(
+        match.group("volume")
+    )
+
+    if volume is None or volume <= 0:
+        return None
+
+    unit = _re.sub(
+        r"\s+",
+        " ",
+        str(match.group("unit") or "").strip().lower(),
+    )
+
+    unit = unit.replace("ft³", "ft3").replace("m³", "m3")
+
+    name = str(match.group("name") or "").strip(" ,.;:-")
+
+    name = _re.sub(
+        r"\s+\bfrom\b.+$",
+        "",
+        name,
+        flags=_re.IGNORECASE,
+    )
+
+    name = _re.sub(
+        r"\s+\bto\b.+$",
+        "",
+        name,
+        flags=_re.IGNORECASE,
+    )
+
+    name = _re.sub(
+        r"\s+",
+        " ",
+        name,
+    ).strip(" ,.;:-")
+
+    if not name:
+        return None
+
+    return {
+        "name": name,
+        "item_name": name,
+        "quantity": 1,
+        "cbm": volume,
+        "total_cbm": volume,
+        "volume_unit": unit,
+        "cbm_unit": unit,
+        "aggregate_volume_only": True,
+        "dimensions_are_aggregate": True,
+        "display_dimensions_estimated": True,
+        "category_tags": ["general_cargo"],
+    }
+
+
+def parse_shipment_text(text: str):
+    result = _parse_shipment_text_before_direct_volume_unit_v12(text)
+
+    if not isinstance(result, dict):
+        return result
+
+    items = result.get("items")
+
+    if isinstance(items, list) and items:
+        return result
+
+    direct_item = _direct_volume_v12_extract(text)
+
+    if not direct_item:
+        return result
+
+    from app.unit_converter import convert_volume_to_cbm
+
+    result["items"] = [direct_item]
+    result["total_cbm"] = convert_volume_to_cbm(
+        direct_item["total_cbm"],
+        direct_item["volume_unit"],
+    )
+
+    issues = result.get("issues")
+
+    if isinstance(issues, list):
+        stale_fragments = (
+            "no requested items",
+            "no shipment items",
+            "which products",
+            "exact item list",
+        )
+
+        result["issues"] = [
+            issue
+            for issue in issues
+            if not any(
+                fragment in str(issue or "").lower()
+                for fragment in stale_fragments
+            )
+        ]
+
+    return result
