@@ -44,20 +44,28 @@ def _prompt_text(payload: dict[str, Any], prompt_text: str | None) -> str:
 
 def _direct_multi_items(text: str) -> list[dict[str, Any]]:
     pattern = re.compile(
-        r"([0-9]+(?:\.[0-9]+)?)\s*CBM\s+(?:of\s+)?(.*?)\s+"
-        r"weigh(?:ing|s)?\s+([0-9]+(?:\.[0-9]+)?)\s*kg\s*"
-        r"(?=(?:,?\s*(?:and|plus|&)\s+[0-9]+(?:\.[0-9]+)?\s*CBM\b)|"
-        r"\s+from\b|[.;]|$)",
+        r"(?P<cbm>[0-9][0-9,]*(?:\.[0-9]+)?)\s*CBM\s+"
+        r"(?:of\s+)?"
+        r"(?P<name>.*?)"
+        r"\s+weigh(?:ing|s)?\s+"
+        r"(?P<weight>[0-9][0-9,]*(?:\.[0-9]+)?)\s*kg\b",
         flags=re.IGNORECASE,
     )
 
     items: list[dict[str, Any]] = []
+
     for match in pattern.finditer(text):
-        cbm = float(match.group(1))
-        name = re.sub(r"\s+", " ", match.group(2)).strip(" ,.:;-")
-        weight = float(match.group(3))
+        cbm = float(match.group("cbm").replace(",", ""))
+        name = re.sub(
+            r"\s+",
+            " ",
+            match.group("name"),
+        ).strip(" ,.:;-")
+        weight = float(match.group("weight").replace(",", ""))
+
         if not name or cbm <= 0 or weight <= 0:
             continue
+
         items.append(
             {
                 "item_name": name.lower(),
@@ -76,7 +84,6 @@ def _direct_multi_items(text: str) -> list[dict[str, Any]]:
         )
 
     return items if len(items) >= 2 else []
-
 
 def _route(text: str) -> tuple[str | None, str | None]:
     origin = None

@@ -956,3 +956,277 @@ try:
 
 except Exception:
     pass
+
+# MULTI_ITEM_EXPLICIT_CLAUSES_V11
+#
+# Parse two or more complete item clauses at the parser boundary, for example:
+#
+#   10 CBM ceramic tiles weighing 1200 kg
+#   and 4 CBM pillows weighing 350 kg
+#
+# Earlier wrappers correctly handled a single explicit CBM/weight pair, but
+# intentionally read only the first match. This final parser wrapper preserves
+# all complete item-level pairs and makes their sums authoritative before the
+# Logistics Agent or backend response normalizers run.
+
+_parse_shipment_text_before_multi_item_explicit_v11 = parse_shipment_text
+
+
+def _multi_item_v11_number(value):
+    try:
+        return float(str(value).replace(",", "").strip())
+    except Exception:
+        return None
+
+
+def _multi_item_v11_round(value):
+    number = _multi_item_v11_number(value)
+
+    if number is None:
+        return None
+
+    rounded = round(number, 6)
+
+    if abs(rounded - round(rounded)) < 1e-9:
+        return int(round(rounded))
+
+    return rounded
+
+
+def _multi_item_v11_normalized_name(value):
+    import re as _re
+
+    text = str(value or "").strip().lower()
+    text = _re.sub(r"[^a-z0-9]+", " ", text)
+    return _re.sub(r"\s+", " ", text).strip()
+
+
+def _multi_item_v11_clean_name(value):
+    import re as _re
+
+    name = str(value or "").strip(" ,.;:-")
+
+    name = _re.sub(
+        r"^(?:and|plus)\s+",
+        "",
+        name,
+        flags=_re.IGNORECASE,
+    )
+
+    name = _re.sub(
+        r"\s+\bfrom\s+.+$",
+        "",
+        name,
+        flags=_re.IGNORECASE,
+    )
+
+    name = _re.sub(
+        r"\s+\bto\s+.+$",
+        "",
+        name,
+        flags=_re.IGNORECASE,
+    )
+
+    return _re.sub(r"\s+", " ", name).strip(" ,.;:-")
+
+
+def _multi_item_v11_explicit_items(text):
+    import re as _re
+
+    raw = str(text or "")
+
+    volume_unit = (
+        r"(?:CBM|m\s*3|m³|cubic\s+met(?:er|re)s?)"
+    )
+
+    pattern = _re.compile(
+        r"(?P<cbm>[0-9][0-9,]*(?:\.[0-9]+)?)"
+        r"\s*" + volume_unit +
+        r"\s+"
+        r"(?:of\s+)?"
+        r"(?P<name>.*?)"
+        r"\s+weigh(?:ing|s)?\s+"
+        r"(?P<weight>[0-9][0-9,]*(?:\.[0-9]+)?)"
+        r"\s*(?P<weight_unit>kg|kgs|kilograms?|lb|lbs|pounds?)\b"
+        r"(?=\s*(?:"
+        r"(?:,\s*(?:and\s+)?|(?:and|plus|&)\s+)?"
+        r"[0-9][0-9,]*(?:\.[0-9]+)?\s*" + volume_unit + r"\b"
+        r"|\s+from\b"
+        r"|\s+to\b"
+        r"|[.;]"
+        r"|$"
+        r"))",
+        flags=_re.IGNORECASE,
+    )
+
+    items = []
+
+    for match in pattern.finditer(raw):
+        cbm = _multi_item_v11_number(match.group("cbm"))
+        weight = _multi_item_v11_number(match.group("weight"))
+        name = _multi_item_v11_clean_name(match.group("name"))
+        unit = str(match.group("weight_unit") or "").lower()
+
+        if cbm is None or cbm <= 0:
+            continue
+
+        if weight is None or weight <= 0:
+            continue
+
+        if not name:
+            continue
+
+        if unit in {"lb", "lbs", "pound", "pounds"}:
+            weight *= 0.45359237
+
+        items.append(
+            {
+                "name": name,
+                "item_name": name,
+                "quantity": 1,
+                "total_cbm": _multi_item_v11_round(cbm),
+                "unit_cbm": _multi_item_v11_round(cbm),
+                "total_weight_kg": _multi_item_v11_round(weight),
+                "unit_weight_kg": _multi_item_v11_round(weight),
+                "aggregate_volume_only": True,
+                "dimensions_are_aggregate": True,
+                "display_dimensions_estimated": True,
+                "weight_estimated": False,
+                "weight_source": "explicit_user_item_weight",
+                "cbm_source": "explicit_user_item_cbm",
+            }
+        )
+
+    return items if len(items) >= 2 else []
+
+
+def _multi_item_v11_best_existing_item(parsed_name, existing_items):
+    target = _multi_item_v11_normalized_name(parsed_name)
+
+    if not target:
+        return {}
+
+    for item in existing_items:
+        if not isinstance(item, dict):
+            continue
+
+        candidate = _multi_item_v11_normalized_name(
+            item.get("name")
+            or item.get("item_name")
+            or item.get("product_name")
+        )
+
+        if candidate == target:
+            return item
+
+    for item in existing_items:
+        if not isinstance(item, dict):
+            continue
+
+        candidate = _multi_item_v11_normalized_name(
+            item.get("name")
+            or item.get("item_name")
+            or item.get("product_name")
+        )
+
+        if candidate and (
+            candidate in target
+            or target in candidate
+        ):
+            return item
+
+    return {}
+
+
+def _multi_item_v11_merge_properties(parsed_items, existing_items):
+    safe_keys = (
+        "stackable",
+        "hazardous",
+        "fragile",
+        "non_stackable",
+        "unload_priority",
+        "category_tags",
+        "notes",
+        "handling_requirements",
+        "special_handling",
+    )
+
+    merged_items = []
+
+    for parsed in parsed_items:
+        existing = _multi_item_v11_best_existing_item(
+            parsed.get("item_name"),
+            existing_items,
+        )
+
+        merged = {}
+
+        for key in safe_keys:
+            if key in existing:
+                merged[key] = existing[key]
+
+        merged.update(parsed)
+
+        if not isinstance(merged.get("category_tags"), list):
+            merged["category_tags"] = ["general_cargo"]
+
+        merged_items.append(merged)
+
+    return merged_items
+
+
+def parse_shipment_text(text: str):
+    result = _parse_shipment_text_before_multi_item_explicit_v11(text)
+
+    if not isinstance(result, dict):
+        return result
+
+    parsed_items = _multi_item_v11_explicit_items(text)
+
+    if len(parsed_items) < 2:
+        return result
+
+    existing_items = result.get("items")
+
+    if not isinstance(existing_items, list):
+        existing_items = []
+
+    canonical_items = _multi_item_v11_merge_properties(
+        parsed_items,
+        existing_items,
+    )
+
+    total_cbm = sum(
+        float(item["total_cbm"])
+        for item in canonical_items
+    )
+
+    total_weight = sum(
+        float(item["total_weight_kg"])
+        for item in canonical_items
+    )
+
+    result["items"] = canonical_items
+    result["total_cbm"] = _multi_item_v11_round(total_cbm)
+    result["total_weight_kg"] = _multi_item_v11_round(total_weight)
+
+    issues = result.get("issues")
+
+    if isinstance(issues, list):
+        stale_fragments = (
+            "no requested items",
+            "no shipment items",
+            "which products",
+            "exact item list",
+        )
+
+        result["issues"] = [
+            issue
+            for issue in issues
+            if not any(
+                fragment in str(issue or "").lower()
+                for fragment in stale_fragments
+            )
+        ]
+
+    return result

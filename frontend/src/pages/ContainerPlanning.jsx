@@ -47,14 +47,14 @@ export function directMultiItemTotals(result) {
   if (!text) return null;
 
   const pattern =
-    /([0-9]+(?:\.[0-9]+)?)\s*CBM\s+(?:of\s+)?(.*?)\s+weigh(?:ing|s)?\s+([0-9]+(?:\.[0-9]+)?)\s*kg\s*(?=(?:,?\s*(?:and|plus|&)\s+[0-9]+(?:\.[0-9]+)?\s*CBM\b)|\s+from\b|[.;]|$)/gi;
+    /([0-9][0-9,]*(?:\.[0-9]+)?)\s*CBM\s+(?:of\s+)?(.*?)\s+weigh(?:ing|s)?\s+([0-9][0-9,]*(?:\.[0-9]+)?)\s*kg\b/gi;
 
   const items = [];
   let match;
 
   while ((match = pattern.exec(text)) !== null) {
-    const cbm = Number(match[1]);
-    const weightKg = Number(match[3]);
+    const cbm = Number(match[1].replaceAll(",", ""));
+    const weightKg = Number(match[3].replaceAll(",", ""));
 
     if (
       Number.isFinite(cbm) &&

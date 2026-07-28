@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import subprocess
 import sys
@@ -46,6 +46,8 @@ TEST_COMMANDS = [
     [sys.executable, "scripts/test_document_agent.py"],
     [sys.executable, "scripts/test_logistics_agent.py"],
     [sys.executable, "scripts/system_health_check.py"],
+    [sys.executable, "scripts/test_text_shipment_parser_multi_item.py"],
+    [sys.executable, "scripts/test_container_planning_multi_item_consistency.py"],
 ]
 
 
