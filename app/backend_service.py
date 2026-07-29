@@ -9098,3 +9098,178 @@ def process_text_request(user_text, include_raw_response=False):
         return payload
 
     return _v32_sync(payload, authority)
+
+# LOGISTICS_INTENT_AUTHORITY_V33
+_process_text_request_before_logistics_intent_authority_v33 = process_text_request
+
+
+def _intent_v33_has_logistics_evidence(payload):
+    """Return True only when a structured container-planning result exists."""
+    if not isinstance(payload, dict):
+        return False
+
+    metrics = payload.get("logistics_metrics")
+    visualizer = payload.get("logistics_visualizer")
+
+    if not isinstance(metrics, dict) or not isinstance(visualizer, dict):
+        return False
+
+    cargo_mix = visualizer.get("cargo_mix")
+    container = visualizer.get("container")
+
+    if not isinstance(cargo_mix, list) or not cargo_mix:
+        return False
+
+    if not isinstance(container, dict):
+        return False
+
+    status = str(visualizer.get("status") or "").strip().lower()
+    if status not in {"available", "ready", "ready_for_review"}:
+        return False
+
+    return bool(
+        metrics.get("total_cbm") is not None
+        or metrics.get("recommended_container") is not None
+        or container.get("selected_container") is not None
+    )
+
+
+def _intent_v33_normalize_agents(value):
+    if isinstance(value, list):
+        agents = [str(agent) for agent in value if str(agent).strip()]
+    elif value:
+        agents = [str(value)]
+    else:
+        agents = []
+
+    lowered = {agent.strip().lower() for agent in agents}
+    if "logistics_agent" not in lowered:
+        agents.append("logistics_agent")
+
+    return agents
+
+
+def _intent_v33_rewrite_text(value):
+    """Rewrite only known stale routing text; remain idempotent."""
+    if not isinstance(value, str):
+        return value
+
+    exact_replacements = {
+        "User Agent could not confidently route the request.":
+            "Logistics planning request processed.",
+        "No Logistics Agent response was found for this request.":
+            "Logistics planning output is available for review.",
+        "logistics review was not applicable.":
+            "Logistics planning output is available for review.",
+        "Agents Called:":
+            "Agents Called: logistics_agent",
+        "Agents called:":
+            "Agents called: logistics_agent",
+    }
+
+    if value in exact_replacements:
+        return exact_replacements[value]
+
+    return value.replace(
+        "Agents called: .",
+        "Agents called: logistics_agent.",
+    )
+
+
+def _intent_v33_rewrite_nested(value):
+    if isinstance(value, dict):
+        for key in list(value.keys()):
+            value[key] = _intent_v33_rewrite_nested(value[key])
+        return value
+
+    if isinstance(value, list):
+        for index, item in enumerate(value):
+            value[index] = _intent_v33_rewrite_nested(item)
+        return value
+
+    return _intent_v33_rewrite_text(value)
+
+
+def _intent_v33_apply(payload, user_text):
+    if not _intent_v33_has_logistics_evidence(payload):
+        return payload
+
+    current_intent = str(
+        payload.get("detected_intent") or ""
+    ).strip().lower()
+
+    if current_intent in {"", "unknown", "none", "null"}:
+        payload["detected_intent"] = "logistics"
+
+    agents = _intent_v33_normalize_agents(
+        payload.get("agents_called")
+    )
+    payload["agents_called"] = agents
+
+    payload["summary"] = _intent_v33_rewrite_text(
+        payload.get("summary")
+    )
+    payload["short_answer"] = _intent_v33_rewrite_text(
+        payload.get("short_answer")
+    )
+
+    executive = payload.get("executive_summary")
+    if isinstance(executive, dict):
+        snapshot = executive.get("shipment_snapshot")
+        if isinstance(snapshot, dict):
+            snapshot["intent"] = "logistics"
+            snapshot["agents_called"] = list(agents)
+
+    metrics = payload.get("logistics_metrics")
+    readiness = (
+        metrics.get("readiness_status")
+        if isinstance(metrics, dict)
+        else None
+    ) or "review_required"
+
+    review = payload.get("logistics_quality_review")
+    if isinstance(review, dict):
+        review["applicable"] = True
+        if str(review.get("status") or "").lower() in {
+            "", "unknown", "not_applicable"
+        }:
+            review["status"] = readiness
+        review["summary"] = _intent_v33_rewrite_text(
+            review.get("summary")
+        )
+
+    sections = payload.get("ui_sections")
+    if isinstance(sections, list):
+        for section in sections:
+            if not isinstance(section, dict):
+                continue
+
+            section_id = str(
+                section.get("section_id") or ""
+            ).strip().lower()
+
+            if section_id == "shipment_snapshot":
+                section_metrics = section.get("metrics")
+                if isinstance(section_metrics, dict):
+                    section_metrics["intent"] = "logistics"
+                    section_metrics["agents_called"] = list(agents)
+
+            if section_id == "logistics":
+                if str(section.get("status") or "").lower() in {
+                    "", "unknown", "not_applicable"
+                }:
+                    section["status"] = readiness
+                section["summary"] = _intent_v33_rewrite_text(
+                    section.get("summary")
+                )
+
+    _intent_v33_rewrite_nested(payload)
+    return payload
+
+
+def process_text_request(user_text, include_raw_response=False):
+    payload = _process_text_request_before_logistics_intent_authority_v33(
+        user_text,
+        include_raw_response=include_raw_response,
+    )
+    return _intent_v33_apply(payload, user_text)

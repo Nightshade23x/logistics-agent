@@ -27,6 +27,7 @@ TEST_COMMANDS = [
     [sys.executable, "scripts/test_canonical_destination_authority_v27.py"],
     [sys.executable, "scripts/test_per_unit_imperial_weight_v28.py"],
     [sys.executable, "scripts/test_final_weight_authority_v32.py"],
+    [sys.executable, "scripts/test_logistics_intent_authority_v33.py"],
     [sys.executable, "scripts/test_backend_service.py"],
     [sys.executable, "scripts/test_backend_service_payload_validator.py"],
     [sys.executable, "scripts/test_clarification_questions.py"],
