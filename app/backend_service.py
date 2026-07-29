@@ -983,34 +983,59 @@ try:
         unit_weight = None
         total_weight = None
 
+        # ACTIVE_PHASE2_IMPERIAL_WEIGHT_V29
+        # This is the parser used by the live visualizer payload.
         each_weight = re.search(
-            r"\beach\s+[A-Za-z -]*\s*(?:weighs?|weight\s+is)\s+([0-9]+(?:\.[0-9]+)?)\s*kg\b",
+            r"\beach\b[^;\n]{0,500}?\b"
+            r"(?:weighs?|weight\s*(?:is|=|:))\s*"
+            r"([0-9]+(?:\.[0-9]+)?)\s*"
+            r"(kg|kgs?|kilograms?|lb|lbs?|pounds?)\b",
             raw,
             flags=re.I,
         )
 
         if each_weight:
-            unit_weight = _phase2_v16_float(each_weight.group(1))
-            if unit_weight is not None:
-                total_weight = unit_weight * quantity
+            raw_unit_weight = _phase2_v16_float(each_weight.group(1))
+            weight_unit = str(each_weight.group(2) or "kg").strip().lower().replace(".", "")
+            if raw_unit_weight is not None:
+                factor = 0.45359237 if weight_unit.startswith(("lb", "pound")) else 1.0
+                unit_weight = raw_unit_weight * factor
+                nearest = round(unit_weight)
+                unit_weight = float(nearest) if abs(unit_weight - nearest) <= 0.01 else _phase2_v16_round(unit_weight)
+                total_weight = _phase2_v16_round(unit_weight * quantity)
 
         if total_weight is None:
             total_weight_match = re.search(
-                r"\btotal\s+weight\s+is\s+([0-9]+(?:\.[0-9]+)?)\s*kg\b",
+                r"\btotal\s+weight\s*(?:is|=|:)?\s*"
+                r"([0-9]+(?:\.[0-9]+)?)\s*"
+                r"(kg|kgs?|kilograms?|lb|lbs?|pounds?)\b",
                 raw,
                 flags=re.I,
             )
             if total_weight_match:
-                total_weight = _phase2_v16_float(total_weight_match.group(1))
+                raw_total = _phase2_v16_float(total_weight_match.group(1))
+                total_unit = str(total_weight_match.group(2) or "kg").strip().lower().replace(".", "")
+                if raw_total is not None:
+                    factor = 0.45359237 if total_unit.startswith(("lb", "pound")) else 1.0
+                    total_weight = raw_total * factor
+                    nearest = round(total_weight)
+                    total_weight = float(nearest) if abs(total_weight - nearest) <= 0.01 else _phase2_v16_round(total_weight)
 
         if total_weight is None:
             total_cargo_weight = re.search(
-                r"\btotal\s+cargo\s+is\s+[0-9]+(?:\.[0-9]+)?\s*cbm\s+and\s+([0-9]+(?:\.[0-9]+)?)\s*kg\b",
+                r"\btotal\s+cargo\s+is\s+[0-9]+(?:\.[0-9]+)?\s*cbm\s+and\s+"
+                r"([0-9]+(?:\.[0-9]+)?)\s*(kg|kgs?|kilograms?|lb|lbs?|pounds?)\b",
                 raw,
                 flags=re.I,
             )
             if total_cargo_weight:
-                total_weight = _phase2_v16_float(total_cargo_weight.group(1))
+                raw_total = _phase2_v16_float(total_cargo_weight.group(1))
+                total_unit = str(total_cargo_weight.group(2) or "kg").strip().lower().replace(".", "")
+                if raw_total is not None:
+                    factor = 0.45359237 if total_unit.startswith(("lb", "pound")) else 1.0
+                    total_weight = raw_total * factor
+                    nearest = round(total_weight)
+                    total_weight = float(nearest) if abs(total_weight - nearest) <= 0.01 else _phase2_v16_round(total_weight)
 
         if total_weight is None:
             plain_weight = re.search(
@@ -3299,49 +3324,203 @@ def _frav2_extract_next_actions(
 
 
 
-def _frav2_explicit_weight_from_prompt(
-    user_text,
-):
-    """
-    Shipment weight explicitly supplied by the user has
-    higher authority than planning-density estimates.
-    """
+# PER_UNIT_WEIGHT_AUTHORITY_V28
 
-    text = str(
-        user_text or ""
-    )
+def _frav2_weight_to_kg_v28(
+    value,
+    unit,
+):
+    number = _frav2_number(value)
+    if number is None:
+        return None
+
+    normalized = str(unit or "kg").strip().lower().replace(".", "")
+
+    factors = {
+        "kg": 1.0,
+        "kgs": 1.0,
+        "kilogram": 1.0,
+        "kilograms": 1.0,
+        "lb": 0.45359237,
+        "lbs": 0.45359237,
+        "pound": 0.45359237,
+        "pounds": 0.45359237,
+    }
+
+    factor = factors.get(normalized)
+    if factor is None:
+        return None
+
+    converted = number * factor
+
+    # Keep direct decimal kilograms exact, while removing conversion noise
+    # such as 999.9988107494 kg for an intended 1000 kg result.
+    nearest_integer = round(converted)
+    if abs(converted - nearest_integer) <= 0.01:
+        return float(nearest_integer)
+
+    return round(converted, 6)
+
+
+def _frav2_prompt_quantity_v28(user_text):
+    text = str(user_text or "")
 
     patterns = [
-        r"\btotal\s+weight\s*(?:is|=|:)?\s*"
-        r"([0-9]+(?:\.[0-9]+)?)\s*kg\b",
-
-        r"\bweight\s*(?:is|=|:)\s*"
-        r"([0-9]+(?:\.[0-9]+)?)\s*kg\b",
-
-        r"\bweighs?\s*"
-        r"([0-9]+(?:\.[0-9]+)?)\s*kg\b",
+        r"\bship\s+([0-9]+(?:\.[0-9]+)?)\s+",
+        r"\bquantity\s*(?:is|=|:)?\s*([0-9]+(?:\.[0-9]+)?)\b",
+        r"\bqty\s*(?:is|=|:)?\s*([0-9]+(?:\.[0-9]+)?)\b",
     ]
 
     for pattern in patterns:
-
-        match = re.search(
-            pattern,
-            text,
-            flags=re.IGNORECASE,
-        )
-
+        match = re.search(pattern, text, flags=re.IGNORECASE)
         if not match:
             continue
 
-        value = _frav2_number(
-            match.group(1)
-        )
+        quantity = _frav2_number(match.group(1))
+        if quantity is not None and quantity > 0:
+            return quantity
 
-        if value is not None:
-            return value
+    return 1.0
+
+
+def _frav2_explicit_weight_details_from_prompt(user_text):
+    text = str(user_text or "")
+    number = r"([0-9]+(?:\.[0-9]+)?)"
+    unit = r"(kg|kgs?|kilograms?|lb|lbs?|pounds?)"
+
+    # Explicit shipment totals are authoritative and must not be multiplied.
+    total_patterns = [
+        rf"\btotal\s+weight\s*(?:is|=|:)?\s*{number}\s*{unit}\b",
+        rf"\btotal\s+cargo\s+is\s+[0-9]+(?:\.[0-9]+)?\s*cbm\s+and\s+{number}\s*{unit}\b",
+        rf"\bship\s+{number}\s*{unit}\s+of\b",
+    ]
+
+    for pattern in total_patterns:
+        match = re.search(pattern, text, flags=re.IGNORECASE)
+        if not match:
+            continue
+
+        total_weight = _frav2_weight_to_kg_v28(match.group(1), match.group(2))
+        if total_weight is not None:
+            return {
+                "total_weight_kg": total_weight,
+                "unit_weight_kg": None,
+                "quantity": None,
+                "is_per_unit": False,
+                "source_unit": match.group(2),
+            }
+
+    # Do not use [^.]* here: decimal dimensions such as 1.2192 m contain
+    # periods and previously prevented the later "weighs" phrase matching.
+    each_patterns = [
+        rf"\beach\b[^;\n]{{0,500}}?\bweighs?\s*{number}\s*{unit}\b",
+        rf"\beach\b[^;\n]{{0,500}}?\bweight\s*(?:is|=|:)\s*{number}\s*{unit}\b",
+    ]
+
+    for pattern in each_patterns:
+        match = re.search(pattern, text, flags=re.IGNORECASE)
+        if not match:
+            continue
+
+        unit_weight = _frav2_weight_to_kg_v28(match.group(1), match.group(2))
+        quantity = _frav2_prompt_quantity_v28(text)
+
+        if unit_weight is not None and quantity is not None and quantity > 0:
+            total_weight = _frav2_weight_to_kg_v28(
+                unit_weight * quantity,
+                "kg",
+            )
+
+            return {
+                "total_weight_kg": total_weight,
+                "unit_weight_kg": unit_weight,
+                "quantity": quantity,
+                "is_per_unit": True,
+                "source_unit": match.group(2),
+            }
+
+    # Generic weight wording remains a shipment total when "each" did not
+    # establish per-unit semantics.
+    generic_patterns = [
+        rf"\bweight\s*(?:is|=|:)\s*{number}\s*{unit}\b",
+        rf"\bweighs?\s*{number}\s*{unit}\b",
+    ]
+
+    for pattern in generic_patterns:
+        match = re.search(pattern, text, flags=re.IGNORECASE)
+        if not match:
+            continue
+
+        total_weight = _frav2_weight_to_kg_v28(match.group(1), match.group(2))
+        if total_weight is not None:
+            return {
+                "total_weight_kg": total_weight,
+                "unit_weight_kg": None,
+                "quantity": None,
+                "is_per_unit": False,
+                "source_unit": match.group(2),
+            }
 
     return None
 
+
+def _frav2_explicit_weight_from_prompt(
+    user_text,
+):
+    """Return authoritative shipment weight in kilograms."""
+    details = _frav2_explicit_weight_details_from_prompt(user_text)
+
+    if not isinstance(details, dict):
+        return None
+
+    return _frav2_number(details.get("total_weight_kg"))
+
+
+def _frav2_sync_item_weight_v28(
+    item,
+    total_weight,
+    explicit_details,
+):
+    if not isinstance(item, dict):
+        return 1.0
+
+    quantity = _frav2_number(item.get("quantity")) or 1.0
+    unit_weight = None
+    source = "explicit_user_or_canonical_weight"
+
+    if (
+        isinstance(explicit_details, dict)
+        and explicit_details.get("is_per_unit") is True
+    ):
+        explicit_quantity = _frav2_number(explicit_details.get("quantity"))
+        explicit_unit_weight = _frav2_number(
+            explicit_details.get("unit_weight_kg")
+        )
+
+        if explicit_quantity is not None and explicit_quantity > 0:
+            quantity = explicit_quantity
+            item["quantity"] = (
+                int(round(quantity))
+                if abs(quantity - round(quantity)) < 1e-9
+                else quantity
+            )
+
+        if explicit_unit_weight is not None:
+            unit_weight = explicit_unit_weight
+
+        source = "explicit_per_unit_weight"
+
+    if unit_weight is None and quantity > 0:
+        unit_weight = total_weight / quantity
+
+    item["total_weight_kg"] = total_weight
+    item["unit_weight_kg"] = unit_weight
+    item["weight_kg"] = unit_weight
+    item["weight_estimated"] = False
+    item["weight_source"] = source
+    item.pop("estimated_density_kg_per_cbm", None)
+
+    return quantity
 
 def _final_response_sync_v2(
     payload,
@@ -3428,6 +3607,13 @@ def _final_response_sync_v2(
             container_data.get(
                 "total_cbm"
             )
+        )
+    )
+
+
+    explicit_weight_details = (
+        _frav2_explicit_weight_details_from_prompt(
+            user_text
         )
     )
 
@@ -3558,40 +3744,29 @@ def _final_response_sync_v2(
 
             item = cargo_mix[0]
 
-            quantity = (
-                _frav2_number(
-                    item.get(
-                        "quantity"
-                    )
+            quantity = _frav2_sync_item_weight_v28(
+                item,
+                total_weight,
+                explicit_weight_details,
+            )
+
+            if (
+                isinstance(explicit_weight_details, dict)
+                and explicit_weight_details.get("is_per_unit") is True
+            ):
+                container_data["total_items"] = (
+                    int(round(quantity))
+                    if abs(quantity - round(quantity)) < 1e-9
+                    else quantity
                 )
-                or 1
-            )
 
-            item[
-                "total_weight_kg"
-            ] = total_weight
-
-            item[
-                "unit_weight_kg"
-            ] = (
-                total_weight
-                / quantity
-            )
-
-            item[
-                "weight_estimated"
-            ] = False
-
-            item[
-                "weight_source"
-            ] = (
-                "explicit_user_or_canonical_weight"
-            )
-
-            item.pop(
-                "estimated_density_kg_per_cbm",
-                None,
-            )
+                loading_sequence = visualizer.get("loading_sequence")
+                if (
+                    isinstance(loading_sequence, list)
+                    and len(loading_sequence) == 1
+                    and isinstance(loading_sequence[0], dict)
+                ):
+                    loading_sequence[0]["quantity"] = container_data["total_items"]
 
             item.pop(
                 "weight_estimate_warning",
@@ -8462,3 +8637,464 @@ def process_text_request(
         payload,
         user_text,
     )
+
+# FINAL_PER_UNIT_WEIGHT_AUTHORITY_V29
+_process_text_request_before_final_per_unit_weight_v29 = process_text_request
+
+
+def _v29_pretty_number(value):
+    number = _frav2_number(value)
+    if number is None:
+        return ""
+
+    if abs(number - round(number)) < 1e-9:
+        return str(int(round(number)))
+
+    return f"{number:.6f}".rstrip("0").rstrip(".")
+
+
+def _v29_sync_weight_text(text, total_weight):
+    if not isinstance(text, str) or not text:
+        return text
+
+    pretty = _v29_pretty_number(total_weight)
+    if not pretty:
+        return text
+
+    updated = re.sub(
+        r"(?im)^(\\s*-\\s*Total\\s+weight:\\s*)"
+        r"(?:not confirmed|[0-9][0-9,]*(?:\\.[0-9]+)?\\s*kg)\\s*$",
+        lambda match: f"{match.group(1)}{pretty} kg",
+        text,
+    )
+
+    updated = re.sub(
+        r"(?i)(Logistics:\\s*[0-9][0-9,.]*\\s*CBM,\\s*)"
+        r"(?:not confirmed|[0-9][0-9,]*(?:\\.[0-9]+)?\\s*kg)"
+        r"(?=,)",
+        lambda match: f"{match.group(1)}{pretty} kg",
+        updated,
+    )
+
+    return updated
+
+
+def _v29_apply_final_per_unit_weight(payload, user_text):
+    if not isinstance(payload, dict):
+        return payload
+
+    details = _frav2_explicit_weight_details_from_prompt(user_text)
+    if not isinstance(details, dict) or details.get("is_per_unit") is not True:
+        return payload
+
+    total_weight = _frav2_number(details.get("total_weight_kg"))
+    unit_weight = _frav2_number(details.get("unit_weight_kg"))
+    quantity = _frav2_number(details.get("quantity"))
+
+    if (
+        total_weight is None
+        or unit_weight is None
+        or quantity is None
+        or quantity <= 0
+    ):
+        return payload
+
+    display_quantity = (
+        int(round(quantity))
+        if abs(quantity - round(quantity)) < 1e-9
+        else quantity
+    )
+
+    for key in (
+        "logistics_metrics",
+        "handoff_payload",
+        "logistics_quality_review",
+    ):
+        mapping = payload.get(key)
+        if isinstance(mapping, dict):
+            mapping["total_weight_kg"] = total_weight
+
+    visualizer = payload.get("logistics_visualizer")
+    if isinstance(visualizer, dict):
+        container = visualizer.get("container")
+        if isinstance(container, dict):
+            container["total_weight_kg"] = total_weight
+            container["total_items"] = display_quantity
+
+        cargo_mix = visualizer.get("cargo_mix")
+        if (
+            isinstance(cargo_mix, list)
+            and len(cargo_mix) == 1
+            and isinstance(cargo_mix[0], dict)
+        ):
+            _frav2_sync_item_weight_v28(
+                cargo_mix[0],
+                total_weight,
+                details,
+            )
+
+        loading_sequence = visualizer.get("loading_sequence")
+        if (
+            isinstance(loading_sequence, list)
+            and len(loading_sequence) == 1
+            and isinstance(loading_sequence[0], dict)
+        ):
+            loading_sequence[0]["quantity"] = display_quantity
+
+    executive = payload.get("executive_summary")
+    if isinstance(executive, dict):
+        snapshot = executive.get("shipment_snapshot")
+        if isinstance(snapshot, dict):
+            snapshot["total_weight_kg"] = total_weight
+
+    sections = payload.get("ui_sections")
+    if isinstance(sections, list):
+        for section in sections:
+            if not isinstance(section, dict):
+                continue
+            if section.get("section_id") not in {"shipment_snapshot", "logistics"}:
+                continue
+            metrics = section.get("metrics")
+            if isinstance(metrics, dict):
+                metrics["total_weight_kg"] = total_weight
+
+    final_answer = payload.get("final_answer")
+    if isinstance(final_answer, dict):
+        final_answer["answer_text"] = _v29_sync_weight_text(
+            final_answer.get("answer_text"),
+            total_weight,
+        )
+
+    for key in (
+        "display_answer",
+        "frontend_answer",
+        "short_answer",
+    ):
+        payload[key] = _v29_sync_weight_text(
+            payload.get(key),
+            total_weight,
+        )
+
+    return payload
+
+
+def process_text_request(
+    user_text,
+    include_raw_response=False,
+):
+    payload = _process_text_request_before_final_per_unit_weight_v29(
+        user_text,
+        include_raw_response=include_raw_response,
+    )
+
+    return _v29_apply_final_per_unit_weight(
+        payload,
+        user_text,
+    )
+
+# FINAL_WEIGHT_AUTHORITY_V32
+#
+# Final authoritative weight synchronization after all legacy response layers.
+# Per-unit weights may update shipment quantity. Explicit shipment totals never
+# reinterpret volume values such as "10 CBM" as ten cargo items.
+import re as _v32_re
+
+_process_text_request_before_final_weight_v32 = process_text_request
+
+
+def _v32_number(value):
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+
+    if number != number or number in (float("inf"), float("-inf")):
+        return None
+
+    return number
+
+
+def _v32_factor(unit):
+    normalized = str(unit or "").strip().lower().rstrip(".")
+    return {
+        "kg": 1.0,
+        "kgs": 1.0,
+        "kilogram": 1.0,
+        "kilograms": 1.0,
+        "lb": 0.45359237,
+        "lbs": 0.45359237,
+        "pound": 0.45359237,
+        "pounds": 0.45359237,
+    }.get(normalized)
+
+
+def _v32_practical(value):
+    number = _v32_number(value)
+    if number is None:
+        return None
+
+    nearest = round(number)
+    if abs(number - nearest) <= 0.02:
+        return int(nearest)
+
+    return round(number, 6)
+
+
+def _v32_existing_quantity(payload):
+    if not isinstance(payload, dict):
+        return 1.0
+
+    visualizer = payload.get("logistics_visualizer")
+    if isinstance(visualizer, dict):
+        cargo_mix = visualizer.get("cargo_mix")
+        if isinstance(cargo_mix, list) and len(cargo_mix) == 1:
+            item = cargo_mix[0]
+            if isinstance(item, dict):
+                quantity = _v32_number(item.get("quantity"))
+                if quantity is not None and quantity > 0:
+                    return quantity
+
+        container = visualizer.get("container")
+        if isinstance(container, dict):
+            quantity = _v32_number(container.get("total_items"))
+            if quantity is not None and quantity > 0:
+                return quantity
+
+    return 1.0
+
+
+def _v32_prompt_quantity(user_text, payload):
+    text = str(user_text or "")
+
+    # The token after the number must be a cargo noun, not a measurement unit.
+    # This keeps "Ship 10 crates" as quantity 10 while preventing "Ship 10 CBM"
+    # from changing an aggregate-volume cargo row into ten items.
+    movement_pattern = (
+        r"\b(?:ship|send|transport|move|deliver)\s+"
+        r"([0-9]+(?:\.[0-9]+)?)\s+"
+        r"(?!(?:cbm|m3|m\^3|cubic|kg|kgs?|kilograms?|lb|lbs?|pounds?|"
+        r"tonnes?|tons?|litres?|liters?)\b)"
+        r"[A-Za-z][A-Za-z0-9_-]*"
+    )
+
+    for pattern in (
+        movement_pattern,
+        r"\bquantity\s*(?:is|=|:)?\s*([0-9]+(?:\.[0-9]+)?)\b",
+        r"\bqty\s*(?:is|=|:)?\s*([0-9]+(?:\.[0-9]+)?)\b",
+    ):
+        match = _v32_re.search(pattern, text, flags=_v32_re.IGNORECASE)
+        if not match:
+            continue
+
+        quantity = _v32_number(match.group(1))
+        if quantity is not None and quantity > 0:
+            return quantity
+
+    return _v32_existing_quantity(payload)
+
+
+def _v32_authority(user_text, payload):
+    text = str(user_text or "")
+    unit_pattern = r"(kg|kgs?|kilograms?|lb|lbs?|pounds?)"
+
+    total_patterns = (
+        rf"\btotal\s+weight\s*(?:is|=|:)?\s*([0-9]+(?:\.[0-9]+)?)\s*{unit_pattern}\b",
+        rf"\b(?:shipment|cargo|load)\s+weight\s*(?:is|=|:)?\s*([0-9]+(?:\.[0-9]+)?)\s*{unit_pattern}\b",
+        rf"\b(?:shipment|cargo|load)\s+weighs?\s*([0-9]+(?:\.[0-9]+)?)\s*{unit_pattern}\b",
+    )
+
+    for pattern in total_patterns:
+        match = _v32_re.search(pattern, text, flags=_v32_re.IGNORECASE)
+        if not match:
+            continue
+
+        value = _v32_number(match.group(1))
+        factor = _v32_factor(match.group(2))
+        if value is None or factor is None:
+            continue
+
+        return {
+            "source": "explicit_total",
+            "quantity": None,
+            "unit_weight_kg": None,
+            "total_weight_kg": _v32_practical(value * factor),
+        }
+
+    per_unit_patterns = (
+        rf"\beach\b[^\r\n]{{0,500}}?\bweighs?\s*([0-9]+(?:\.[0-9]+)?)\s*{unit_pattern}\b",
+        rf"\beach\b[^\r\n]{{0,500}}?\bweight\s*(?:is|=|:)?\s*([0-9]+(?:\.[0-9]+)?)\s*{unit_pattern}\b",
+        rf"\b([0-9]+(?:\.[0-9]+)?)\s*{unit_pattern}\s*(?:each|per\s+(?:item|unit|crate|carton|box|piece))\b",
+    )
+
+    for pattern in per_unit_patterns:
+        match = _v32_re.search(pattern, text, flags=_v32_re.IGNORECASE)
+        if not match:
+            continue
+
+        value = _v32_number(match.group(1))
+        factor = _v32_factor(match.group(2))
+        if value is None or factor is None:
+            continue
+
+        quantity = _v32_prompt_quantity(text, payload)
+        unit_weight = _v32_practical(value * factor)
+        total_weight = _v32_practical((value * factor) * quantity)
+
+        return {
+            "source": "explicit_per_unit",
+            "quantity": quantity,
+            "unit_weight_kg": unit_weight,
+            "total_weight_kg": total_weight,
+        }
+
+    return None
+
+
+def _v32_pretty(value):
+    number = _v32_number(value)
+    if number is None:
+        return "not confirmed"
+
+    if abs(number - round(number)) <= 1e-9:
+        return str(int(round(number)))
+
+    return f"{number:.6f}".rstrip("0").rstrip(".")
+
+
+def _v32_rewrite_string(value, total_weight):
+    if not isinstance(value, str):
+        return value
+
+    pretty = _v32_pretty(total_weight)
+
+    value = _v32_re.sub(
+        r"(?im)^([ \t]*-\s*total\s+weight\s*:\s*)[^\r\n]*$",
+        lambda match: match.group(1) + pretty + " kg",
+        value,
+    )
+
+    value = _v32_re.sub(
+        r"(?i)(Logistics:\s*[^,\n]+\s+CBM,\s*)"
+        r"(?:None|null|—|not\s+confirmed|[0-9]+(?:\.[0-9]+)?)\s*kg",
+        lambda match: match.group(1) + pretty + " kg",
+        value,
+    )
+
+    return value
+
+
+def _v32_rewrite_all_strings(value, total_weight):
+    if isinstance(value, dict):
+        for key in list(value.keys()):
+            value[key] = _v32_rewrite_all_strings(value[key], total_weight)
+        return value
+
+    if isinstance(value, list):
+        for index in range(len(value)):
+            value[index] = _v32_rewrite_all_strings(value[index], total_weight)
+        return value
+
+    if isinstance(value, tuple):
+        return tuple(_v32_rewrite_all_strings(item, total_weight) for item in value)
+
+    return _v32_rewrite_string(value, total_weight)
+
+
+def _v32_sync(payload, authority):
+    if not isinstance(payload, dict) or not isinstance(authority, dict):
+        return payload
+
+    source = authority.get("source")
+    is_per_unit = source == "explicit_per_unit"
+    total_weight = authority.get("total_weight_kg")
+
+    if total_weight is None:
+        return payload
+
+    existing_quantity = _v32_existing_quantity(payload)
+    quantity = authority.get("quantity") if is_per_unit else existing_quantity
+    quantity = _v32_number(quantity) or 1.0
+
+    if is_per_unit:
+        unit_weight = authority.get("unit_weight_kg")
+    else:
+        unit_weight = _v32_practical(total_weight / quantity) if quantity else total_weight
+
+    display_quantity = int(quantity) if float(quantity).is_integer() else quantity
+
+    metrics = payload.get("logistics_metrics")
+    if not isinstance(metrics, dict):
+        metrics = {}
+        payload["logistics_metrics"] = metrics
+    metrics["total_weight_kg"] = total_weight
+
+    handoff = payload.get("handoff_payload")
+    if not isinstance(handoff, dict):
+        handoff = {}
+        payload["handoff_payload"] = handoff
+    handoff["total_weight_kg"] = total_weight
+
+    for mapping_name in ("input_resolution", "shipment_input", "logistics_input"):
+        mapping = payload.get(mapping_name)
+        if isinstance(mapping, dict):
+            mapping["total_weight_kg"] = total_weight
+
+    visualizer = payload.get("logistics_visualizer")
+    if isinstance(visualizer, dict):
+        container = visualizer.get("container")
+        if isinstance(container, dict):
+            container["total_weight_kg"] = total_weight
+            if is_per_unit:
+                container["total_items"] = display_quantity
+
+        cargo_mix = visualizer.get("cargo_mix")
+        if isinstance(cargo_mix, list) and len(cargo_mix) == 1 and isinstance(cargo_mix[0], dict):
+            item = cargo_mix[0]
+            if is_per_unit:
+                item["quantity"] = display_quantity
+            item["unit_weight_kg"] = unit_weight
+            item["total_weight_kg"] = total_weight
+            item["weight_kg"] = unit_weight
+            item["weight_source"] = source
+            item["weight_estimated"] = False
+
+        if is_per_unit:
+            loading_sequence = visualizer.get("loading_sequence")
+            if isinstance(loading_sequence, list) and len(loading_sequence) == 1 and isinstance(loading_sequence[0], dict):
+                loading_sequence[0]["quantity"] = display_quantity
+
+    review = payload.get("logistics_quality_review")
+    if isinstance(review, dict):
+        review["total_weight_kg"] = total_weight
+
+    executive = payload.get("executive_summary")
+    if isinstance(executive, dict):
+        snapshot = executive.get("shipment_snapshot")
+        if isinstance(snapshot, dict):
+            snapshot["total_weight_kg"] = total_weight
+
+    sections = payload.get("ui_sections")
+    if isinstance(sections, list):
+        for section in sections:
+            if not isinstance(section, dict):
+                continue
+            if section.get("section_id") not in {"shipment_snapshot", "logistics"}:
+                continue
+            section_metrics = section.get("metrics")
+            if isinstance(section_metrics, dict):
+                section_metrics["total_weight_kg"] = total_weight
+
+    return _v32_rewrite_all_strings(payload, total_weight)
+
+
+def process_text_request(user_text, include_raw_response=False):
+    payload = _process_text_request_before_final_weight_v32(
+        user_text,
+        include_raw_response=include_raw_response,
+    )
+
+    authority = _v32_authority(user_text, payload)
+    if authority is None:
+        return payload
+
+    return _v32_sync(payload, authority)
