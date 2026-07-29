@@ -13,10 +13,11 @@ import Integrations from "./pages/Integrations.jsx";
 export default function App() {
   return (
     <>
+      <a className="skip-link" href="#main-content">Skip to main content</a>
       <Topbar />
       <div className="app">
         <Sidebar />
-        <main className="main">
+        <main id="main-content" className="main" tabIndex="-1">
           <Routes>
             <Route path="/" element={<Dashboard />} />
             <Route path="/shipments" element={<Shipments />} />

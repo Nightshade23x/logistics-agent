@@ -111,7 +111,7 @@ export default function Integrations() {
         </div>
         <div className="page-actions"><ViewControls compact /><button className="btn" type="button" onClick={refresh} disabled={loading}>Refresh connections</button></div>
       </div>
-      <SimplePageGuide title="Live price or demonstration?" items={["Live API means the price came from a connected carrier service.", "Demo estimate is for testing and is not a bookable carrier price.", "Always confirm final price and service conditions before booking."]} />
+      <SimplePageGuide title="Live price or demonstration?" terms={["Live API", "Demo estimate"]} items={["Live API means the price came from a connected carrier service.", "Demo estimate is for testing and is not a bookable carrier price.", "Always confirm final price and service conditions before booking."]} />
 
       <div className="integration-explainer" role="note">
         <strong>What this means:</strong> demo estimates are clearly separated from live carrier prices. Credentials stay on the backend and are never shown in this page.

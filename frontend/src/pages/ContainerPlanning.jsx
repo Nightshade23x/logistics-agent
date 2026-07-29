@@ -252,7 +252,7 @@ export default function ContainerPlanning() {
         </div>
         <ViewControls compact />
       </div>
-      <SimplePageGuide title="Container terms in plain language" items={["CBM is the total space your cargo takes up.", "Utilization is the percentage of the container being used.", "Fit check shows whether the cargo appears suitable for that container."]}>The 3D view is a planning preview, not a certified loading plan.</SimplePageGuide>
+      <SimplePageGuide title="Container terms in plain language" terms={["CBM", "FCL", "LCL", "Payload", "Fit check"]} items={["CBM is the total space your cargo takes up.", "Utilization is the percentage of the container being used.", "Fit check shows whether the cargo appears suitable for that container."]}>The 3D view is a planning preview, not a certified loading plan.</SimplePageGuide>
 
       <ResultGate>
         {(result) => {

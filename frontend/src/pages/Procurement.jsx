@@ -170,7 +170,7 @@ export default function Procurement() {
           <div className="page-subtitle">{userView === "simple" ? "Review supplier options, missing buying details, and what to confirm before ordering." : "Supplier shortlist, commercial gaps, negotiation checklist, and purchase-order readiness."}</div>
         </div><ViewControls compact />
       </div>
-      <SimplePageGuide title="What to check before buying" items={["Compare price, delivery time, payment terms, and reliability.", "Confirm packing, dimensions, weight, and cargo value before shipping.", "Do not issue a purchase order until missing commercial details are confirmed."]} />
+      <SimplePageGuide title="What to check before buying" terms={["Landed cost", "Incoterm"]} items={["Compare price, delivery time, payment terms, and reliability.", "Confirm packing, dimensions, weight, and cargo value before shipping.", "Do not issue a purchase order until missing commercial details are confirmed."]} />
 
       <ResultGate>
         {(result) => {

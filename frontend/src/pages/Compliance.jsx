@@ -157,7 +157,7 @@ export default function Compliance() {
           <div className="page-subtitle">{userView === "simple" ? "See which documents are needed and which checks must happen before booking." : "Document checklist, trade terms, insurance, and compliance readiness."}</div>
         </div><ViewControls compact />
       </div>
-      <SimplePageGuide title="Use this as a preparation checklist" items={["Required documents are normally needed for the shipment.", "Conditional documents depend on cargo, route, or transport mode.", "Review status means a person or connected specialist still needs to confirm something."]} />
+      <SimplePageGuide title="Use this as a preparation checklist" terms={["Incoterm", "CIF", "Landed cost"]} items={["Required documents are normally needed for the shipment.", "Conditional documents depend on cargo, route, or transport mode.", "Review status means a person or connected specialist still needs to confirm something."]} />
 
       <ResultGate>
         {(result) => {

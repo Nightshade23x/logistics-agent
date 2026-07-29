@@ -4,6 +4,9 @@ import { api } from "../api.js";
 import Badge from "../components/Badge.jsx";
 import AnswerCard from "../components/AnswerCard.jsx";
 import NeedMoreInfoCard from "../components/NeedMoreInfoCard.jsx";
+import GuidedShipmentWizard from "../components/GuidedShipmentWizard.jsx";
+import ShipmentProgress from "../components/ShipmentProgress.jsx";
+import SimpleResultOverview from "../components/SimpleResultOverview.jsx";
 import ViewControls from "../components/ViewControls.jsx";
 import { useStore } from "../store.jsx";
 import { humanizeKey, humanizeStatus } from "../utils/displayFormat.js";
@@ -122,6 +125,8 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [showCurrentResult, setShowCurrentResult] = useState(false);
+  const [simpleInputMode, setSimpleInputMode] = useState("guided");
+  const [wizardKey, setWizardKey] = useState(0);
 
   useEffect(() => {
     try {
@@ -159,6 +164,9 @@ export default function Dashboard() {
     setFiles(null);
     setError(null);
     setShowCurrentResult(false);
+    setSimpleInputMode("guided");
+    setWizardKey((value) => value + 1);
+    try { sessionStorage.removeItem("meridian.guidedShipmentDraft.v39"); } catch { /* Session storage is optional. */ }
   }
 
 
@@ -174,16 +182,22 @@ export default function Dashboard() {
   }
 
 
-  async function submit() {
+  async function submit(overrideText = null) {
+    const submittedText = typeof overrideText === "string" ? overrideText.trim() : text.trim();
     setError(null);
-    if (mode === "text" && !text.trim()) { setShowCurrentResult(false); setError("Type a request or choose an example before creating a shipping plan."); return; }
+    if (mode === "text" && !submittedText) {
+      setShowCurrentResult(false);
+      setError("Enter shipment details or complete the guided form before creating a plan.");
+      return;
+    }
     setLoading(true);
 
     try {
       let payload;
 
       if (mode === "text") {
-        payload = await api.requestText(text);
+        payload = await api.requestText(submittedText);
+        if (submittedText !== text) setText(submittedText);
       } else if (mode === "json") {
         payload = await api.requestJson(JSON.parse(jsonText));
       } else {
@@ -192,7 +206,7 @@ export default function Dashboard() {
 
       setShowCurrentResult(true);
       setResult(payload, {
-        label: mode === "text" ? text.slice(0, 60) : mode === "json" ? "JSON request" : "Document upload"
+        label: mode === "text" ? submittedText.slice(0, 60) : mode === "json" ? "JSON request" : "Document upload"
       });
     } catch (e) {
       setError(e.message || String(e));
@@ -207,7 +221,7 @@ export default function Dashboard() {
     <>
       <div className="page-header">
         <div>
-          <div className="page-title">Shipping assistant</div>
+          <div className="page-title">Start a shipment</div>
           <div className="page-subtitle">Describe what you need in your own words. The system will calculate, explain, and show what must happen next.</div>
         </div>
         <ViewControls />
@@ -242,7 +256,29 @@ export default function Dashboard() {
               </div>
             )}
 
-            {mode === "text" && (
+            {userView === "simple" && (
+              <div className="simple-input-choice" role="group" aria-label="Choose how to enter shipment details">
+                <button type="button" className={simpleInputMode === "guided" ? "active" : ""} aria-pressed={simpleInputMode === "guided"} onClick={() => setSimpleInputMode("guided")}>
+                  <strong>Guide me step by step</strong>
+                  <span>Recommended if you are unsure which details are needed.</span>
+                </button>
+                <button type="button" className={simpleInputMode === "free" ? "active" : ""} aria-pressed={simpleInputMode === "free"} onClick={() => setSimpleInputMode("free")}>
+                  <strong>Describe it myself</strong>
+                  <span>Write the request in your own words.</span>
+                </button>
+              </div>
+            )}
+
+            {mode === "text" && userView === "simple" && simpleInputMode === "guided" && (
+              <GuidedShipmentWizard
+                key={wizardKey}
+                loading={loading}
+                onDraftChange={setText}
+                onSubmit={submit}
+              />
+            )}
+
+            {mode === "text" && (userView === "advanced" || simpleInputMode === "free") && (
               <div className="form-group">
                 <label className="form-label" htmlFor="shipping-request">{userView === "simple" ? "Tell us what you want to do" : "Request"}</label>
                 <textarea
@@ -290,10 +326,12 @@ export default function Dashboard() {
             <div className="sr-only" aria-live="polite">{loading ? "The agents are preparing your result." : ""}</div>
 
             <div className="request-action-row-v2" style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginTop: 12 }}>
-              <button className="btn btn-primary run-request-v2" type="button" onClick={submit} disabled={loading || (mode === "text" && !text.trim())}>
-                {loading && <span className="spinner" />}
-                {loading ? "Preparing your result..." : userView === "simple" ? "Create my shipping plan" : "Run agent pipeline"}
-              </button>
+              {(userView === "advanced" || simpleInputMode === "free") && (
+                <button className="btn btn-primary run-request-v2" type="button" onClick={() => submit()} disabled={loading || (mode === "text" && !text.trim())}>
+                  {loading && <span className="spinner" />}
+                  {loading ? "Preparing your result..." : userView === "simple" ? "Create my shipping plan" : "Run agent pipeline"}
+                </button>
+              )}
 
               <button className="btn" onClick={clearCurrentWorkspace}>
                 Clear current
@@ -332,6 +370,9 @@ export default function Dashboard() {
       </div>
 
       <ResultDecisionStrip result={showCurrentResult ? result : null} onBreakdown={() => navigate("/shipments")} />
+
+      {showCurrentResult && result && <ShipmentProgress result={result} />}
+      {showCurrentResult && result && userView === "simple" && <SimpleResultOverview result={result} />}
 
       {showCurrentResult && result && userView === "simple" && (
         <div className="result-language-guide" role="note">

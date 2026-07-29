@@ -4,6 +4,8 @@ import ResultGate from "../components/ResultGate.jsx";
 import ExecutiveSummary from "../components/ExecutiveSummary.jsx";
 import ViewControls from "../components/ViewControls.jsx";
 import SimplePageGuide from "../components/SimplePageGuide.jsx";
+import ShipmentProgress from "../components/ShipmentProgress.jsx";
+import SimpleResultOverview from "../components/SimpleResultOverview.jsx";
 import { useStore } from "../store.jsx";
 import { humanizeKey, groupItems } from "../utils/displayFormat.js";
 
@@ -56,17 +58,27 @@ export default function Shipments() {
         </div>
         <ViewControls compact />
       </div>
-      <SimplePageGuide title="How to read this page" items={["Ready for first pass means the plan is useful for review.", "Ready to book means all required details and checks are complete.", "Missing information tells you exactly what to provide next."]}>Start with the shipment status and missing information. Technical validation and request metadata are available in Advanced view.</SimplePageGuide>
+      <SimplePageGuide title="How to read this page" terms={["Ready for review", "Ready to book"]} items={["Ready for first pass means the plan is useful for review.", "Ready to book means all required details and checks are complete.", "Missing information tells you exactly what to provide next."]}>Start with the shipment status and missing information. Technical validation and request metadata are available in Advanced view.</SimplePageGuide>
 
       <ResultGate>
         {(result) => (
-          <div className="content-grid">
+          <>
+            <ShipmentProgress result={result} />
+            {userView === "simple" && <SimpleResultOverview result={result} />}
+            <div className="content-grid">
             <div className="content-col">
-              <ExecutiveSummary es={result.executive_summary} />
+              {userView === "advanced" && <ExecutiveSummary es={result.executive_summary} />}
 
-              {(result.ui_sections || []).map((s) => (
-                <SectionCard key={s.section_id} section={s} />
-              ))}
+              {userView === "simple" ? (
+                <details className="simple-extra-details">
+                  <summary>Show more plan details</summary>
+                  <div className="simple-extra-details-body">
+                    {(result.ui_sections || []).map((section) => <SectionCard key={section.section_id} section={section} />)}
+                  </div>
+                </details>
+              ) : (
+                (result.ui_sections || []).map((section) => <SectionCard key={section.section_id} section={section} />)
+              )}
             </div>
 
             <div className="content-col">
@@ -79,7 +91,8 @@ export default function Shipments() {
 
               <MissingInfoPanel items={result.missing_information_preview} />
             </div>
-          </div>
+            </div>
+          </>
         )}
       </ResultGate>
     </>
