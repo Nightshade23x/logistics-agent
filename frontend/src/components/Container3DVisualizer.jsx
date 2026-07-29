@@ -92,15 +92,20 @@ function getVisualizer(result) {
   );
 }
 
+// VISUALIZER_STATUS_GATE_V23
 export function hasContainer3DData(result) {
   if (!result || typeof result !== "object") return false;
   if (result.detected_intent === "booking_information") return false;
-  if (result.status === "needs_more_information") return false;
 
   const visualizer = getVisualizer(result);
   const cargoMix = visualizer?.cargo_mix;
+  const visualizerAvailable = visualizer?.status !== "unavailable";
 
-  return Array.isArray(cargoMix) && cargoMix.some((item) => item && typeof item === "object");
+  return (
+    visualizerAvailable &&
+    Array.isArray(cargoMix) &&
+    cargoMix.some((item) => item && typeof item === "object")
+  );
 }
 
 function inferContainer(result) {

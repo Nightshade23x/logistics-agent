@@ -20,6 +20,7 @@ TEST_COMMANDS = [
     [sys.executable, "scripts/test_frontend_cleanup_authority_v20.py"],
     [sys.executable, "scripts/test_explicit_total_weight_units_v21.py"],
     [sys.executable, "scripts/test_cargo_name_weight_precision_v22.py"],
+    [sys.executable, "scripts/test_container_visualizer_status_gate_v23.py"],
     [sys.executable, "scripts/test_backend_service.py"],
     [sys.executable, "scripts/test_backend_service_payload_validator.py"],
     [sys.executable, "scripts/test_clarification_questions.py"],
