@@ -9273,3 +9273,857 @@ def process_text_request(user_text, include_raw_response=False):
         include_raw_response=include_raw_response,
     )
     return _intent_v33_apply(payload, user_text)
+
+# DEMO_READINESS_STATUS_AUTHORITY_V34
+_process_text_request_before_demo_readiness_v34 = process_text_request
+
+
+_V34_FALSE_ITEM_MESSAGES = {
+    "No shipment items were available, so document requirements may be incomplete.",
+    "No shipment items were found for compliance review.",
+}
+
+_V34_FALSE_RISK_MESSAGES = {
+    "logistics review was not applicable.",
+    "Logistics planning output is available for review.",
+}
+
+
+def _v34_logistics_evidence(payload):
+    if not isinstance(payload, dict):
+        return None
+
+    metrics = payload.get("logistics_metrics")
+    visualizer = payload.get("logistics_visualizer")
+
+    if not isinstance(metrics, dict) or not isinstance(visualizer, dict):
+        return None
+
+    cargo_mix = visualizer.get("cargo_mix")
+    container = visualizer.get("container")
+
+    if not isinstance(cargo_mix, list) or not cargo_mix:
+        return None
+
+    if not isinstance(container, dict):
+        return None
+
+    total_items = 0
+    for row in cargo_mix:
+        if not isinstance(row, dict):
+            continue
+        try:
+            total_items += int(float(row.get("quantity") or 0))
+        except Exception:
+            pass
+
+    if total_items <= 0:
+        total_items = int(float(container.get("total_items") or 0))
+
+    if total_items <= 0:
+        return None
+
+    if (
+        metrics.get("total_cbm") is None
+        and metrics.get("recommended_container") is None
+        and container.get("selected_container") is None
+    ):
+        return None
+
+    return {
+        "metrics": metrics,
+        "visualizer": visualizer,
+        "cargo_mix": cargo_mix,
+        "container": container,
+        "total_items": total_items,
+    }
+
+
+def _v34_filter_list(values, blocked):
+    if not isinstance(values, list):
+        return values
+
+    return [
+        value
+        for value in values
+        if str(value).strip() not in blocked
+    ]
+
+
+def _v34_clean_nested_lists(value):
+    if isinstance(value, dict):
+        for key in list(value.keys()):
+            value[key] = _v34_clean_nested_lists(value[key])
+        return value
+
+    if isinstance(value, list):
+        cleaned = []
+        blocked = _V34_FALSE_ITEM_MESSAGES | _V34_FALSE_RISK_MESSAGES
+        for item in value:
+            if isinstance(item, str) and item.strip() in blocked:
+                continue
+            cleaned.append(_v34_clean_nested_lists(item))
+        return cleaned
+
+    if value == "Partner Review Status: None":
+        return "Partner Review Status: Not requested"
+
+    if value == "Partner review status: None":
+        return "Partner review status: Not requested"
+
+    return value
+
+
+_V34_COST_FIELDS = {
+    "procurement_value_usd": (
+        r"\b(?:procurement\s+value|cargo\s+value|declared\s+value)\s*"
+        r"(?:is|=|:)?\s*(?:USD|\$)?\s*([0-9]+(?:\.[0-9]+)?)\s*"
+        r"(?:USD|dollars?)?\b"
+    ),
+    "freight_quote_usd": (
+        r"\b(?:freight\s+quote|freight\s+cost|freight)\s*"
+        r"(?:is|=|:)?\s*(?:USD|\$)?\s*([0-9]+(?:\.[0-9]+)?)\s*"
+        r"(?:USD|dollars?)?\b"
+    ),
+    "insurance_premium_usd": (
+        r"\b(?:insurance\s+premium|insurance\s+cost|insurance)\s*"
+        r"(?:is|=|:)?\s*(?:USD|\$)?\s*([0-9]+(?:\.[0-9]+)?)\s*"
+        r"(?:USD|dollars?)?\b"
+    ),
+    "duty_rate_percent": (
+        r"\b(?:duty\s+rate|customs\s+duty)\s*"
+        r"(?:is|=|:)?\s*([0-9]+(?:\.[0-9]+)?)\s*(?:%|percent)\b"
+    ),
+    "import_tax_rate_percent": (
+        r"\b(?:import\s+tax|VAT|value[-\s]?added\s+tax)\s*"
+        r"(?:rate\s*)?(?:is|=|:)?\s*([0-9]+(?:\.[0-9]+)?)\s*"
+        r"(?:%|percent)\b"
+    ),
+    "customs_brokerage_usd": (
+        r"\b(?:customs\s+brokerage|brokerage)\s*"
+        r"(?:is|=|:)?\s*(?:USD|\$)?\s*([0-9]+(?:\.[0-9]+)?)\s*"
+        r"(?:USD|dollars?)?\b"
+    ),
+    "local_delivery_usd": (
+        r"\b(?:local\s+delivery|last[-\s]?mile\s+delivery)\s*"
+        r"(?:is|=|:)?\s*(?:USD|\$)?\s*([0-9]+(?:\.[0-9]+)?)\s*"
+        r"(?:USD|dollars?)?\b"
+    ),
+}
+
+
+_V34_COST_MISSING_LABELS = {
+    "procurement_value_usd": "landed cost input: procurement_value_usd",
+    "freight_quote_usd": "landed cost input: freight_quote_usd",
+    "insurance_premium_usd": "landed cost input: insurance_premium_usd",
+    "duty_rate_percent": "landed cost input: duty_rate_percent",
+    "import_tax_rate_percent": "landed cost input: import_tax_rate_percent",
+    "customs_brokerage_usd": "landed cost input: customs_brokerage_usd",
+    "local_delivery_usd": "landed cost input: local_delivery_usd",
+}
+
+
+def _v34_extract_cost_inputs(user_text):
+    import re
+
+    raw = str(user_text or "")
+    extracted = {}
+
+    for key, pattern in _V34_COST_FIELDS.items():
+        match = re.search(pattern, raw, flags=re.IGNORECASE)
+        if not match:
+            continue
+        try:
+            extracted[key] = float(match.group(1))
+        except Exception:
+            continue
+
+    incoterm = re.search(
+        r"\b(EXW|FOB|CIF|DAP|DDP)\b",
+        raw,
+        flags=re.IGNORECASE,
+    )
+    if incoterm:
+        extracted["incoterm"] = incoterm.group(1).upper()
+        extracted["trade_term"] = incoterm.group(1).upper()
+
+    return extracted
+
+
+def _v34_remove_cost_stale_messages(values):
+    if not isinstance(values, list):
+        return values
+
+    blocked_exact = {
+        "Landed cost inputs are incomplete.",
+        "Procurement value or declared value is missing.",
+        "landed_cost has blockers.",
+        "Estimated cargo value is missing, so insurance advice is incomplete.",
+    }
+
+    cleaned = []
+    for value in values:
+        text = str(value).strip()
+        if text in blocked_exact:
+            continue
+        if text.lower().startswith("landed cost input:"):
+            continue
+        cleaned.append(value)
+    return cleaned
+
+
+def _v34_sync_complete_costs(payload, user_text):
+    if not isinstance(payload, dict):
+        return payload
+
+    extracted = _v34_extract_cost_inputs(user_text)
+    cost_keys = list(_V34_COST_FIELDS)
+    supplied_costs = {
+        key: value
+        for key, value in extracted.items()
+        if key in cost_keys
+    }
+
+    if not supplied_costs:
+        return payload
+
+    for field_name in ("text_cost_inputs", "cost_inputs", "finance_inputs"):
+        target = payload.get(field_name)
+        if not isinstance(target, dict):
+            target = {}
+            payload[field_name] = target
+        target.update(extracted)
+
+    advice = payload.get("landed_cost_advice")
+    if not isinstance(advice, dict):
+        advice = {"applicable": True}
+        payload["landed_cost_advice"] = advice
+
+    known = advice.get("known_inputs")
+    if not isinstance(known, dict):
+        known = {}
+        advice["known_inputs"] = known
+    known.update(extracted)
+
+    missing = [
+        key
+        for key in cost_keys
+        if known.get(key) is None
+    ]
+    advice["missing_cost_inputs"] = missing
+
+    if missing:
+        return payload
+
+    procurement = float(known["procurement_value_usd"])
+    freight = float(known["freight_quote_usd"])
+    insurance = float(known["insurance_premium_usd"])
+    duty_rate = float(known["duty_rate_percent"])
+    tax_rate = float(known["import_tax_rate_percent"])
+    brokerage = float(known["customs_brokerage_usd"])
+    local_delivery = float(known["local_delivery_usd"])
+
+    customs_value = procurement + freight + insurance
+    estimated_duty = customs_value * duty_rate / 100.0
+    import_tax_base = customs_value + estimated_duty
+    estimated_import_tax = import_tax_base * tax_rate / 100.0
+    landed_cost = (
+        customs_value
+        + estimated_duty
+        + estimated_import_tax
+        + brokerage
+        + local_delivery
+    )
+
+    advice.update(
+        {
+            "applicable": True,
+            "status": "review_required",
+            "summary": "Landed cost estimate calculated from provided cost inputs.",
+            "missing_cost_inputs": [],
+            "estimated_subtotal_known_usd": round(landed_cost, 2),
+            "customs_value_usd": round(customs_value, 2),
+            "estimated_duty_usd": round(estimated_duty, 2),
+            "import_tax_base_usd": round(import_tax_base, 2),
+            "estimated_import_tax_usd": round(estimated_import_tax, 2),
+            "customs_brokerage_usd": round(brokerage, 2),
+            "local_delivery_usd": round(local_delivery, 2),
+            "estimated_landed_cost_usd": round(landed_cost, 2),
+            "blockers": [],
+            "warnings": [],
+            "recommendations": [],
+        }
+    )
+
+    insurance_advice = payload.get("insurance_advice")
+    if isinstance(insurance_advice, dict):
+        insurance_advice["estimated_cargo_value_usd"] = round(procurement, 2)
+        insurance_advice["warnings"] = _v34_remove_cost_stale_messages(
+            insurance_advice.get("warnings")
+        )
+        insurance_advice["blockers"] = _v34_remove_cost_stale_messages(
+            insurance_advice.get("blockers")
+        )
+
+    booking = payload.get("booking_readiness")
+    if isinstance(booking, dict):
+        booking["blockers"] = _v34_remove_cost_stale_messages(
+            booking.get("blockers")
+        )
+        booking["missing_information"] = _v34_remove_cost_stale_messages(
+            booking.get("missing_information")
+        )
+        booking["review_items"] = _v34_remove_cost_stale_messages(
+            booking.get("review_items")
+        )
+
+    executive = payload.get("executive_summary")
+    if isinstance(executive, dict):
+        executive["top_risks"] = _v34_remove_cost_stale_messages(
+            executive.get("top_risks")
+        )
+        executive["top_missing_items"] = _v34_remove_cost_stale_messages(
+            executive.get("top_missing_items")
+        )
+        executive["top_next_actions"] = _v34_remove_cost_stale_messages(
+            executive.get("top_next_actions")
+        )
+
+    action_plan = payload.get("action_plan")
+    if isinstance(action_plan, dict):
+        for key in ("immediate_actions", "before_booking", "user_questions"):
+            action_plan[key] = _v34_remove_cost_stale_messages(
+                action_plan.get(key)
+            )
+
+    sections = payload.get("ui_sections")
+    if isinstance(sections, list):
+        for section in sections:
+            if not isinstance(section, dict):
+                continue
+
+            section_id = str(section.get("section_id") or "").strip().lower()
+
+            if section_id == "costs_insurance":
+                section["status"] = "review_required"
+                section["summary"] = advice["summary"]
+                metrics = section.get("metrics")
+                if not isinstance(metrics, dict):
+                    metrics = {}
+                    section["metrics"] = metrics
+                metrics.update(
+                    {
+                        "estimated_subtotal_known_usd": round(landed_cost, 2),
+                        "estimated_landed_cost_usd": round(landed_cost, 2),
+                        "known_inputs": dict(known),
+                        "missing_cost_inputs": [],
+                        "estimated_cargo_value_usd": round(procurement, 2),
+                    }
+                )
+                section["bullets"] = _v34_remove_cost_stale_messages(
+                    section.get("bullets")
+                )
+                section["actions"] = _v34_remove_cost_stale_messages(
+                    section.get("actions")
+                )
+
+            elif section_id == "next_actions":
+                section["bullets"] = _v34_remove_cost_stale_messages(
+                    section.get("bullets")
+                )
+                section["actions"] = _v34_remove_cost_stale_messages(
+                    section.get("actions")
+                )
+
+    return payload
+
+
+def _v34_apply_demo_consistency(payload):
+    evidence = _v34_logistics_evidence(payload)
+    if evidence is None:
+        return payload
+
+    metrics = evidence["metrics"]
+    total_items = evidence["total_items"]
+    readiness = str(metrics.get("readiness_status") or "ready_for_review")
+
+    executive = payload.get("executive_summary")
+    if isinstance(executive, dict):
+        risks = executive.get("top_risks")
+        executive["top_risks"] = _v34_filter_list(
+            risks,
+            _V34_FALSE_RISK_MESSAGES | _V34_FALSE_ITEM_MESSAGES,
+        )
+
+        strengths = executive.get("top_strengths")
+        if not isinstance(strengths, list):
+            strengths = []
+        strength = (
+            "Logistics plan includes cargo volume, weight, route, "
+            "and a container recommendation."
+        )
+        if strength not in strengths:
+            strengths.append(strength)
+        executive["top_strengths"] = strengths
+
+    document_advice = payload.get("document_requirements_advice")
+    if isinstance(document_advice, dict):
+        document_advice["item_count"] = total_items
+        document_advice["warnings"] = _v34_filter_list(
+            document_advice.get("warnings"),
+            _V34_FALSE_ITEM_MESSAGES,
+        )
+
+    compliance = payload.get("trade_compliance_readiness")
+    if isinstance(compliance, dict):
+        compliance["item_count"] = total_items
+        compliance["blockers"] = _v34_filter_list(
+            compliance.get("blockers"),
+            _V34_FALSE_ITEM_MESSAGES,
+        )
+
+    booking = payload.get("booking_readiness")
+    if isinstance(booking, dict):
+        booking["blockers"] = _v34_filter_list(
+            booking.get("blockers"),
+            _V34_FALSE_ITEM_MESSAGES,
+        )
+        booking["review_items"] = _v34_filter_list(
+            booking.get("review_items"),
+            _V34_FALSE_ITEM_MESSAGES | _V34_FALSE_RISK_MESSAGES,
+        )
+
+    action_plan = payload.get("action_plan")
+    if isinstance(action_plan, dict):
+        for key in ("immediate_actions", "before_booking"):
+            action_plan[key] = _v34_filter_list(
+                action_plan.get(key),
+                _V34_FALSE_ITEM_MESSAGES,
+            )
+
+    sections = payload.get("ui_sections")
+    if isinstance(sections, list):
+        for section in sections:
+            if not isinstance(section, dict):
+                continue
+
+            section_id = str(section.get("section_id") or "").strip().lower()
+
+            if section_id == "shipment_snapshot":
+                section["status"] = "ready_for_review"
+                bullets = section.get("bullets")
+                if isinstance(bullets, list):
+                    section["bullets"] = [
+                        "Partner Review Status: Not requested"
+                        if str(value).strip() == "Partner Review Status: None"
+                        else value
+                        for value in bullets
+                    ]
+
+            elif section_id == "logistics":
+                if str(section.get("status") or "").lower() in {
+                    "",
+                    "unknown",
+                    "not_applicable",
+                    "needs_more_information",
+                }:
+                    section["status"] = readiness
+
+            elif section_id == "executive_decision":
+                section["bullets"] = _v34_filter_list(
+                    section.get("bullets"),
+                    _V34_FALSE_ITEM_MESSAGES | _V34_FALSE_RISK_MESSAGES,
+                )
+
+    _v34_clean_nested_lists(payload)
+    return payload
+
+
+def process_text_request(
+    user_text,
+    include_raw_response=False,
+):
+    payload = _process_text_request_before_demo_readiness_v34(
+        user_text,
+        include_raw_response=include_raw_response,
+    )
+    payload = _v34_sync_complete_costs(payload, user_text)
+    return _v34_apply_demo_consistency(payload)
+
+# LANDED_COST_DIRECT_ANSWER_AUTHORITY_V35
+_process_text_request_before_landed_cost_direct_answer_v35 = process_text_request
+
+
+def _v35_money(value):
+    try:
+        return f"${float(value):,.2f}"
+    except Exception:
+        return None
+
+
+def _v35_landed_cost_direct_answer(payload, user_text):
+    if not isinstance(payload, dict):
+        return payload
+
+    raw = str(user_text or "")
+    lowered = raw.lower()
+    if "landed cost" not in lowered:
+        return payload
+
+    advice = payload.get("landed_cost_advice")
+    if not isinstance(advice, dict):
+        return payload
+
+    if advice.get("missing_cost_inputs"):
+        return payload
+
+    estimate = advice.get("estimated_landed_cost_usd")
+    if estimate is None:
+        return payload
+
+    known = advice.get("known_inputs")
+    if not isinstance(known, dict):
+        known = {}
+
+    procurement = known.get("procurement_value_usd")
+    freight = known.get("freight_quote_usd")
+    insurance = known.get("insurance_premium_usd")
+    duty_rate = known.get("duty_rate_percent")
+    tax_rate = known.get("import_tax_rate_percent")
+    brokerage = advice.get("customs_brokerage_usd", known.get("customs_brokerage_usd"))
+    local_delivery = advice.get("local_delivery_usd", known.get("local_delivery_usd"))
+    customs_value = advice.get("customs_value_usd")
+    duty = advice.get("estimated_duty_usd")
+    import_tax = advice.get("estimated_import_tax_usd")
+
+    total_text = _v35_money(estimate)
+    if total_text is None:
+        return payload
+
+    lines = [
+        f"Estimated landed cost: {total_text} USD",
+        "",
+        "Calculation breakdown:",
+    ]
+
+    breakdown = [
+        ("Procurement value", procurement, None),
+        ("Freight", freight, None),
+        ("Insurance", insurance, None),
+        ("Customs value", customs_value, "procurement + freight + insurance"),
+        ("Estimated duty", duty, f"{float(duty_rate):g}%" if duty_rate is not None else None),
+        ("Estimated import tax", import_tax, f"{float(tax_rate):g}%" if tax_rate is not None else None),
+        ("Customs brokerage", brokerage, None),
+        ("Local delivery", local_delivery, None),
+    ]
+
+    for label, value, note in breakdown:
+        money = _v35_money(value)
+        if money is None:
+            continue
+        suffix = f" ({note})" if note else ""
+        lines.append(f"- {label}{suffix}: {money}")
+
+    lines.extend(
+        [
+            f"- Estimated landed cost: {total_text}",
+            "",
+            "This is a planning estimate based on the supplied rates and costs. "
+            "Confirm the customs valuation method, tariff classification, and tax basis before booking.",
+        ]
+    )
+
+    answer_text = "\n".join(lines)
+    headline = f"Estimated landed cost: {total_text} USD"
+
+    final_answer = payload.get("final_answer")
+    if not isinstance(final_answer, dict):
+        final_answer = {}
+        payload["final_answer"] = final_answer
+
+    final_answer.update(
+        {
+            "status": advice.get("status") or "review_required",
+            "headline": headline,
+            "answer_text": answer_text,
+        }
+    )
+
+    payload["summary"] = headline
+    payload["short_answer"] = headline
+    payload["display_answer"] = answer_text
+    payload["frontend_answer"] = answer_text
+
+    return payload
+
+
+def process_text_request(
+    user_text,
+    include_raw_response=False,
+):
+    payload = _process_text_request_before_landed_cost_direct_answer_v35(
+        user_text,
+        include_raw_response=include_raw_response,
+    )
+    return _v35_landed_cost_direct_answer(payload, user_text)
+
+# COMPLETED_LANDED_COST_ANSWER_SYNC_V36
+_process_text_request_before_completed_landed_cost_answer_v36 = process_text_request
+
+
+def _v36_money(value):
+    try:
+        return f"${float(value):,.2f}"
+    except Exception:
+        return None
+
+
+def _v36_complete_landed_cost(payload):
+    if not isinstance(payload, dict):
+        return None
+
+    advice = payload.get("landed_cost_advice")
+    if not isinstance(advice, dict):
+        return None
+
+    missing = advice.get("missing_cost_inputs")
+    if isinstance(missing, list) and missing:
+        return None
+
+    blockers = advice.get("blockers")
+    if isinstance(blockers, list) and blockers:
+        return None
+
+    estimate = advice.get("estimated_landed_cost_usd")
+    if estimate is None:
+        estimate = advice.get("estimated_subtotal_known_usd")
+
+    try:
+        estimate = float(estimate)
+    except Exception:
+        return None
+
+    if estimate <= 0:
+        return None
+
+    return advice, estimate
+
+
+def _v36_cost_breakdown_block(advice, estimate):
+    known = advice.get("known_inputs")
+    if not isinstance(known, dict):
+        known = {}
+
+    duty_rate = known.get("duty_rate_percent")
+    tax_rate = known.get("import_tax_rate_percent")
+
+    rows = [
+        ("Procurement value", known.get("procurement_value_usd"), None),
+        ("Freight", known.get("freight_quote_usd"), None),
+        ("Insurance", known.get("insurance_premium_usd"), None),
+        ("Customs value", advice.get("customs_value_usd"), None),
+        (
+            "Estimated duty",
+            advice.get("estimated_duty_usd"),
+            f"{float(duty_rate):g}%" if duty_rate is not None else None,
+        ),
+        (
+            "Estimated import tax",
+            advice.get("estimated_import_tax_usd"),
+            f"{float(tax_rate):g}%" if tax_rate is not None else None,
+        ),
+        (
+            "Customs brokerage",
+            advice.get("customs_brokerage_usd", known.get("customs_brokerage_usd")),
+            None,
+        ),
+        (
+            "Local delivery",
+            advice.get("local_delivery_usd", known.get("local_delivery_usd")),
+            None,
+        ),
+    ]
+
+    lines = ["Landed cost breakdown:"]
+    for label, value, note in rows:
+        money = _v36_money(value)
+        if money is None:
+            continue
+        suffix = f" ({note})" if note else ""
+        lines.append(f"- {label}{suffix}: {money}")
+
+    total = _v36_money(estimate)
+    if total is not None:
+        lines.append(f"- Estimated landed cost: {total} USD")
+
+    return "\n".join(lines)
+
+
+def _v36_clean_completed_cost_answer(answer_text):
+    text = str(answer_text or "").strip()
+    if not text:
+        return []
+
+    blocks = re.split(r"\n\s*\n", text)
+    cleaned = []
+
+    stale_recommendation_phrases = (
+        "confirm final supplier/cargo value before insurance and landed-cost calculation",
+        "add declared cargo value and freight/insurance/tax inputs if landed cost is needed",
+        "procurement value or declared value is missing",
+        "get a freight quote for the selected freight mode before calculating landed cost",
+        "confirm cargo insurance premium or insurance responsibility before final landed cost",
+        "get duty rate from the trader agent or customs/tariff source",
+        "confirm import tax or vat rate for the destination country",
+        "add customs brokerage or clearance fee estimate",
+        "add destination local delivery or last-mile delivery estimate",
+    )
+
+    for block in blocks:
+        stripped = block.strip()
+        lowered = stripped.lower()
+
+        if not stripped:
+            continue
+
+        if lowered.startswith("cost inputs still needed:"):
+            continue
+
+        if lowered.startswith("landed cost breakdown:"):
+            continue
+
+        if lowered.startswith("recommended next steps:"):
+            lines = stripped.splitlines()
+            kept = [lines[0]]
+            for line in lines[1:]:
+                line_lower = line.lower()
+                if any(phrase in line_lower for phrase in stale_recommendation_phrases):
+                    continue
+                kept.append(line)
+            if len(kept) > 1:
+                cleaned.append("\n".join(kept))
+            continue
+
+        if lowered.startswith("answer these next:"):
+            lines = stripped.splitlines()
+            kept = [lines[0]]
+            for line in lines[1:]:
+                line_lower = line.lower()
+                if any(
+                    token in line_lower
+                    for token in (
+                        "procurement value",
+                        "freight quote",
+                        "insurance premium",
+                        "duty rate",
+                        "import tax",
+                        "vat rate",
+                        "customs brokerage",
+                        "local delivery",
+                        "landed cost",
+                    )
+                ):
+                    continue
+                kept.append(line)
+            if len(kept) > 1:
+                cleaned.append("\n".join(kept))
+            continue
+
+        cleaned.append(stripped)
+
+    return cleaned
+
+
+def _v36_insert_cost_block(blocks, cost_block):
+    insert_at = None
+
+    for index, block in enumerate(blocks):
+        lowered = block.lower()
+        if lowered.startswith("cargo:"):
+            insert_at = index + 1
+            break
+
+    if insert_at is None:
+        for index, block in enumerate(blocks):
+            lowered = block.lower()
+            if lowered.startswith("route and terms:"):
+                insert_at = index + 1
+                break
+
+    if insert_at is None:
+        for index, block in enumerate(blocks):
+            if block.lower().startswith("recommended next steps:"):
+                insert_at = index
+                break
+
+    if insert_at is None:
+        insert_at = len(blocks)
+
+    return blocks[:insert_at] + [cost_block] + blocks[insert_at:]
+
+
+def _v36_sync_completed_cost_answer(payload, user_text):
+    complete = _v36_complete_landed_cost(payload)
+    if complete is None:
+        return payload
+
+    advice, estimate = complete
+    total = _v36_money(estimate)
+    if total is None:
+        return payload
+
+    final_answer = payload.get("final_answer")
+    if not isinstance(final_answer, dict):
+        final_answer = {}
+        payload["final_answer"] = final_answer
+
+    existing = str(
+        final_answer.get("answer_text")
+        or payload.get("display_answer")
+        or payload.get("frontend_answer")
+        or ""
+    ).strip()
+
+    # V35 already gives direct landed-cost requests a calculation-first answer.
+    # Leave that focused response intact.
+    if existing.lower().startswith("estimated landed cost:"):
+        return payload
+
+    blocks = _v36_clean_completed_cost_answer(existing)
+    cost_block = _v36_cost_breakdown_block(advice, estimate)
+    blocks = _v36_insert_cost_block(blocks, cost_block)
+
+    lead = f"Estimated landed cost: {total} USD"
+    answer_text = "\n\n".join([lead] + blocks).strip()
+
+    final_answer.update(
+        {
+            "status": advice.get("status") or final_answer.get("status") or "review_required",
+            "headline": f"Updated shipment plan — estimated landed cost: {total} USD",
+            "answer_text": answer_text,
+        }
+    )
+
+    payload["display_answer"] = answer_text
+    payload["frontend_answer"] = answer_text
+    payload["summary"] = f"Updated shipment plan with estimated landed cost of {total} USD."
+
+    short_answer = str(payload.get("short_answer") or "").strip()
+    cost_sentence = f"Estimated landed cost: {total} USD."
+    if cost_sentence.lower() not in short_answer.lower():
+        payload["short_answer"] = (
+            (short_answer.rstrip(". ") + ". ") if short_answer else ""
+        ) + cost_sentence
+
+    return payload
+
+
+def process_text_request(
+    user_text,
+    include_raw_response=False,
+):
+    payload = _process_text_request_before_completed_landed_cost_answer_v36(
+        user_text,
+        include_raw_response=include_raw_response,
+    )
+    return _v36_sync_completed_cost_answer(payload, user_text)

@@ -20,10 +20,10 @@ const SAMPLE_JSON = {
 };
 
 const QUICK_SAMPLES = [
-  "Find suppliers for 1000 ceramic tiles and make a shipping plan from India to Germany using CIF. Budget 12000 USD.",
-  "Ship 8 pallets of glass jars from India to USA using CIF. Each pallet is 1.2 m x 1.0 m x 1.5 m and weighs 180 kg. The cargo is fragile.",
-  "Calculate landed cost for glass bottles from India to USA using CIF. Cargo value 15000 USD, freight quote 2200 USD, insurance premium 500 USD, duty rate 6 percent, VAT 7 percent, customs brokerage 300 USD, local delivery 650 USD.",
-  "What documents are needed for lithium batteries shipped from China to Germany using DDP?"
+  "Ship 10 crates of ceramic tiles from India to Germany using CIF. Each crate is 1.2 m x 1.0 m x 0.8 m and weighs 250 kg. The cargo is fragile and stackable.",
+  "Ship 8 pallets of glass jars from India to USA using CIF. Each pallet is 1.2 m x 1.0 m x 1.5 m and weighs 180 kg. The cargo is fragile and non-stackable.",
+  "Calculate landed cost for glass bottles from India to USA using CIF. Procurement value 15000 USD, freight quote 2200 USD, insurance premium 500 USD, duty rate 6 percent, import tax 7 percent, customs brokerage 300 USD, and local delivery 650 USD.",
+  "List the required shipping and compliance documents for 20 lithium-ion battery packs sent by air from China to Germany under DDP. Each pack weighs 25 kg."
 ];
 
 function inferIntent(text) {
@@ -320,7 +320,18 @@ export default function Dashboard() {
       <ResultDecisionStrip result={showCurrentResult ? result : null} onBreakdown={() => navigate("/shipments")} />
 
       {showCurrentResult && result && <AnswerCard result={result} />}
-      {showCurrentResult && result && <NeedMoreInfoCard result={result} originalText={text} onResult={(payload, meta) => { setShowCurrentResult(true); setResult(payload, meta); }} />}
+      {showCurrentResult && result && (
+        <NeedMoreInfoCard
+          result={result}
+          originalText={text}
+          onResult={(payload, meta) => {
+            setShowCurrentResult(true);
+            setResult(payload, meta);
+            // MISSING_INFO_REQUEST_VISIBILITY_V35
+            setText(payload?.request_metadata?.input_source || text);
+          }}
+        />
+      )}
 
       <div className="recent-requests-dropdown">
         <details>

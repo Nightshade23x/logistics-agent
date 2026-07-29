@@ -1047,8 +1047,22 @@ function makeLabelSprite(text, cargoColor) {
   ctx.stroke();
 
   ctx.fillStyle = "#ffffff";
-  ctx.font = "bold 46px system-ui";
-  ctx.fillText(String(text).slice(0, 20), 42, 92);
+
+  // DEMO_3D_LABEL_NO_TRUNCATION_V35
+  const labelText = String(text || "");
+  const maxTextWidth = canvas.width - 84;
+  let fontSize = 46;
+
+  ctx.font = `bold ${fontSize}px system-ui`;
+  while (
+    fontSize > 16 &&
+    ctx.measureText(labelText).width > maxTextWidth
+  ) {
+    fontSize -= 2;
+    ctx.font = `bold ${fontSize}px system-ui`;
+  }
+
+  ctx.fillText(labelText, 42, 92);
 
   const texture = new THREE.CanvasTexture(canvas);
   texture.needsUpdate = true;
