@@ -512,8 +512,12 @@ function canStack(unit, base) {
   // Aggregate preview blocks represent volume cells, not literal cartons.
   if (unit.aggregate_preview && base.aggregate_preview) return true;
 
+  // Explicit cargo instructions are authoritative. Fragile does not mean
+  // non-stackable when the backend has separately confirmed stackability.
+  if (unit.stackable === false || base.stackable === false) return false;
   if (hasTag(unit.tags, "hazardous", "battery", "non_stackable")) return false;
-  if (hasTag(base.tags, "hazardous", "battery", "non_stackable", "fragile")) return false;
+  if (hasTag(base.tags, "hazardous", "battery", "non_stackable")) return false;
+
   if (unit.name === base.name) return true;
 
   return hasTag(unit.tags, "soft", "stackable") && !hasTag(base.tags, "fragile");
@@ -613,6 +617,7 @@ function tryPlaceUnit(unit, placed, containerLength, containerWidth, containerHe
         height: unit.height_m,
         color: unit.color,
         tags: unit.tags,
+        stackable: unit.stackable,
         overflow: false,
         notes: rotated ? ["rotated_on_floor"] : [],
       };

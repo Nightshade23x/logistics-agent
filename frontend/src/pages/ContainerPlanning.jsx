@@ -180,6 +180,64 @@ function ContainerViz({ container, zoneLayout }) {
   );
 }
 
+function normalizeLoadingTags(item) {
+  const raw = item?.category_tags ?? item?.tags ?? [];
+  const values = Array.isArray(raw) ? raw : String(raw || "").split(",");
+  return values
+    .map((value) => String(value || "").trim().toLowerCase().replaceAll(" ", "_"))
+    .filter(Boolean);
+}
+
+function buildFallbackLoadingSequence(cargoMix) {
+  if (!Array.isArray(cargoMix)) return [];
+
+  return cargoMix
+    .filter((item) => item && typeof item === "object")
+    .map((item, index) => {
+      const tags = normalizeLoadingTags(item);
+      const tagSet = new Set(tags);
+      const name = item.item_name || item.name || item.item || `Cargo item ${index + 1}`;
+      const quantity = Number(item.quantity || item.qty || item.count || 1);
+      const explicitlyStackable = item.stackable === true;
+      const explicitlyNonStackable = item.stackable === false || tagSet.has("non_stackable");
+
+      let suggestedZone = "Balanced central loading zone";
+      let reason = "Distribute the cargo evenly, use appropriate dunnage, and secure the load against forward, lateral, and vertical movement.";
+
+      if (["radioactive", "hazardous", "battery", "batteries", "flammable"].some((tag) => tagSet.has(tag))) {
+        suggestedZone = "Segregated approved dangerous-goods zone";
+        reason = "Keep the cargo segregated, upright where required, secured against movement, and load only under the applicable dangerous-goods handling and carrier rules.";
+      } else if (explicitlyNonStackable) {
+        suggestedZone = "Floor-loaded zone with protected overhead clearance";
+        reason = "Load on the container floor, do not place cargo above it, use blocking and bracing, and secure the units against forward, lateral, and vertical movement.";
+      } else if (tagSet.has("heavy")) {
+        suggestedZone = "Low central weight-distribution zone";
+        reason = "Place the cargo low and near the container centreline, spread the weight evenly, and use suitable dunnage, blocking, and lashing.";
+      } else if (tagSet.has("fragile")) {
+        suggestedZone = "Padded and secured central loading zone";
+        reason = "Keep cartons upright, use cushioning and corner protection, distribute weight evenly, and secure the load with lashing or bracing to prevent movement. Stack only where supplier limits permit.";
+      } else if (tagSet.has("soft") || explicitlyStackable) {
+        suggestedZone = "Upper or remaining stackable cargo zone";
+        reason = "Use the remaining suitable space without crushing lower cargo, keep the load stable, and secure each stack against movement.";
+      }
+
+      return {
+        sequence_number: index + 1,
+        item_name: String(name),
+        quantity: Number.isFinite(quantity) && quantity > 0 ? quantity : 1,
+        suggested_zone: suggestedZone,
+        category_tags: tags,
+        reason,
+      };
+    });
+}
+
+function resolveLoadingSequence(visualizer) {
+  const provided = visualizer?.loading_sequence;
+  if (Array.isArray(provided) && provided.length > 0) return provided;
+  return buildFallbackLoadingSequence(visualizer?.cargo_mix);
+}
+
 export default function ContainerPlanning() {
   return (
     <>
@@ -207,6 +265,7 @@ export default function ContainerPlanning() {
             );
           }
           const c = lv.container;
+          const loadingSequence = resolveLoadingSequence(lv);
           const canonical = getContainerPlanningMetrics(result);
           return (
             <>
@@ -268,7 +327,7 @@ export default function ContainerPlanning() {
                             <tr><th>#</th><th>Item</th><th>Qty</th><th>Suggested Zone</th><th>Reason</th></tr>
                           </thead>
                           <tbody>
-                            {(lv.loading_sequence || []).map((s) => (
+                            {loadingSequence.map((s) => (
                               <tr key={s.sequence_number}>
                                 <td>{s.sequence_number}</td>
                                 <td className="item-name">{s.item_name}</td>

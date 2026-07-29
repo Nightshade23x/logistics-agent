@@ -1132,6 +1132,80 @@ try:
 
         return "low", 1, "ready_for_standard_review"
 
+    def _phase2_v16_loading_step(item):
+        if not isinstance(item, dict):
+            item = {}
+
+        name = str(
+            item.get("item_name")
+            or item.get("name")
+            or item.get("item")
+            or "cargo"
+        ).strip()
+
+        try:
+            quantity = int(item.get("quantity") or item.get("qty") or 1)
+        except Exception:
+            quantity = 1
+
+        raw_tags = item.get("category_tags") or item.get("tags") or []
+        if isinstance(raw_tags, str):
+            tags = [part.strip().lower() for part in raw_tags.split(",") if part.strip()]
+        elif isinstance(raw_tags, (list, tuple, set)):
+            tags = [str(part).strip().lower() for part in raw_tags if str(part).strip()]
+        else:
+            tags = []
+
+        normalized = {tag.replace(" ", "_") for tag in tags}
+        stackable = item.get("stackable")
+
+        if normalized.intersection({"radioactive", "hazardous", "battery", "batteries", "flammable"}):
+            zone = "Segregated approved dangerous-goods zone"
+            reason = (
+                "Keep the cargo segregated, upright where required, secured against movement, "
+                "and load only under the applicable dangerous-goods handling and carrier rules."
+            )
+        elif "non_stackable" in normalized or stackable is False:
+            zone = "Floor-loaded zone with protected overhead clearance"
+            reason = (
+                "Load on the container floor, do not place cargo above it, use blocking and bracing, "
+                "and secure the units against forward, lateral, and vertical movement."
+            )
+        elif "heavy" in normalized:
+            zone = "Low central weight-distribution zone"
+            reason = (
+                "Place the cargo low and near the container centreline, spread the weight evenly, "
+                "and use suitable dunnage, blocking, and lashing."
+            )
+        elif "fragile" in normalized:
+            zone = "Padded and secured central loading zone"
+            reason = (
+                "Keep cartons upright, use cushioning and corner protection, distribute weight evenly, "
+                "and secure the load with lashing or bracing to prevent movement. Stack only where supplier limits permit."
+            )
+        elif normalized.intersection({"soft", "pillows", "mattresses"}) or stackable is True:
+            zone = "Upper or remaining stackable cargo zone"
+            reason = (
+                "Use the remaining suitable space without crushing lower cargo, keep the load stable, "
+                "and secure each stack against movement."
+            )
+        else:
+            zone = "Balanced central loading zone"
+            reason = (
+                "Distribute the cargo evenly, use appropriate dunnage, and secure the load against "
+                "forward, lateral, and vertical movement."
+            )
+
+        return {
+            "sequence_number": 1,
+            "item_name": name,
+            "quantity": max(1, quantity),
+            "suggested_zone": zone,
+            "category_tags": tags,
+            "reason": reason,
+        }
+
+
     def _phase2_v16_apply_shipment(payload, parsed):
         if not isinstance(payload, dict) or not parsed:
             return payload
@@ -1175,6 +1249,7 @@ try:
                     "risk_score": risk_score,
                 },
                 "cargo_mix": [item],
+                "loading_sequence": [_phase2_v16_loading_step(item)],
                 "fit_check": {
                     "status": container["fit_status"],
                     "selected_container_checked": container["selected_container"],
