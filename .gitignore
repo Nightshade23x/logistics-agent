@@ -66,3 +66,6 @@ frontend/dist/
 backups/
 
 backups/
+
+# Generated test and diagnostic reports
+test_outputs/

@@ -875,7 +875,7 @@ try:
             item_name = _phase2_v16_clean_item_name(kg_of_match.group(2))
 
         cbm_of_match = re.search(
-            r"\bship\s+([0-9]+(?:\.[0-9]+)?)\s*cbm\s+of\s+(.+?)\s+from\s+",
+            r"\bship\s+([0-9]+(?:\.[0-9]+)?)\s*cbm\s+(?:of\s+)?(.+?)\s+from\s+",
             raw,
             flags=re.I,
         )
@@ -8140,7 +8140,7 @@ def _v21_get_explicit_total_weight(user_text):
         from app.text_shipment_parser import parse_shipment_text
 
         parsed = parse_shipment_text(text)
-        weight = float(parsed.get("total_weight_kg"))
+        weight = round(float(parsed.get("total_weight_kg")), 2)
     except Exception:
         return None, None
 
