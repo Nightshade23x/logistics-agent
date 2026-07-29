@@ -1125,10 +1125,10 @@ try:
             return "high", 8, "not_ready_blockers_found"
 
         if weight and weight >= 5000:
-            return "moderate", 5, "ready_for_review_with_high_risk"
+            return "moderate", 5, "ready_for_review"
 
         if "fragile" in text:
-            return "moderate", 4, "ready_for_review_with_high_risk"
+            return "moderate", 4, "ready_for_review"
 
         return "low", 1, "ready_for_standard_review"
 
@@ -1177,6 +1177,7 @@ try:
                 "cargo_mix": [item],
                 "fit_check": {
                     "status": container["fit_status"],
+                    "selected_container_checked": container["selected_container"],
                     "warnings": container["fit_warnings"] or ["No major physical container fit issues detected."],
                     "recommendations": (
                         ["Use special equipment and confirm out-of-gauge handling before booking."]
