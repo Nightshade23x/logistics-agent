@@ -8119,3 +8119,217 @@ def process_text_request(*args, **kwargs):
         payload,
         prompt,
     )
+
+# EXPLICIT_TOTAL_WEIGHT_UNIT_AUTHORITY_V21
+_process_text_request_before_explicit_total_weight_v21 = process_text_request
+
+
+def _v21_get_explicit_total_weight(user_text):
+    import re
+
+    text = str(user_text or "")
+
+    if not re.search(
+        r"\btotal\s+(?:packed\s+)?weight\b",
+        text,
+        flags=re.IGNORECASE,
+    ):
+        return None, None
+
+    try:
+        from app.text_shipment_parser import parse_shipment_text
+
+        parsed = parse_shipment_text(text)
+        weight = float(parsed.get("total_weight_kg"))
+    except Exception:
+        return None, None
+
+    if weight <= 0:
+        return None, parsed
+
+    return weight, parsed
+
+
+def _v21_sync_total_weight_fields(value, weight):
+    if isinstance(value, dict):
+        for key in list(value):
+            if str(key).lower() == "total_weight_kg":
+                value[key] = weight
+            else:
+                _v21_sync_total_weight_fields(
+                    value[key],
+                    weight,
+                )
+
+    elif isinstance(value, list):
+        for item in value:
+            _v21_sync_total_weight_fields(
+                item,
+                weight,
+            )
+
+
+def _v21_sync_single_cargo_item(payload, parsed, weight):
+    if not isinstance(parsed, dict):
+        return
+
+    parsed_items = [
+        item
+        for item in (parsed.get("items") or [])
+        if isinstance(item, dict)
+    ]
+
+    if len(parsed_items) != 1:
+        return
+
+    source = parsed_items[0]
+
+    source_name = str(
+        source.get("name")
+        or source.get("item_name")
+        or ""
+    ).strip().lower()
+
+    try:
+        quantity = float(
+            source.get("quantity") or 1
+        )
+    except Exception:
+        quantity = 1.0
+
+    if quantity <= 0:
+        quantity = 1.0
+
+    unit_weight = weight / quantity
+
+    def apply(items):
+        if not isinstance(items, list):
+            return
+
+        real_items = [
+            item
+            for item in items
+            if isinstance(item, dict)
+        ]
+
+        if len(real_items) != 1:
+            return
+
+        item = real_items[0]
+
+        item_name = str(
+            item.get("item_name")
+            or item.get("name")
+            or ""
+        ).strip().lower()
+
+        if (
+            source_name
+            and item_name
+            and source_name != item_name
+        ):
+            return
+
+        item["total_weight_kg"] = weight
+        item["unit_weight_kg"] = unit_weight
+        item["weight_kg"] = unit_weight
+        item["weight_source"] = "explicit_total_weight"
+        item["weight_estimated"] = False
+
+    visualizer = payload.get(
+        "logistics_visualizer"
+    )
+
+    if isinstance(visualizer, dict):
+        apply(visualizer.get("cargo_mix"))
+
+        container = visualizer.get("container")
+        fit_check = visualizer.get("fit_check")
+
+        if (
+            isinstance(container, dict)
+            and isinstance(fit_check, dict)
+            and not fit_check.get(
+                "selected_container_checked"
+            )
+            and container.get(
+                "selected_container"
+            )
+        ):
+            fit_check[
+                "selected_container_checked"
+            ] = container[
+                "selected_container"
+            ]
+
+
+def _v21_apply_explicit_total_weight(
+    payload,
+    user_text,
+):
+    if not isinstance(payload, dict):
+        return payload
+
+    weight, parsed = (
+        _v21_get_explicit_total_weight(
+            user_text
+        )
+    )
+
+    if weight is None:
+        return payload
+
+    _v21_sync_total_weight_fields(
+        payload,
+        weight,
+    )
+
+    metrics = payload.get(
+        "logistics_metrics"
+    )
+
+    if not isinstance(metrics, dict):
+        metrics = {}
+        payload["logistics_metrics"] = metrics
+
+    metrics["total_weight_kg"] = weight
+
+    visualizer = payload.get(
+        "logistics_visualizer"
+    )
+
+    if isinstance(visualizer, dict):
+        container = visualizer.get(
+            "container"
+        )
+
+        if not isinstance(container, dict):
+            container = {}
+            visualizer["container"] = container
+
+        container["total_weight_kg"] = weight
+
+    _v21_sync_single_cargo_item(
+        payload,
+        parsed,
+        weight,
+    )
+
+    return payload
+
+
+def process_text_request(
+    user_text,
+    include_raw_response=False,
+):
+    payload = (
+        _process_text_request_before_explicit_total_weight_v21(
+            user_text,
+            include_raw_response=include_raw_response,
+        )
+    )
+
+    return _v21_apply_explicit_total_weight(
+        payload,
+        user_text,
+    )
