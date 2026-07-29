@@ -30,6 +30,55 @@ from app.user_agent import (
 )
 
 
+# CANONICAL_ROUTE_AUTHORITY_V27
+# Canonical parser route fields override prose-derived route values.
+def _canonical_route_value_v27(raw_response: dict[str, Any], *names: str) -> str | None:
+    if not isinstance(raw_response, dict):
+        return None
+
+    sources = [
+        raw_response,
+        raw_response.get("handoff_payload"),
+        raw_response.get("input_resolution"),
+        raw_response.get("shipment_input"),
+        raw_response.get("logistics_input"),
+        raw_response.get("shopping_request"),
+    ]
+
+    for source in sources:
+        if not isinstance(source, dict):
+            continue
+        for name in names:
+            value = source.get(name)
+            if isinstance(value, str) and value.strip():
+                return value.strip().strip(".,;")
+    return None
+
+
+def _sync_canonical_route_v27(payload: dict[str, Any], raw_response: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(payload, dict):
+        return payload
+
+    advice = payload.get("trade_terms_advice")
+    if not isinstance(advice, dict):
+        return payload
+
+    origin = _canonical_route_value_v27(
+        raw_response, "origin_country", "origin", "country_from"
+    )
+    destination = _canonical_route_value_v27(
+        raw_response, "destination_country", "destination", "country_to"
+    )
+
+    if origin:
+        advice["origin_country"] = origin
+    if destination:
+        advice["destination_country"] = destination
+
+    payload["trade_terms_advice"] = advice
+    return payload
+
+
 def _attach_backend_validation(payload: dict[str, Any], raw_response: dict[str, Any]) -> dict[str, Any]:
     contract_result = validate_user_agent_response(raw_response)
 
@@ -77,6 +126,10 @@ def _build_backend_payload(
     payload["trade_terms_advice"] = build_trade_terms_advice(
         raw_response,
         request_text=str(input_source) if request_type == "text" else None,
+    )
+    payload = _sync_canonical_route_v27(
+        payload,
+        raw_response,
     )
     payload["insurance_advice"] = build_insurance_advice(
         {
