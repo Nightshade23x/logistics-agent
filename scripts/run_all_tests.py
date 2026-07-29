@@ -63,6 +63,7 @@ TEST_COMMANDS = [
     [sys.executable, "scripts/system_health_check.py"],
     [sys.executable, "scripts/test_text_shipment_parser_multi_item.py"],
     [sys.executable, "scripts/test_container_planning_multi_item_consistency.py"],
+    [sys.executable, "scripts/test_empty_state_simple_tabs_v38.py"],
 ]
 
 

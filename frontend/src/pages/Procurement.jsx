@@ -1,6 +1,9 @@
 import { useState } from "react";
 import Badge from "../components/Badge.jsx";
 import ResultGate from "../components/ResultGate.jsx";
+import ViewControls from "../components/ViewControls.jsx";
+import SimplePageGuide from "../components/SimplePageGuide.jsx";
+import { useStore } from "../store.jsx";
 import { api } from "../api.js";
 import { cleanText, formatValue, humanizeKey, uniq } from "../utils/displayFormat.js";
 
@@ -158,14 +161,16 @@ function ShoppingPlayground() {
 }
 
 export default function Procurement() {
+  const { userView } = useStore();
   return (
     <>
       <div className="page-header">
         <div>
-          <div className="page-title">Procurement</div>
-          <div className="page-subtitle">Supplier shortlist, commercial gaps, negotiation checklist, and purchase-order readiness.</div>
-        </div>
+          <div className="page-title">{userView === "simple" ? "Suppliers and buying steps" : "Procurement"}</div>
+          <div className="page-subtitle">{userView === "simple" ? "Review supplier options, missing buying details, and what to confirm before ordering." : "Supplier shortlist, commercial gaps, negotiation checklist, and purchase-order readiness."}</div>
+        </div><ViewControls compact />
       </div>
+      <SimplePageGuide title="What to check before buying" items={["Compare price, delivery time, payment terms, and reliability.", "Confirm packing, dimensions, weight, and cargo value before shipping.", "Do not issue a purchase order until missing commercial details are confirmed."]} />
 
       <ResultGate>
         {(result) => {
@@ -219,9 +224,7 @@ export default function Procurement() {
                 </div>
               </div>
 
-              <div className="content-col">
-                <ShoppingPlayground />
-              </div>
+              {userView === "advanced" && <div className="content-col"><ShoppingPlayground /></div>}
             </div>
           );
         }}

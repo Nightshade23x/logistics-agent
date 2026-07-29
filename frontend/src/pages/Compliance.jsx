@@ -1,5 +1,8 @@
 import Badge from "../components/Badge.jsx";
 import ResultGate from "../components/ResultGate.jsx";
+import ViewControls from "../components/ViewControls.jsx";
+import SimplePageGuide from "../components/SimplePageGuide.jsx";
+import { useStore } from "../store.jsx";
 import { cleanText, formatValue, groupItems, humanizeKey, uniq } from "../utils/displayFormat.js";
 
 function arrayValue(value) {
@@ -145,14 +148,16 @@ function ClarificationGroups({ questions }) {
 }
 
 export default function Compliance() {
+  const { userView } = useStore();
   return (
     <>
       <div className="page-header">
         <div>
-          <div className="page-title">Compliance & Documents</div>
-          <div className="page-subtitle">Document checklist, trade terms, insurance, and compliance readiness.</div>
-        </div>
+          <div className="page-title">{userView === "simple" ? "Documents and shipping rules" : "Compliance & Documents"}</div>
+          <div className="page-subtitle">{userView === "simple" ? "See which documents are needed and which checks must happen before booking." : "Document checklist, trade terms, insurance, and compliance readiness."}</div>
+        </div><ViewControls compact />
       </div>
+      <SimplePageGuide title="Use this as a preparation checklist" items={["Required documents are normally needed for the shipment.", "Conditional documents depend on cargo, route, or transport mode.", "Review status means a person or connected specialist still needs to confirm something."]} />
 
       <ResultGate>
         {(result) => {

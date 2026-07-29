@@ -1,5 +1,8 @@
 import { useEffect, useState } from "react";
 import { api } from "../api.js";
+import ViewControls from "../components/ViewControls.jsx";
+import SimplePageGuide from "../components/SimplePageGuide.jsx";
+import { useStore } from "../store.jsx";
 
 
 function statusLabel(value) {
@@ -34,6 +37,7 @@ function ProviderCard({ provider, health }) {
 
 
 export default function Integrations() {
+  const { userView } = useStore();
   const [catalog, setCatalog] = useState(null);
   const [health, setHealth] = useState(null);
   const [quotes, setQuotes] = useState(null);
@@ -102,28 +106,22 @@ export default function Integrations() {
     <>
       <div className="page-header">
         <div>
-          <div className="page-title">Company and carrier integrations</div>
-          <div className="page-subtitle">Connect approved APIs, check their status, and compare normalized shipment quotes.</div>
+          <div className="page-title">{userView === "simple" ? "Shipping company connections" : "Company and carrier integrations"}</div>
+          <div className="page-subtitle">{userView === "simple" ? "Check which shipping services are connected and compare clearly labelled estimates." : "Connect approved APIs, check their status, and compare normalized shipment quotes."}</div>
         </div>
-        <button className="btn" type="button" onClick={refresh} disabled={loading}>Refresh connections</button>
+        <div className="page-actions"><ViewControls compact /><button className="btn" type="button" onClick={refresh} disabled={loading}>Refresh connections</button></div>
       </div>
+      <SimplePageGuide title="Live price or demonstration?" items={["Live API means the price came from a connected carrier service.", "Demo estimate is for testing and is not a bookable carrier price.", "Always confirm final price and service conditions before booking."]} />
 
       <div className="integration-explainer" role="note">
         <strong>What this means:</strong> demo estimates are clearly separated from live carrier prices. Credentials stay on the backend and are never shown in this page.
       </div>
 
-      <details className="integration-admin-details">
+      {userView === "advanced" && <details className="integration-admin-details">
         <summary>Administrator access</summary>
         <label htmlFor="integration-api-key">API access key, only when your administrator enabled one</label>
-        <input
-          id="integration-api-key"
-          className="form-input"
-          type="password"
-          value={apiKey}
-          onChange={(event) => setApiKey(event.target.value)}
-          autoComplete="off"
-        />
-      </details>
+        <input id="integration-api-key" className="form-input" type="password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} autoComplete="off" />
+      </details>}
 
       {error && <div className="error-banner" role="alert">{error}</div>}
       <div aria-live="polite" className="sr-only">{loading ? "Checking integrations" : "Integration check complete"}</div>
@@ -137,7 +135,7 @@ export default function Integrations() {
       <div className="card integration-quote-card">
         <div className="card-header">
           <div>
-            <div className="card-title">Try the standard quote contract</div>
+            <div className="card-title">{userView === "simple" ? "Compare shipping estimates" : "Try the standard quote contract"}</div>
             <div className="section-muted">One request format can be sent to every configured provider.</div>
           </div>
         </div>

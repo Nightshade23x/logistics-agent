@@ -2,6 +2,9 @@ import Badge from "../components/Badge.jsx";
 import Kpi from "../components/Kpi.jsx";
 import ResultGate from "../components/ResultGate.jsx";
 import Container3DVisualizer from "../components/Container3DVisualizer.jsx";
+import ViewControls from "../components/ViewControls.jsx";
+import SimplePageGuide from "../components/SimplePageGuide.jsx";
+import { useStore } from "../store.jsx";
 
 
 // CONTAINER_PLANNING_METRICS_V7
@@ -239,14 +242,17 @@ function resolveLoadingSequence(visualizer) {
 }
 
 export default function ContainerPlanning() {
+  const { userView } = useStore();
   return (
     <>
       <div className="page-header">
         <div>
-          <div className="page-title">Container Planning</div>
-          <div className="page-subtitle">Output of app/logistics_agent.py — container fit, loading sequence, and route.</div>
+          <div className="page-title">{userView === "simple" ? "How your cargo fits" : "Container Planning"}</div>
+          <div className="page-subtitle">{userView === "simple" ? "See the recommended container, space used, fit result, and loading order." : "Output of app/logistics_agent.py — container fit, loading sequence, and route."}</div>
         </div>
+        <ViewControls compact />
       </div>
+      <SimplePageGuide title="Container terms in plain language" items={["CBM is the total space your cargo takes up.", "Utilization is the percentage of the container being used.", "Fit check shows whether the cargo appears suitable for that container."]}>The 3D view is a planning preview, not a certified loading plan.</SimplePageGuide>
 
       <ResultGate>
         {(result) => {
@@ -270,7 +276,7 @@ export default function ContainerPlanning() {
           return (
             <>
               <div className="kpi-grid">
-                <Kpi label="Total CBM" value={canonical.totalCbm} unit="m³" tone="blue" />
+                <Kpi label={userView === "simple" ? "Total cargo space" : "Total CBM"} value={canonical.totalCbm} unit="m³" tone="blue" />
                 <Kpi
                   label="Total Weight"
                   value={canonical.weightKnown ? canonical.totalWeightKg : "Not confirmed"}
@@ -294,7 +300,7 @@ export default function ContainerPlanning() {
                   </div>
 
                   <div className="card">
-                    <div className="card-header"><div className="card-title">Cargo Mix</div></div>
+                    <div className="card-header"><div className="card-title">{userView === "simple" ? "What is being loaded" : "Cargo Mix"}</div></div>
                     <div className="card-body tight">
                       <div className="table-wrap">
                         <table className="table">
@@ -319,7 +325,7 @@ export default function ContainerPlanning() {
                   </div>
 
                   <div className="card">
-                    <div className="card-header"><div className="card-title">Loading Sequence</div></div>
+                    <div className="card-header"><div className="card-title">{userView === "simple" ? "Suggested loading order" : "Loading Sequence"}</div></div>
                     <div className="card-body tight">
                       <div className="table-wrap">
                         <table className="table">
@@ -362,7 +368,7 @@ export default function ContainerPlanning() {
 
                   <div className="card">
                     <div className="card-header">
-                      <div className="card-title">Fit Check</div>
+                      <div className="card-title">{userView === "simple" ? "Does it fit?" : "Fit Check"}</div>
                       <Badge status={lv.fit_check?.status} />
                     </div>
                     <div className="card-body">

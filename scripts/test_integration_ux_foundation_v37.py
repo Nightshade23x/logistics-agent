@@ -65,6 +65,7 @@ def main():
 
     files = {
         "dashboard": ROOT / "frontend" / "src" / "pages" / "Dashboard.jsx",
+        "controls": ROOT / "frontend" / "src" / "components" / "ViewControls.jsx",
         "integrations": ROOT / "frontend" / "src" / "pages" / "Integrations.jsx",
         "api": ROOT / "frontend" / "src" / "api.js",
         "app": ROOT / "frontend" / "src" / "App.jsx",
@@ -75,7 +76,8 @@ def main():
     source = {name: path.read_text(encoding="utf-8") for name, path in files.items()}
     require("USER_FRIENDLY_VIEW_V37" in source["dashboard"], "friendly view marker missing")
     require('aria-live="polite"' in source["dashboard"], "Dashboard live region missing")
-    require("Simple view" in source["dashboard"] and "Advanced view" in source["dashboard"], "view modes missing")
+    require("ViewControls" in source["dashboard"], "Dashboard view controls missing")
+    require("Simple view" in source["controls"] and "Advanced view" in source["controls"], "view modes missing")
     require("Demo estimate" in source["integrations"] and "Live API" in source["integrations"], "quote-source labels missing")
     require("integrationQuotes" in source["api"], "frontend quote API missing")
     require('path="/integrations"' in source["app"], "Integrations route missing")

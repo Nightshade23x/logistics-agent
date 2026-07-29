@@ -4,6 +4,7 @@ import { api } from "../api.js";
 import Badge from "../components/Badge.jsx";
 import AnswerCard from "../components/AnswerCard.jsx";
 import NeedMoreInfoCard from "../components/NeedMoreInfoCard.jsx";
+import ViewControls from "../components/ViewControls.jsx";
 import { useStore } from "../store.jsx";
 import { humanizeKey, humanizeStatus } from "../utils/displayFormat.js";
 
@@ -93,10 +94,7 @@ function ResultDecisionStrip({ result, onBreakdown }) {
 }
 
 const DASHBOARD_MODE_KEY = "meridian.dashboard.mode";
-const DASHBOARD_TEXT_KEY = "meridian.dashboard.text";
 const DASHBOARD_JSON_KEY = "meridian.dashboard.json";
-const USER_VIEW_KEY = "meridian.user.view";
-const FONT_SCALE_KEY = "meridian.user.fontScale";
 const USER_FRIENDLY_VIEW_V37 = true;
 
 function loadDashboardValue(key, fallback) {
@@ -114,18 +112,16 @@ function loadDashboardValue(key, fallback) {
 
 
 export default function Dashboard() {
-  const { result, history, setResult, loadFromHistory, clearCurrent, clearAll } = useStore();
+  const { result, history, setResult, loadFromHistory, clearCurrent, clearAll, userView } = useStore();
   const navigate = useNavigate();
 
   const [mode, setMode] = useState(() => loadDashboardValue(DASHBOARD_MODE_KEY, "text"));
-  const [text, setText] = useState(() => loadDashboardValue(DASHBOARD_TEXT_KEY, ""));
+  const [text, setText] = useState("");
   const [jsonText, setJsonText] = useState(() => loadDashboardValue(DASHBOARD_JSON_KEY, JSON.stringify(SAMPLE_JSON, null, 2)));
   const [files, setFiles] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [showCurrentResult, setShowCurrentResult] = useState(() => Boolean(result));
-  const [userView, setUserView] = useState(() => loadDashboardValue(USER_VIEW_KEY, "simple"));
-  const [fontScale, setFontScale] = useState(() => loadDashboardValue(FONT_SCALE_KEY, "normal"));
+  const [showCurrentResult, setShowCurrentResult] = useState(false);
 
   useEffect(() => {
     try {
@@ -134,10 +130,6 @@ export default function Dashboard() {
         mode
       );
 
-      localStorage.setItem(
-        DASHBOARD_TEXT_KEY,
-        text
-      );
 
       localStorage.setItem(
         DASHBOARD_JSON_KEY,
@@ -147,21 +139,10 @@ export default function Dashboard() {
     } catch {
       // Keep the app usable if browser storage is unavailable.
     }
-  }, [mode, text, jsonText]);
+  }, [mode, jsonText]);
 
 
-  useEffect(() => {
-    try {
-      localStorage.setItem(USER_VIEW_KEY, userView);
-      localStorage.setItem(FONT_SCALE_KEY, fontScale);
-    } catch {
-      // Keep the app usable if browser storage is unavailable.
-    }
-    document.documentElement.dataset.fontScale = fontScale;
-    if (userView === "simple" && mode !== "text") {
-      setMode("text");
-    }
-  }, [userView, fontScale, mode]);
+  useEffect(() => { if (userView === "simple" && mode !== "text") setMode("text"); }, [userView, mode]);
 
 
   useEffect(() => {
@@ -195,6 +176,7 @@ export default function Dashboard() {
 
   async function submit() {
     setError(null);
+    if (mode === "text" && !text.trim()) { setShowCurrentResult(false); setError("Type a request or choose an example before creating a shipping plan."); return; }
     setLoading(true);
 
     try {
@@ -219,7 +201,7 @@ export default function Dashboard() {
     }
   }
 
-  const previewRows = parsePreview(text);
+  const previewRows = text.trim() ? parsePreview(text) : []; // EMPTY_STATE_SIMPLE_TABS_V38
 
   return (
     <>
@@ -228,18 +210,7 @@ export default function Dashboard() {
           <div className="page-title">Shipping assistant</div>
           <div className="page-subtitle">Describe what you need in your own words. The system will calculate, explain, and show what must happen next.</div>
         </div>
-        <div className="accessibility-controls" aria-label="Display preferences">
-          <div className="view-toggle" role="group" aria-label="Information detail">
-            <button type="button" className={userView === "simple" ? "active" : ""} aria-pressed={userView === "simple"} onClick={() => setUserView("simple")}>Simple view</button>
-            <button type="button" className={userView === "advanced" ? "active" : ""} aria-pressed={userView === "advanced"} onClick={() => setUserView("advanced")}>Advanced view</button>
-          </div>
-          <div className="font-scale-controls" role="group" aria-label="Text size">
-            <span>Text size</span>
-            {["compact", "normal", "large"].map((value, index) => (
-              <button type="button" key={value} className={fontScale === value ? "active" : ""} aria-pressed={fontScale === value} aria-label={`${value} text`} onClick={() => setFontScale(value)}>{index === 0 ? "A−" : index === 1 ? "A" : "A+"}</button>
-            ))}
-          </div>
-        </div>
+        <ViewControls />
       </div>
 
       {userView === "simple" && (
@@ -286,6 +257,7 @@ export default function Dashboard() {
                 <div className="helper-text" id="shipping-request-help">
                   {userView === "simple" ? "Useful details include: what it is, how many, where it starts, where it goes, size, weight, and whether it is fragile or dangerous." : "Include product, quantity, origin, destination, incoterm, budget, CBM, weight, and cost inputs if known."}
                 </div>
+                <div className="placeholder-safety-note">The faded example inside the box is only a hint. It is not a request and will never run by itself.</div>
 
                 <div className="sample-label">Try an example</div>
                 <div className="example-card-grid">
@@ -342,16 +314,13 @@ export default function Dashboard() {
             </div>
           </div>
           <div className="card-body">
-            {mode === "text" && (
+            {mode === "text" && (text.trim() ? (
               <div className="preview-list-v2">
-                {previewRows.map(([label, value]) => (
-                  <div className="preview-row-v2" key={label}>
-                    <span>{label}</span>
-                    <strong>{value}</strong>
-                  </div>
-                ))}
+                {previewRows.map(([label, value]) => <div className="preview-row-v2" key={label}><span>{label}</span><strong>{value}</strong></div>)}
               </div>
-            )}
+            ) : (
+              <div className="preview-empty-v38"><strong>Nothing entered yet</strong><p>Start typing in the request box or choose an example. This panel updates before anything is sent.</p></div>
+            ))}
             {mode === "json" && <pre className="json-view">{jsonText}</pre>}
             {mode === "documents" && (
               <p style={{ color: "var(--text-secondary)" }}>

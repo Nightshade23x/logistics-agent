@@ -1,6 +1,9 @@
 import Badge from "../components/Badge.jsx";
 import AnswerCard from "../components/AnswerCard.jsx";
 import ResultGate from "../components/ResultGate.jsx";
+import ViewControls from "../components/ViewControls.jsx";
+import SimplePageGuide from "../components/SimplePageGuide.jsx";
+import { useStore } from "../store.jsx";
 import { cleanText, formatValue, groupItems, humanizeKey, uniq } from "../utils/displayFormat.js";
 
 import { normalizeFinalReportPayload } from "../utils/finalReportPayload";
@@ -86,19 +89,17 @@ function BookingReadiness({ br }) {
 }
 
 export default function Reports() {
+  const { userView } = useStore();
   return (
     <>
       <div className="page-header">
         <div>
-          <div className="page-title">Reports</div>
-          <div className="page-subtitle">Final answer, grouped action plan, missing information, and booking readiness.</div>
+          <div className="page-title">{userView === "simple" ? "Your final checklist" : "Reports"}</div>
+          <div className="page-subtitle">{userView === "simple" ? "Review the answer, missing details, next actions, and booking readiness in one place." : "Final answer, grouped action plan, missing information, and booking readiness."}</div>
         </div>
-        <div className="page-actions">
-          <button className="btn" onClick={() => downloadJson(window.__lastResult || {}, "shipment-report.json")}>
-            Export technical JSON
-          </button>
-        </div>
+        <div className="page-actions"><ViewControls compact />{userView === "advanced" && <button className="btn" onClick={() => downloadJson(window.__lastResult || {}, "shipment-report.json")}>Export technical JSON</button>}</div>
       </div>
+      <SimplePageGuide title="Work from top to bottom" items={["Read the final answer first.", "Complete high-priority missing information and immediate actions.", "Use booking readiness to see whether the shipment can move to a carrier booking."]} />
 
       <ResultGate>
         {(result) => {

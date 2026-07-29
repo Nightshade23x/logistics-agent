@@ -1,6 +1,9 @@
 import { useState } from "react";
 import Badge from "../components/Badge.jsx";
 import ResultGate from "../components/ResultGate.jsx";
+import ViewControls from "../components/ViewControls.jsx";
+import SimplePageGuide from "../components/SimplePageGuide.jsx";
+import { useStore } from "../store.jsx";
 import { api } from "../api.js";
 import { cleanText, humanizeKey } from "../utils/displayFormat.js";
 
@@ -132,14 +135,16 @@ function statusForPartner(result, key) {
 }
 
 export default function PartnerAgents() {
+  const { userView } = useStore();
   return (
     <>
       <div className="page-header">
         <div>
-          <div className="page-title">Agent Diagnostics</div>
-          <div className="page-subtitle">Monitor specialist agent availability and test direct agent calls. Local advisory fallback keeps the main app usable when live partner services are not connected.</div>
-        </div>
+          <div className="page-title">{userView === "simple" ? "Specialist checks" : "Agent Diagnostics"}</div>
+          <div className="page-subtitle">{userView === "simple" ? "See which specialist checks are available and whether they were used for the latest plan." : "Monitor specialist agent availability and test direct agent calls. Local advisory fallback keeps the main app usable when live partner services are not connected."}</div>
+        </div><ViewControls compact />
       </div>
+      <SimplePageGuide title="What the specialist checks do" items={["Risk checks country and sanctions indicators.", "Compliance checks restrictions, permits, and documents.", "Trader checks duties, HS codes, agreements, and export strategy.", "Finance checks freight, insurance, taxes, landed cost, and budget."]}>Not connected means the local fallback was used; it does not mean the main app failed.</SimplePageGuide>
 
       <div className="content-grid">
         <div className="content-col">
@@ -181,9 +186,7 @@ export default function PartnerAgents() {
           </ResultGate>
         </div>
 
-        <div className="content-col">
-          <AgentPlayground />
-        </div>
+        {userView === "advanced" && <div className="content-col"><AgentPlayground /></div>}
       </div>
     </>
   );
