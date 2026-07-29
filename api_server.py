@@ -23,14 +23,15 @@ from starlette.requests import Request as _StarletteRequest
 from starlette.responses import Response as _StarletteResponse
 from app.frontend_response_cleanup import cleanup_frontend_response
 
+import os
 import shutil
 import tempfile
 from pathlib import Path
 from typing import Any, Optional
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.backend_service import (
     process_document_files_request,
@@ -42,8 +43,18 @@ from app.shopping_agent import build_shopping_plan
 from app.document_service import run_document_agent_from_text
 from app.partner_review_service import run_partner_review
 from app.agent_router import detect_text_intent
+from app.integrations.service import (
+    check_integrations,
+    get_carrier_quotes,
+    get_integration_contract,
+    list_integrations,
+)
 
-app = FastAPI(title="Logistics Agent API", version="1.0.0")
+app = FastAPI(
+    title="Logistics Agent API",
+    version="1.1.0",
+    description="Shipping-planning API with provider-neutral company and carrier integrations.",
+)
 
 
 
@@ -158,6 +169,21 @@ class IntentRequest(BaseModel):
     text: str
 
 
+class CarrierQuoteRequest(BaseModel):
+    origin_country: str
+    destination_country: str
+    total_weight_kg: Optional[float] = None
+    total_cbm: Optional[float] = None
+    package_count: int = 1
+    declared_value_usd: Optional[float] = None
+    currency: str = "USD"
+    hazardous: bool = False
+    pickup_postal_code: Optional[str] = None
+    delivery_postal_code: Optional[str] = None
+    provider_ids: Optional[list[str]] = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
 # ---------------------------------------------------------------------------
 # Health
 # ---------------------------------------------------------------------------
@@ -250,3 +276,50 @@ def agent_intent(body: IntentRequest) -> dict[str, Any]:
         return detect_text_intent(body.text)
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+# ---------------------------------------------------------------------------
+# 3) Provider-neutral company/carrier integrations
+# INTEGRATION_UX_FOUNDATION_V37
+# ---------------------------------------------------------------------------
+
+def _require_optional_integration_key(x_api_key: Optional[str]) -> None:
+    expected = str(os.getenv("LOGISTICS_INTEGRATION_API_KEY") or "").strip()
+    if expected and x_api_key != expected:
+        raise HTTPException(status_code=401, detail="A valid X-API-Key is required for integration endpoints.")
+
+
+def _model_payload(body: BaseModel) -> dict[str, Any]:
+    if hasattr(body, "model_dump"):
+        return body.model_dump()
+    return body.dict()
+
+
+@app.get("/api/integrations", tags=["Integrations"])
+def integrations_list(x_api_key: Optional[str] = Header(default=None, alias="X-API-Key")) -> dict[str, Any]:
+    _require_optional_integration_key(x_api_key)
+    return list_integrations()
+
+
+@app.get("/api/integrations/health", tags=["Integrations"])
+def integrations_health(x_api_key: Optional[str] = Header(default=None, alias="X-API-Key")) -> dict[str, Any]:
+    _require_optional_integration_key(x_api_key)
+    return check_integrations()
+
+
+@app.get("/api/integrations/contract", tags=["Integrations"])
+def integrations_contract(x_api_key: Optional[str] = Header(default=None, alias="X-API-Key")) -> dict[str, Any]:
+    _require_optional_integration_key(x_api_key)
+    return get_integration_contract()
+
+
+@app.post("/api/integrations/quotes", tags=["Integrations"])
+def integrations_quotes(
+    body: CarrierQuoteRequest,
+    x_api_key: Optional[str] = Header(default=None, alias="X-API-Key"),
+) -> dict[str, Any]:
+    _require_optional_integration_key(x_api_key)
+    try:
+        return get_carrier_quotes(_model_payload(body))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc

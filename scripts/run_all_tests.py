@@ -97,3 +97,15 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+# RUN_INTEGRATION_UX_FOUNDATION_V37
+if __name__ == "__main__":
+    import subprocess as _v37_subprocess
+    import sys as _v37_sys
+
+    _v37_completed = _v37_subprocess.run(
+        [_v37_sys.executable, "scripts/test_integration_ux_foundation_v37.py"],
+        check=False,
+    )
+    if _v37_completed.returncode != 0:
+        raise SystemExit(_v37_completed.returncode)

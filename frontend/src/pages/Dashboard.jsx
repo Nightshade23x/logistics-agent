@@ -95,6 +95,9 @@ function ResultDecisionStrip({ result, onBreakdown }) {
 const DASHBOARD_MODE_KEY = "meridian.dashboard.mode";
 const DASHBOARD_TEXT_KEY = "meridian.dashboard.text";
 const DASHBOARD_JSON_KEY = "meridian.dashboard.json";
+const USER_VIEW_KEY = "meridian.user.view";
+const FONT_SCALE_KEY = "meridian.user.fontScale";
+const USER_FRIENDLY_VIEW_V37 = true;
 
 function loadDashboardValue(key, fallback) {
   try {
@@ -121,6 +124,8 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [showCurrentResult, setShowCurrentResult] = useState(() => Boolean(result));
+  const [userView, setUserView] = useState(() => loadDashboardValue(USER_VIEW_KEY, "simple"));
+  const [fontScale, setFontScale] = useState(() => loadDashboardValue(FONT_SCALE_KEY, "normal"));
 
   useEffect(() => {
     try {
@@ -143,6 +148,20 @@ export default function Dashboard() {
       // Keep the app usable if browser storage is unavailable.
     }
   }, [mode, text, jsonText]);
+
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(USER_VIEW_KEY, userView);
+      localStorage.setItem(FONT_SCALE_KEY, fontScale);
+    } catch {
+      // Keep the app usable if browser storage is unavailable.
+    }
+    document.documentElement.dataset.fontScale = fontScale;
+    if (userView === "simple" && mode !== "text") {
+      setMode("text");
+    }
+  }, [userView, fontScale, mode]);
 
 
   useEffect(() => {
@@ -206,41 +225,66 @@ export default function Dashboard() {
     <>
       <div className="page-header">
         <div>
-          <div className="page-title">Dashboard</div>
-          <div className="page-subtitle">Submit a sourcing, logistics, finance, or document request and let the agent pipeline prepare a first-pass plan.</div>
+          <div className="page-title">Shipping assistant</div>
+          <div className="page-subtitle">Describe what you need in your own words. The system will calculate, explain, and show what must happen next.</div>
+        </div>
+        <div className="accessibility-controls" aria-label="Display preferences">
+          <div className="view-toggle" role="group" aria-label="Information detail">
+            <button type="button" className={userView === "simple" ? "active" : ""} aria-pressed={userView === "simple"} onClick={() => setUserView("simple")}>Simple view</button>
+            <button type="button" className={userView === "advanced" ? "active" : ""} aria-pressed={userView === "advanced"} onClick={() => setUserView("advanced")}>Advanced view</button>
+          </div>
+          <div className="font-scale-controls" role="group" aria-label="Text size">
+            <span>Text size</span>
+            {["compact", "normal", "large"].map((value, index) => (
+              <button type="button" key={value} className={fontScale === value ? "active" : ""} aria-pressed={fontScale === value} aria-label={`${value} text`} onClick={() => setFontScale(value)}>{index === 0 ? "A−" : index === 1 ? "A" : "A+"}</button>
+            ))}
+          </div>
         </div>
       </div>
+
+      {userView === "simple" && (
+        <section className="friendly-steps" aria-label="How to use the shipping assistant">
+          <div><span>1</span><strong>Describe</strong><p>Tell us what is moving and where it is going.</p></div>
+          <div><span>2</span><strong>Review</strong><p>Check the details the system understood.</p></div>
+          <div><span>3</span><strong>Complete</strong><p>Answer only the missing questions.</p></div>
+          <div><span>4</span><strong>Decide</strong><p>See costs, risks, documents, and next steps.</p></div>
+        </section>
+      )}
 
       <div className="request-panel request-panel-v2">
         <div className="card request-builder-v2">
           <div className="card-header">
             <div>
-              <div className="card-title">New trade request</div>
-              <div className="section-muted">Describe what you want to source, ship, calculate, or check.</div>
+              <div className="card-title">{userView === "simple" ? "What do you need help with?" : "New trade request"}</div>
+              <div className="section-muted">{userView === "simple" ? "Use normal sentences. You do not need to know logistics terms." : "Describe what you want to source, ship, calculate, or check."}</div>
             </div>
           </div>
 
           <div className="card-body">
-            <div className="segment">
-              {["text", "json", "documents"].map((m) => (
-                <button key={m} className={mode === m ? "active" : ""} onClick={() => setMode(m)}>
-                  {m === "text" ? "Free text" : m === "json" ? "Structured JSON" : "Documents"}
-                </button>
-              ))}
-            </div>
+            {userView === "advanced" && (
+              <div className="segment" role="tablist" aria-label="Request input type">
+                {["text", "json", "documents"].map((m) => (
+                  <button type="button" role="tab" aria-selected={mode === m} key={m} className={mode === m ? "active" : ""} onClick={() => setMode(m)}>
+                    {m === "text" ? "Free text" : m === "json" ? "Structured JSON" : "Documents"}
+                  </button>
+                ))}
+              </div>
+            )}
 
             {mode === "text" && (
               <div className="form-group">
-                <label className="form-label">Request</label>
+                <label className="form-label" htmlFor="shipping-request">{userView === "simple" ? "Tell us what you want to do" : "Request"}</label>
                 <textarea
+                  id="shipping-request"
                   className="form-textarea request-textarea-v2"
                   value={text}
                   onChange={(e) => setText(e.target.value)}
-                  placeholder="Example: Find suppliers for 1000 ceramic tiles from India to Germany using CIF. Budget 12000 USD."
+                  aria-describedby="shipping-request-help"
+                  placeholder={userView === "simple" ? "Example: Ship 10 boxes from India to Germany. Each box weighs 25 kg and the contents are fragile." : "Example: Find suppliers for 1000 ceramic tiles from India to Germany using CIF. Budget 12000 USD."}
                 />
 
-                <div className="helper-text">
-                  Include product, quantity, origin, destination, incoterm, budget, CBM, weight, and cost inputs if known.
+                <div className="helper-text" id="shipping-request-help">
+                  {userView === "simple" ? "Useful details include: what it is, how many, where it starts, where it goes, size, weight, and whether it is fragile or dangerous." : "Include product, quantity, origin, destination, incoterm, budget, CBM, weight, and cost inputs if known."}
                 </div>
 
                 <div className="sample-label">Try an example</div>
@@ -270,12 +314,13 @@ export default function Dashboard() {
               </div>
             )}
 
-            {error && <div className="error-banner">{error}</div>}
+            {error && <div className="error-banner" role="alert">{error}</div>}
+            <div className="sr-only" aria-live="polite">{loading ? "The agents are preparing your result." : ""}</div>
 
             <div className="request-action-row-v2" style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginTop: 12 }}>
-              <button className="btn btn-primary run-request-v2" onClick={submit} disabled={loading}>
+              <button className="btn btn-primary run-request-v2" type="button" onClick={submit} disabled={loading || (mode === "text" && !text.trim())}>
                 {loading && <span className="spinner" />}
-                {loading ? "Running agents..." : "Run agent pipeline"}
+                {loading ? "Preparing your result..." : userView === "simple" ? "Create my shipping plan" : "Run agent pipeline"}
               </button>
 
               <button className="btn" onClick={clearCurrentWorkspace}>
@@ -292,8 +337,8 @@ export default function Dashboard() {
         <div className="card request-preview-v2">
           <div className="card-header">
             <div>
-              <div className="card-title">Parsed preview</div>
-              <div className="section-muted">Quick check before sending.</div>
+              <div className="card-title">{userView === "simple" ? "What we understood" : "Parsed preview"}</div>
+              <div className="section-muted">{userView === "simple" ? "Check these details before creating the plan." : "Quick check before sending."}</div>
             </div>
           </div>
           <div className="card-body">
@@ -318,6 +363,14 @@ export default function Dashboard() {
       </div>
 
       <ResultDecisionStrip result={showCurrentResult ? result : null} onBreakdown={() => navigate("/shipments")} />
+
+      {showCurrentResult && result && userView === "simple" && (
+        <div className="result-language-guide" role="note">
+          <strong>How to read this result</strong>
+          <span><b>Ready for planning</b> means the information is useful for a first review.</span>
+          <span><b>Ready to book</b> means the required details and checks are complete. These are not the same.</span>
+        </div>
+      )}
 
       {showCurrentResult && result && <AnswerCard result={result} />}
       {showCurrentResult && result && (

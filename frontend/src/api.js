@@ -18,6 +18,12 @@ async function handle(res) {
 
 const jsonHeaders = { "Content-Type": "application/json" };
 
+function integrationHeaders(apiKey = "", json = false) {
+  const headers = json ? { ...jsonHeaders } : {};
+  if (apiKey) headers["X-API-Key"] = apiKey;
+  return headers;
+}
+
 export const api = {
   health: () => fetch("/api/health").then(handle),
 
@@ -76,5 +82,22 @@ export const api = {
       method: "POST",
       headers: jsonHeaders,
       body: JSON.stringify({ text }),
+    }).then(handle),
+
+  // INTEGRATION_UX_FOUNDATION_V37 -----------------------------------------
+  integrations: (apiKey = "") =>
+    fetch("/api/integrations", { headers: integrationHeaders(apiKey) }).then(handle),
+
+  integrationHealth: (apiKey = "") =>
+    fetch("/api/integrations/health", { headers: integrationHeaders(apiKey) }).then(handle),
+
+  integrationContract: (apiKey = "") =>
+    fetch("/api/integrations/contract", { headers: integrationHeaders(apiKey) }).then(handle),
+
+  integrationQuotes: (payload, apiKey = "") =>
+    fetch("/api/integrations/quotes", {
+      method: "POST",
+      headers: integrationHeaders(apiKey, true),
+      body: JSON.stringify(payload),
     }).then(handle),
 };

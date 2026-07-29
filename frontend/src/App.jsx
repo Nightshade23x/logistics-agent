@@ -8,6 +8,7 @@ import Procurement from "./pages/Procurement.jsx";
 import Compliance from "./pages/Compliance.jsx";
 import PartnerAgents from "./pages/PartnerAgents.jsx";
 import Reports from "./pages/Reports.jsx";
+import Integrations from "./pages/Integrations.jsx";
 
 export default function App() {
   return (
@@ -23,6 +24,7 @@ export default function App() {
             <Route path="/procurement" element={<Procurement />} />
             <Route path="/compliance" element={<Compliance />} />
             <Route path="/partner-agents" element={<PartnerAgents />} />
+            <Route path="/integrations" element={<Integrations />} />
             <Route path="/reports" element={<Reports />} />
           </Routes>
         </main>

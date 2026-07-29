@@ -1,2 +1,7 @@
-
 streamlit
+fastapi
+uvicorn
+python-multipart
+httpx
+pydantic
+python-dotenv
