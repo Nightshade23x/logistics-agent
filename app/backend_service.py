@@ -10127,3 +10127,28 @@ def process_text_request(
         include_raw_response=include_raw_response,
     )
     return _v36_sync_completed_cost_answer(payload, user_text)
+
+# PROMPT_ROBUSTNESS_BACKEND_GATE_V41
+# This wrapper is intentionally last. It ensures API and React requests use the
+# validated interpreter even when earlier modules captured an older function.
+try:
+    if not getattr(process_text_request, "_prompt_robustness_backend_gate_v41", False):
+        _process_text_request_before_prompt_robustness_v41 = process_text_request
+
+        def process_text_request(user_text: str, include_raw_response: bool = False):
+            from app.llm_request_interpreter import run_backend_with_interpreter
+
+            def _deterministic_backend_v41(effective_text: str):
+                return _process_text_request_before_prompt_robustness_v41(
+                    effective_text,
+                    include_raw_response=include_raw_response,
+                )
+
+            return run_backend_with_interpreter(
+                user_text,
+                _deterministic_backend_v41,
+            )
+
+        process_text_request._prompt_robustness_backend_gate_v41 = True
+except Exception:
+    pass
