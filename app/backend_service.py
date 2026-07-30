@@ -10152,3 +10152,501 @@ try:
         process_text_request._prompt_robustness_backend_gate_v41 = True
 except Exception:
     pass
+
+# ADVERSARIAL_INPUT_AUTHORITY_V44
+# Final deterministic authority for corrections, invalid values, explicit unknowns,
+# and conflicts. This layer never calls an LLM and never invents shipment facts.
+_process_text_request_before_adversarial_input_authority_v44 = process_text_request
+
+
+def _v44_number(value):
+    try:
+        if value is None or isinstance(value, bool):
+            return None
+        return float(str(value).replace(",", "").strip())
+    except (TypeError, ValueError):
+        return None
+
+
+def _v44_clean_number(value):
+    number = _v44_number(value)
+    if number is None:
+        return None
+    rounded = round(number, 6)
+    if abs(rounded - round(rounded)) < 1e-9:
+        return int(round(rounded))
+    return rounded
+
+
+def _v44_weight_factor(unit):
+    normalized = str(unit or "").strip().lower().rstrip(".")
+    return {
+        "kg": 1.0,
+        "kgs": 1.0,
+        "kilogram": 1.0,
+        "kilograms": 1.0,
+        "lb": 0.45359237,
+        "lbs": 0.45359237,
+        "pound": 0.45359237,
+        "pounds": 0.45359237,
+    }.get(normalized)
+
+
+def _v44_length_factor(unit):
+    normalized = str(unit or "").strip().lower().rstrip(".")
+    return {
+        "m": 1.0,
+        "meter": 1.0,
+        "meters": 1.0,
+        "metre": 1.0,
+        "metres": 1.0,
+        "cm": 0.01,
+        "centimeter": 0.01,
+        "centimeters": 0.01,
+        "centimetre": 0.01,
+        "centimetres": 0.01,
+        "mm": 0.001,
+        "millimeter": 0.001,
+        "millimeters": 0.001,
+        "millimetre": 0.001,
+        "millimetres": 0.001,
+        "ft": 0.3048,
+        "foot": 0.3048,
+        "feet": 0.3048,
+        "in": 0.0254,
+        "inch": 0.0254,
+        "inches": 0.0254,
+    }.get(normalized)
+
+
+def _v44_sentences(text):
+    return [part.strip().lower() for part in re.split(r"[.!?;]+", str(text or "")) if part.strip()]
+
+
+def _v44_field_explicitly_unknown(text, field_terms):
+    unknown_markers = (
+        "unknown",
+        "not confirmed",
+        "not known",
+        "not available",
+        "unconfirmed",
+        "to be confirmed",
+        "tbc",
+        "not provided",
+        "missing",
+    )
+    for sentence in _v44_sentences(text):
+        if any(term in sentence for term in field_terms) and any(marker in sentence for marker in unknown_markers):
+            return True
+    return False
+
+
+def _v44_extract_correction(text):
+    patterns = [
+        r"(?i)\b(?:correction|actually|update|change)\s*[:,-]?\s*(?:the\s+)?quantity\s+(?:is|=|to)\s*(-?\d+(?:\.\d+)?)\s*,?\s*not\s*(-?\d+(?:\.\d+)?)\b",
+        r"(?i)\b(?:the\s+)?quantity\s+(?:is|=)\s*(-?\d+(?:\.\d+)?)\s*,?\s*not\s*(-?\d+(?:\.\d+)?)\b",
+        r"(?i)\b(?:make|change)\s+(?:the\s+)?quantity\s+(-?\d+(?:\.\d+)?)\s+instead\s+of\s+(-?\d+(?:\.\d+)?)\b",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, str(text or ""))
+        if match:
+            return _v44_number(match.group(1)), _v44_number(match.group(2))
+    return None
+
+
+def _v44_extract_quantity(text):
+    correction = _v44_extract_correction(text)
+    if correction:
+        return correction[0], correction[1], "correction"
+
+    match = re.search(
+        r"(?i)(?<![\d.])(-?\d+(?:\.\d+)?)\s+"
+        r"(crates?|boxes?|cartons?|pallets?|packs?|packages?|units?|pieces?|pcs|items?)\b",
+        str(text or ""),
+    )
+    if not match:
+        return None, None, None
+    return _v44_number(match.group(1)), None, match.group(2).lower()
+
+
+def _v44_package_quantity_matches(text):
+    pattern = re.compile(
+        r"(?i)(?<![\d.])(-?\d+(?:\.\d+)?)\s+"
+        r"(crates?|boxes?|cartons?|pallets?|packs?|packages?|units?|pieces?|pcs|items?)\b"
+    )
+    return [
+        (_v44_number(match.group(1)), match.group(2).lower())
+        for match in pattern.finditer(str(text or ""))
+    ]
+
+
+def _v44_is_multi_item_shipment(text):
+    # V42 already performs item-by-item parsing and aggregation. V44 must not
+    # replace those correct totals using only the first quantity/dimension pair.
+    positive_matches = [
+        item for item in _v44_package_quantity_matches(text)
+        if item[0] is not None and item[0] > 0
+    ]
+    return len(positive_matches) > 1
+
+
+def _v44_extract_per_unit_weight(text):
+    patterns = [
+        r"(?i)\beach(?:\s+[a-z][\w-]*){0,4}\s+(?:weighs?|weighing|has\s+(?:a\s+)?weight\s+of)\s*(-?\d+(?:\.\d+)?)\s*(kg|kgs|kilograms?|lb|lbs|pounds?)\b",
+        r"(?i)\bper(?:\s+[a-z][\w-]*){0,3}\s+(?:weight\s+)?(?:is\s+)?(-?\d+(?:\.\d+)?)\s*(kg|kgs|kilograms?|lb|lbs|pounds?)\b",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, str(text or ""))
+        if match:
+            factor = _v44_weight_factor(match.group(2))
+            value = _v44_number(match.group(1))
+            if factor is not None and value is not None:
+                return value * factor
+    return None
+
+
+def _v44_extract_explicit_total_weight(text):
+    patterns = [
+        r"(?i)\btotal(?:\s+shipment)?\s+weight\s*(?:is|=|:)?\s*(-?\d+(?:\.\d+)?)\s*(kg|kgs|kilograms?|lb|lbs|pounds?)\b",
+        r"(?i)\bshipment\s+weighs\s*(-?\d+(?:\.\d+)?)\s*(kg|kgs|kilograms?|lb|lbs|pounds?)\b",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, str(text or ""))
+        if match:
+            factor = _v44_weight_factor(match.group(2))
+            value = _v44_number(match.group(1))
+            if factor is not None and value is not None:
+                return value * factor
+    return None
+
+
+def _v44_extract_ambiguous_weight(text):
+    match = re.search(
+        r"(?i)(?<!each\s)\bweight\s*(?:is|=|:)?\s*(-?\d+(?:\.\d+)?)\s*(kg|kgs|kilograms?|lb|lbs|pounds?)\b",
+        str(text or ""),
+    )
+    if not match:
+        return None
+    factor = _v44_weight_factor(match.group(2))
+    value = _v44_number(match.group(1))
+    if factor is None or value is None:
+        return None
+    return value * factor
+
+
+def _v44_extract_dimensions(text):
+    unit = r"m|meters?|metres?|cm|centimeters?|centimetres?|mm|millimeters?|millimetres?|ft|feet|foot|in|inches?|inch"
+    pattern = re.compile(
+        rf"(?i)(-?\d+(?:\.\d+)?)\s*({unit})\s*(?:x|×|by)\s*"
+        rf"(-?\d+(?:\.\d+)?)\s*({unit})\s*(?:x|×|by)\s*"
+        rf"(-?\d+(?:\.\d+)?)\s*({unit})\b"
+    )
+    match = pattern.search(str(text or ""))
+    if not match:
+        return None
+    values = []
+    for index in (1, 3, 5):
+        raw_value = _v44_number(match.group(index))
+        factor = _v44_length_factor(match.group(index + 1))
+        if raw_value is None or factor is None:
+            return None
+        values.append(raw_value * factor)
+    return tuple(values)
+
+
+def _v44_sync_metric(payload, metric, value):
+    key_sets = {
+        "total_weight_kg": {"total_weight_kg", "shipment_weight_kg", "calculated_total_weight_kg"},
+        "total_cbm": {"total_cbm", "shipment_cbm", "calculated_total_cbm"},
+    }
+    targets = key_sets[metric]
+
+    def walk(obj):
+        if isinstance(obj, dict):
+            for key in list(obj.keys()):
+                if str(key).lower() in targets:
+                    obj[key] = value
+                else:
+                    walk(obj[key])
+        elif isinstance(obj, list):
+            for item in obj:
+                walk(item)
+
+    walk(payload)
+    metrics = payload.get("logistics_metrics")
+    if not isinstance(metrics, dict):
+        metrics = {}
+        payload["logistics_metrics"] = metrics
+    metrics[metric] = value
+
+    handoff = payload.get("handoff_payload")
+    if isinstance(handoff, dict):
+        handoff[metric] = value
+
+
+def _v44_sync_corrected_quantity(payload, corrected, superseded):
+    corrected_clean = _v44_clean_number(corrected)
+    superseded_number = _v44_number(superseded)
+
+    quantity_keys = {"quantity", "total_quantity", "unit_count", "package_count", "cargo_units"}
+
+    def walk(obj):
+        if isinstance(obj, dict):
+            for key in list(obj.keys()):
+                lowered = str(key).lower()
+                if lowered in quantity_keys:
+                    current = _v44_number(obj.get(key))
+                    if current is None or current == 0 or superseded_number is None or abs(current - superseded_number) < 1e-9:
+                        obj[key] = corrected_clean
+                else:
+                    walk(obj[key])
+        elif isinstance(obj, list):
+            for item in obj:
+                walk(item)
+
+    walk(payload)
+
+    visualizer = payload.get("logistics_visualizer")
+    if isinstance(visualizer, dict):
+        cargo_mix = visualizer.get("cargo_mix")
+        if isinstance(cargo_mix, list) and len(cargo_mix) == 1 and isinstance(cargo_mix[0], dict):
+            cargo_mix[0]["quantity"] = corrected_clean
+
+
+def _v44_add_unique(target, value):
+    text = str(value or "").strip()
+    if text and text not in target:
+        target.append(text)
+
+
+def _v44_force_review(payload):
+    status = str(payload.get("status") or "").strip().lower()
+    if status not in {"error", "blocked", "critical_review_required"}:
+        payload["status"] = "needs_more_information"
+    payload["decision"] = "review_required"
+
+    verdict = payload.get("final_verdict")
+    if isinstance(verdict, dict):
+        verdict["verdict"] = "review_required"
+        verdict["ready"] = False
+
+    booking = payload.get("booking_readiness")
+    if isinstance(booking, dict):
+        booking["ready"] = False
+        booking["ready_to_book"] = False
+        booking["status"] = "needs_more_information"
+
+
+def _v44_route_conflict(text):
+    route = re.search(r"(?i)\bfrom\s+([A-Za-z][A-Za-z .'-]{1,40}?)\s+to\s+([A-Za-z][A-Za-z .'-]{1,40}?)(?:[.,]|\s+(?:by|under|with|each|the|final)\b|$)", str(text or ""))
+    final = re.search(r"(?i)\bfinal\s+destination\s+(?:is|=|:)\s*([A-Za-z][A-Za-z .'-]{1,40}?)(?:[.,]|\s+each\b|$)", str(text or ""))
+    if not route or not final:
+        return None
+    first = route.group(2).strip(" .,")
+    second = final.group(1).strip(" .,")
+    if first.lower() != second.lower():
+        return first, second
+    return None
+
+
+def _v44_apply_adversarial_authority(payload, user_text):
+    if not isinstance(payload, dict):
+        return payload
+
+    text = str(user_text or "")
+    lower = text.lower()
+    errors = []
+    warnings = []
+    questions = []
+    corrections = []
+
+    quantity, superseded_quantity, quantity_source = _v44_extract_quantity(text)
+    per_unit_weight = _v44_extract_per_unit_weight(text)
+    explicit_total_weight = _v44_extract_explicit_total_weight(text)
+    ambiguous_weight = _v44_extract_ambiguous_weight(text)
+    dimensions = _v44_extract_dimensions(text)
+    multi_item_shipment = _v44_is_multi_item_shipment(text)
+
+    quantity_unknown = _v44_field_explicitly_unknown(text, ("quantity", "count", "number of"))
+    weight_unknown = _v44_field_explicitly_unknown(text, ("weight", "weigh"))
+    dimensions_unknown = _v44_field_explicitly_unknown(text, ("dimension", "dimensions", "size", "volume", "cbm"))
+
+    corrected_quantity = quantity if quantity_source == "correction" else None
+    if corrected_quantity is not None:
+        corrections.append(
+            f"Quantity correction applied: {_v44_clean_number(corrected_quantity)} replaces {_v44_clean_number(superseded_quantity)}."
+        )
+        _v44_sync_corrected_quantity(payload, corrected_quantity, superseded_quantity)
+
+    if quantity_unknown:
+        quantity = None
+
+    invalid_quantity = quantity is not None and quantity <= 0
+    invalid_weight = (
+        (per_unit_weight is not None and per_unit_weight <= 0)
+        or (explicit_total_weight is not None and explicit_total_weight <= 0)
+        or (ambiguous_weight is not None and ambiguous_weight <= 0)
+    )
+    invalid_dimensions = dimensions is not None and any(value <= 0 for value in dimensions)
+
+    if invalid_quantity:
+        errors.append("Cargo quantity must be greater than zero.")
+        questions.append("Confirm a positive cargo quantity.")
+    if invalid_weight:
+        errors.append("Cargo weight must be greater than zero.")
+        questions.append("Confirm a positive cargo weight.")
+    if invalid_dimensions:
+        errors.append("Every cargo dimension must be greater than zero.")
+        questions.append("Confirm positive length, width, and height values.")
+
+    authoritative_cbm = None
+    if (
+        not multi_item_shipment
+        and not dimensions_unknown
+        and not invalid_quantity
+        and not invalid_dimensions
+        and quantity is not None
+        and dimensions is not None
+    ):
+        authoritative_cbm = quantity * dimensions[0] * dimensions[1] * dimensions[2]
+
+    authoritative_weight = None
+    derived_weight = None
+    if not weight_unknown and not invalid_quantity and not invalid_weight:
+        if not multi_item_shipment and quantity is not None and per_unit_weight is not None:
+            derived_weight = quantity * per_unit_weight
+
+        if corrected_quantity is not None and derived_weight is not None:
+            authoritative_weight = derived_weight
+        elif explicit_total_weight is not None:
+            # V32 already owns practical precision for explicit shipment totals,
+            # including near-integer imperial conversions such as 2204.62 lb -> 1000 kg.
+            # Preserve that established value instead of replacing it with the raw
+            # floating-point conversion (999.998811 kg).
+            existing_metrics = payload.get("logistics_metrics")
+            existing_weight = (
+                _v44_number(existing_metrics.get("total_weight_kg"))
+                if isinstance(existing_metrics, dict)
+                else None
+            )
+            authoritative_weight = (
+                existing_weight if existing_weight is not None else explicit_total_weight
+            )
+        elif derived_weight is not None:
+            authoritative_weight = derived_weight
+        elif ambiguous_weight is not None:
+            authoritative_weight = ambiguous_weight
+
+    if explicit_total_weight is not None and derived_weight is not None:
+        tolerance = max(0.5, abs(explicit_total_weight) * 0.001)
+        if abs(explicit_total_weight - derived_weight) > tolerance:
+            warnings.append(
+                "Conflicting weight facts: the stated shipment total does not equal quantity multiplied by per-unit weight."
+            )
+            questions.append(
+                "Confirm whether the explicit total shipment weight or the per-unit weight should be treated as authoritative."
+            )
+
+    unitless_dimensions = bool(
+        re.search(r"(?i)\b(?:measures?|dimensions?)\s*(?:are|is|:)?\s*-?\d+(?:\.\d+)?\s*(?:x|×|by)\s*-?\d+(?:\.\d+)?\s*(?:x|×|by)\s*-?\d+(?:\.\d+)?\b", text)
+        and dimensions is None
+    )
+    if unitless_dimensions and not dimensions_unknown:
+        warnings.append("Dimensions were provided without measurement units, so CBM was not calculated.")
+        questions.append("Provide a unit for the length, width, and height values.")
+
+    if dimensions_unknown:
+        warnings.append("Cargo dimensions are explicitly unconfirmed, so shipment volume remains unknown.")
+        questions.append("Confirm cargo dimensions or total CBM.")
+    if weight_unknown:
+        warnings.append("Cargo weight is explicitly unconfirmed, so shipment weight remains unknown.")
+        questions.append("Confirm unit weight or total shipment weight.")
+    if quantity_unknown:
+        warnings.append("Cargo quantity is explicitly unconfirmed.")
+        questions.append("Confirm the cargo quantity.")
+
+    fragile_conflict = bool(re.search(r"(?i)\bnot\s+fragile\b", text) and re.search(r"(?<!not\s)\bfragile\b", text))
+    stackable_conflict = bool(re.search(r"(?i)\bnon[-\s]?stackable\b|\bnot\s+stackable\b", text) and re.search(r"(?<!not\s)(?<!non-)\bstackable\b", text))
+    if fragile_conflict:
+        warnings.append("Conflicting handling facts: the cargo is described as both fragile and not fragile.")
+        questions.append("Confirm whether the cargo is fragile.")
+    if stackable_conflict:
+        warnings.append("Conflicting handling facts: the cargo is described as both stackable and non-stackable.")
+        questions.append("Confirm whether the cargo may be stacked.")
+
+    route_conflict = _v44_route_conflict(text)
+    if route_conflict:
+        warnings.append(
+            f"Conflicting destinations were provided: {route_conflict[0]} and {route_conflict[1]}."
+        )
+        questions.append("Confirm the final destination before planning the shipment.")
+
+    injection_markers = (
+        "ignore all previous instructions",
+        "bypass validation",
+        "bypass validations",
+        "mark the shipment ready",
+        "do not ask any questions",
+        "skip compliance",
+    )
+    if any(marker in lower for marker in injection_markers):
+        warnings.append("Instructions to bypass validation or suppress required questions were ignored.")
+        questions.append("Provide the missing shipment facts required for a safe review.")
+
+    if invalid_quantity or quantity_unknown:
+        authoritative_cbm = None
+        authoritative_weight = None
+    if invalid_dimensions or dimensions_unknown:
+        authoritative_cbm = None
+    if invalid_weight or weight_unknown:
+        authoritative_weight = None
+
+    # Apply only facts directly supported by the user's text. Explicit unknowns clear
+    # stale/default metrics produced by older advisory fallbacks.
+    if authoritative_cbm is not None or dimensions_unknown or invalid_quantity or invalid_dimensions or unitless_dimensions:
+        _v44_sync_metric(payload, "total_cbm", _v44_clean_number(authoritative_cbm))
+    if authoritative_weight is not None or weight_unknown or invalid_quantity or invalid_weight:
+        _v44_sync_metric(payload, "total_weight_kg", _v44_clean_number(authoritative_weight))
+
+    validation = {
+        "status": "review_required" if (errors or warnings or questions) else "validated",
+        "errors": errors,
+        "warnings": warnings,
+        "clarification_questions": questions,
+        "corrections_applied": corrections,
+        "authoritative_facts": {
+            "quantity": _v44_clean_number(quantity),
+            "superseded_quantity": _v44_clean_number(superseded_quantity),
+            "per_unit_weight_kg": _v44_clean_number(per_unit_weight),
+            "explicit_total_weight_kg": _v44_clean_number(explicit_total_weight),
+            "derived_total_weight_kg": _v44_clean_number(derived_weight),
+            "total_weight_kg": _v44_clean_number(authoritative_weight),
+            "dimensions_m": [_v44_clean_number(value) for value in dimensions] if dimensions else None,
+            "total_cbm": _v44_clean_number(authoritative_cbm),
+            "weight_explicitly_unknown": weight_unknown,
+            "dimensions_explicitly_unknown": dimensions_unknown,
+            "quantity_explicitly_unknown": quantity_unknown,
+            "multi_item_shipment": multi_item_shipment,
+        },
+    }
+    payload["input_validation_v44"] = validation
+
+    existing_questions = payload.get("clarification_questions")
+    if not isinstance(existing_questions, list):
+        existing_questions = []
+    for question in questions:
+        _v44_add_unique(existing_questions, question)
+    payload["clarification_questions"] = existing_questions
+
+    if errors or warnings or questions:
+        _v44_force_review(payload)
+
+    return payload
+
+
+def process_text_request(user_text, include_raw_response=False):
+    payload = _process_text_request_before_adversarial_input_authority_v44(
+        user_text,
+        include_raw_response,
+    )
+    return _v44_apply_adversarial_authority(payload, user_text)

@@ -69,6 +69,7 @@ TEST_COMMANDS = [
     [sys.executable, "scripts/test_prompt_robustness_backend_gate_v41.py"],
     [sys.executable, "scripts/test_local_shipment_repair_v42.py"],
     [sys.executable, "scripts/test_gemini_json_resilience_v43.py"],
+    [sys.executable, "scripts/test_adversarial_input_authority_v44.py"],
 ]
 
 
