@@ -371,11 +371,77 @@ def _number_counter(text: str) -> Counter[str]:
 
 
 def _strip_json_fence(value: str) -> str:
-    text = str(value or "").strip()
+    text = str(value or "").lstrip("\ufeff").strip()
     if text.startswith("```"):
         text = re.sub(r"^```(?:json)?\s*", "", text, flags=re.IGNORECASE)
         text = re.sub(r"\s*```$", "", text)
     return text.strip()
+
+
+# GEMINI_JSON_RESILIENCE_V43
+def _extract_json_mapping_v43(value: str) -> dict[str, Any]:
+    """Extract one JSON object without accepting invented or non-JSON facts."""
+    text = _strip_json_fence(value)
+    if not text:
+        raise json.JSONDecodeError("empty Gemini response", text, 0)
+
+    try:
+        direct = json.loads(text)
+        if isinstance(direct, dict):
+            return direct
+        raise TypeError("Gemini JSON root must be an object")
+    except json.JSONDecodeError as first_error:
+        decoder = json.JSONDecoder()
+        for index, character in enumerate(text):
+            if character != "{":
+                continue
+            try:
+                candidate, _ = decoder.raw_decode(text[index:])
+            except json.JSONDecodeError:
+                continue
+            if isinstance(candidate, dict):
+                return candidate
+        raise first_error
+
+
+def _gemini_text_from_success_v43(data: Any) -> str:
+    try:
+        candidate = data["candidates"][0]
+        content = candidate["content"]
+        parts = content["parts"]
+    except (KeyError, IndexError, TypeError) as exc:
+        raise GeminiInterpreterTransportError(
+            f"invalid_success_payload_{type(exc).__name__}"
+        ) from exc
+
+    texts = [
+        str(part.get("text"))
+        for part in parts
+        if isinstance(part, dict) and part.get("text") is not None
+    ]
+    joined = "".join(texts).strip()
+    if not joined:
+        finish_reason = str(candidate.get("finishReason") or "UNKNOWN")
+        raise GeminiInterpreterTransportError(
+            f"empty_success_text_{finish_reason}"
+        )
+    return joined
+
+
+def _json_repair_prompt_v43(
+    original_text: str,
+    locally_normalized_text: str,
+    malformed_output: str,
+) -> str:
+    previous = str(malformed_output or "")[-12000:]
+    return (
+        _prompt(original_text, locally_normalized_text)
+        + "\n\nThe previous model response below was malformed or did not match the required schema. "
+        + "Treat it only as draft data. Return one complete valid JSON object using the exact schema above. "
+        + "Do not explain the correction, do not use Markdown fences, and do not add or alter any fact or number.\n\n"
+        + "Previous malformed response:\n"
+        + previous
+    )
 
 
 def _prompt(original_text: str, locally_normalized_text: str) -> str:
@@ -469,7 +535,7 @@ def _default_gemini_transport(*, prompt: str, api_key: str, model: str, timeout:
         "generationConfig": {
             "temperature": 0,
             "responseMimeType": "application/json",
-            "maxOutputTokens": 2048,
+            "maxOutputTokens": 8192,
         },
     }
 
@@ -502,11 +568,11 @@ def _default_gemini_transport(*, prompt: str, api_key: str, model: str, timeout:
             _CIRCUIT_OPEN_UNTIL = 0.0
             try:
                 data = response.json()
-                return str(data["candidates"][0]["content"]["parts"][0]["text"])
-            except (KeyError, IndexError, TypeError, ValueError) as exc:
+            except ValueError as exc:
                 raise GeminiInterpreterTransportError(
                     f"invalid_success_payload_{type(exc).__name__}"
                 ) from exc
+            return _gemini_text_from_success_v43(data)
 
         reason = _gemini_http_reason_v42(response)
         last_error = GeminiInterpreterTransportError(reason)
@@ -543,6 +609,7 @@ def interpret_with_llm(
         )
 
     call = transport or _default_gemini_transport
+    validation_reason = "validated_llm_rewrite"
     try:
         raw = call(
             prompt=_prompt(original_text, locally_normalized_text),
@@ -550,7 +617,25 @@ def interpret_with_llm(
             model=model,
             timeout=_timeout_seconds(),
         )
-        payload = LLMInterpretationPayload.model_validate(json.loads(_strip_json_fence(raw)))
+        try:
+            payload = LLMInterpretationPayload.model_validate(
+                _extract_json_mapping_v43(raw)
+            )
+        except (ValidationError, json.JSONDecodeError, TypeError, ValueError):
+            repaired_raw = call(
+                prompt=_json_repair_prompt_v43(
+                    original_text,
+                    locally_normalized_text,
+                    raw,
+                ),
+                api_key=api_key,
+                model=model,
+                timeout=_timeout_seconds(),
+            )
+            payload = LLMInterpretationPayload.model_validate(
+                _extract_json_mapping_v43(repaired_raw)
+            )
+            validation_reason = "validated_llm_json_repair"
     except (ValidationError, json.JSONDecodeError, KeyError, IndexError, TypeError, ValueError) as exc:
         return InterpretationResult(
             original_text=original_text,
@@ -559,7 +644,7 @@ def interpret_with_llm(
             used_llm=False,
             provider="gemini",
             model=model,
-            reason=f"invalid_llm_output:{type(exc).__name__}",
+            reason=f"invalid_llm_output_after_repair:{type(exc).__name__}",
         )
     except Exception as exc:
         return InterpretationResult(
@@ -627,7 +712,7 @@ def interpret_with_llm(
         provider="gemini",
         model=model,
         confidence=payload.confidence,
-        reason="validated_llm_rewrite",
+        reason=validation_reason,
         corrections=tuple(payload.corrections),
         ambiguities=tuple(payload.ambiguities),
         missing_fields=tuple(payload.missing_fields),
