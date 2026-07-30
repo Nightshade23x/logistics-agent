@@ -11099,14 +11099,1142 @@ def _v48_refresh_known_weight_text(response):
     if isinstance(final_answer, dict):
         update(final_answer, "answer_text")
 
+# LIVE_BACKEND_CONSISTENCY_V49
+# Keeps authoritative physical facts consistent in the final frontend payload and
+# removes stale specialist warnings after those facts are already known.
 
-def process_text_request(text: str, *args, **kwargs):
-    canonical_text, normalization = _v48_canonical_request_text(text)
-    response = _process_text_request_before_remaining_backend_robustness_v48(canonical_text, *args, **kwargs)
-    if not isinstance(response, dict) or not isinstance(text, str):
+
+def _v49_source_text(args: tuple[Any, ...], kwargs: dict[str, Any], payload: dict[str, Any]) -> str:
+    metadata = payload.get("request_metadata")
+    if isinstance(metadata, dict):
+        for key in ("original_input_source", "input_source", "user_text"):
+            value = metadata.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+    for key in ("user_text", "text", "prompt", "input_source", "request"):
+        value = kwargs.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    if args:
+        first = args[0]
+        if isinstance(first, str):
+            return first.strip()
+        if isinstance(first, dict):
+            for key in ("user_text", "text", "prompt", "input_source", "request"):
+                value = first.get(key)
+                if isinstance(value, str) and value.strip():
+                    return value.strip()
+    return ""
+
+
+def _v49_input_text(args: tuple[Any, ...], kwargs: dict[str, Any]) -> str:
+    for key in ("user_text", "text", "prompt", "input_source", "request"):
+        value = kwargs.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    if args:
+        first = args[0]
+        if isinstance(first, str):
+            return first.strip()
+        if isinstance(first, dict):
+            for key in ("user_text", "text", "prompt", "input_source", "request"):
+                value = first.get(key)
+                if isinstance(value, str) and value.strip():
+                    return value.strip()
+        for key in ("user_text", "text", "prompt", "input_source", "request"):
+            value = getattr(first, key, None)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+    return ""
+
+
+def _v49_is_cost_workflow(text: str) -> bool:
+    """Keep V49 out of established landed-cost and finance workflows.
+
+    V49 exists only to reconcile live shipment surfaces. V36/V48 already own
+    cost extraction and landed-cost calculations, so V49 must delegate those
+    requests without canonicalizing or rewriting their call shape.
+    """
+    import re as _re
+
+    lowered = str(text or "").lower()
+    if not lowered:
+        return False
+    if _re.search(r"\b(?:calculate|estimate|complete|show)?\s*landed[-\s]?cost\b", lowered):
+        return True
+
+    markers = (
+        "procurement value",
+        "goods value",
+        "declared value",
+        "freight quote",
+        "insurance premium",
+        "duty rate",
+        "import tax",
+        "vat rate",
+        "customs brokerage",
+        "local delivery",
+    )
+    # A normal shipment may mention one cost concept. Four independent finance
+    # inputs identify the completed/merged landed-cost workflow unambiguously.
+    return sum(1 for marker in markers if marker in lowered) >= 4
+
+
+def _v49_canonicalize_live_text(text: str) -> tuple[str, list[str]]:
+    import re as _re
+
+    if not text.strip():
+        return text, []
+
+    effective = text
+    changes: list[str] = []
+    cargo_units = (
+        r"crates?|pallets?|cartons?|boxes?|units?|packages?|pieces?|pcs|"
+        r"scooters?|bikes?|motorcycles?|televisions?|tvs?|mattresses?|pillows?|drums?|barrels?"
+    )
+
+    # The legacy parser expects quantity immediately before the count noun.
+    # Preserve the adjective as a parenthetical: "50 electric scooters" ->
+    # "50 scooters (electric)". This is intentionally narrow and only runs
+    # when a route and one explicit dimension triplet are present.
+    has_route = bool(_re.search(r"\bfrom\s+.+?\s+to\s+", effective, _re.I | _re.S))
+    has_dimensions = bool(_re.search(
+        r"\d+(?:\.\d+)?\s*(?:m|cm|mm|ft|feet|foot|in|inch(?:es)?)\s*[x×]\s*"
+        r"\d+(?:\.\d+)?\s*(?:m|cm|mm|ft|feet|foot|in|inch(?:es)?)\s*[x×]\s*"
+        r"\d+(?:\.\d+)?\s*(?:m|cm|mm|ft|feet|foot|in|inch(?:es)?)",
+        effective, _re.I))
+    if has_route and has_dimensions:
+        adjective_quantity = _re.compile(
+            rf"\b(\d+(?:\.\d+)?)\s+"
+            rf"((?:[A-Za-z][A-Za-z0-9-]*\s+){{1,4}})"
+            rf"({cargo_units})\b",
+            _re.I,
+        )
+        updated, count = adjective_quantity.subn(
+            lambda match: (
+                f"{match.group(1)} {match.group(3)} "
+                f"({match.group(2).strip()})"
+            ),
+            effective,
+            count=1,
+        )
+        if count:
+            effective = updated
+            changes.append("quantity_count_noun_normalized")
+
+        packed_pattern = _re.compile(
+            r"\bEach\s+([A-Za-z][A-Za-z0-9-]*)\s+is\s+packed\s+in\s+"
+            r"(?:a|an|one)\s+(?:crate|box|carton|package)\s+measuring\b",
+            _re.I,
+        )
+        updated, count = packed_pattern.subn(r"Each \1 measures", effective, count=1)
+        if count:
+            effective = updated
+            changes.append("packed_dimension_phrase_normalized")
+
+    return effective, changes
+
+
+def _v49_call_original(
+    args: tuple[Any, ...],
+    kwargs: dict[str, Any],
+    effective_text: str,
+) -> dict[str, Any]:
+    if not effective_text:
+        return _process_text_request_before_v49(*args, **kwargs)
+
+    new_args = list(args)
+    new_kwargs = dict(kwargs)
+    replaced = False
+
+    if new_args:
+        first = new_args[0]
+        if isinstance(first, str):
+            new_args[0] = effective_text
+            replaced = True
+        elif isinstance(first, dict):
+            updated = dict(first)
+            target = next(
+                (key for key in ("user_text", "text", "prompt", "input_source", "request") if key in updated),
+                "text",
+            )
+            updated[target] = effective_text
+            new_args[0] = updated
+            replaced = True
+
+    if not replaced:
+        for key in ("user_text", "text", "prompt", "input_source", "request"):
+            if key in new_kwargs:
+                new_kwargs[key] = effective_text
+                replaced = True
+                break
+
+    if not replaced:
+        new_args.insert(0, effective_text)
+
+    return _process_text_request_before_v49(*tuple(new_args), **new_kwargs)
+
+
+def _v49_len(value: float, unit: str) -> float:
+    factors = {
+        "m": 1.0, "meter": 1.0, "meters": 1.0, "metre": 1.0, "metres": 1.0,
+        "cm": 0.01, "centimeter": 0.01, "centimeters": 0.01,
+        "centimetre": 0.01, "centimetres": 0.01, "mm": 0.001,
+        "ft": 0.3048, "foot": 0.3048, "feet": 0.3048,
+        "in": 0.0254, "inch": 0.0254, "inches": 0.0254,
+    }
+    return value * factors[unit.lower()]
+
+
+def _v49_weight(value: float, unit: str) -> float:
+    unit = unit.lower()
+    if unit in {"kg", "kgs", "kilogram", "kilograms"}: return value
+    if unit in {"g", "gram", "grams"}: return value / 1000.0
+    if unit in {"lb", "lbs", "pound", "pounds"}: return value * 0.45359237
+    raise ValueError(unit)
+
+
+def _v49_single_item(text: str) -> dict[str, Any]:
+    import re as _re
+    text = text.replace("×", "x").replace("✕", "x").replace(" by ", " x ")
+    cargo_units = (
+        r"crates?|pallets?|cartons?|boxes?|units?|packages?|pieces?|pcs|"
+        r"scooters?|bikes?|motorcycles?|televisions?|tvs?|mattresses?|pillows?|drums?|barrels?"
+    )
+    quantity_pattern = _re.compile(
+        rf"\b(\d+(?:\.\d+)?)\s+"
+        rf"(?:(?:[A-Za-z][A-Za-z0-9-]*\s+){{0,4}})?"
+        rf"({cargo_units})\b",
+        _re.I,
+    )
+    quantities = list(quantity_pattern.finditer(text))
+    if len(quantities) != 1: return {}
+    quantity = float(quantities[0].group(1))
+    if quantity <= 0: return {}
+    lu = r"(m|meter(?:s)?|metre(?:s)?|cm|centimeter(?:s)?|centimetre(?:s)?|mm|ft|feet|foot|in|inch(?:es)?)"
+    dm = _re.search(
+        rf"(\d+(?:\.\d+)?)\s*{lu}\s*x\s*(\d+(?:\.\d+)?)\s*{lu}\s*x\s*(\d+(?:\.\d+)?)\s*{lu}",
+        text, _re.I,
+    )
+    dimensions = None; total_cbm = None
+    if dm:
+        dimensions = [_v49_len(float(dm.group(1)), dm.group(2)),
+                      _v49_len(float(dm.group(3)), dm.group(4)),
+                      _v49_len(float(dm.group(5)), dm.group(6))]
+        total_cbm = round(quantity * dimensions[0] * dimensions[1] * dimensions[2], 6)
+    each_weight = bool(_re.search(
+        r"\beach\b.{0,220}\b(?:weighs?|weighing|weight(?:\s+is)?|wt\.?)\b",
+        text, _re.I | _re.S))
+    wm = _re.search(
+        r"\b(?:weighs?|weighing|weight(?:\s+is)?|wt\.?)\s*(\d+(?:\.\d+)?)\s*"
+        r"(kg|kgs|kilograms?|g|grams?|lb|lbs|pounds?)\b", text, _re.I)
+    if not wm:
+        wm = _re.search(
+            r"\b(\d+(?:\.\d+)?)\s*(kg|kgs|kilograms?|g|grams?|lb|lbs|pounds?)\s*"
+            r"(?:each|per\s+(?:crate|pallet|unit|box|carton|scooter))\b", text, _re.I)
+        each_weight = bool(wm)
+    unit_weight = None; total_weight = None
+    if each_weight and wm:
+        unit_weight = _v49_weight(float(wm.group(1)), wm.group(2))
+        total_weight = round(quantity * unit_weight, 6)
+        if abs(total_weight - round(total_weight)) < 0.005: total_weight = float(round(total_weight))
+    product = None
+    pm = _re.search(r"\b\d+(?:\.\d+)?\s+(.+?)\s+from\b", text, _re.I)
+    if pm:
+        candidate = pm.group(1).strip(" ,.;:-")
+        candidate = _re.sub(rf"^(?:{cargo_units})\s+(?:of\s+)?", "", candidate, flags=_re.I)
+        candidate = candidate.replace("(", "").replace(")", "").strip()
+        candidate = _re.sub(r"\s+under\s+[A-Z]{3}\s+terms?.*$", "", candidate, flags=_re.I)
+        if candidate:
+            product = candidate
+    return {"quantity": int(quantity) if quantity.is_integer() else quantity,
+            "dimensions_m": dimensions, "total_cbm": total_cbm,
+            "per_unit_weight_kg": unit_weight, "total_weight_kg": total_weight,
+            "product": product}
+
+
+def _v49_existing(payload: dict[str, Any], key: str) -> float | None:
+    for location in (payload.get("logistics_metrics"), payload.get("handoff_payload")):
+        if isinstance(location, dict):
+            value = location.get(key)
+            if isinstance(value, (int, float)) and value > 0: return float(value)
+    return None
+
+
+def _v49_set_metrics(node: Any, cbm: float | None, weight: float | None) -> None:
+    if isinstance(node, dict):
+        for key, value in list(node.items()):
+            # These structures preserve the user's original text and the V44
+            # conflict analysis. Final-display synchronization must not rewrite them.
+            if key in {"request_metadata", "request_interpretation", "input_validation_v44"}:
+                continue
+            if cbm is not None and key in {"total_cbm", "loaded_cbm"} and (value is None or isinstance(value, (int, float))):
+                node[key] = cbm
+            elif weight is not None and key == "total_weight_kg" and (value is None or isinstance(value, (int, float))):
+                node[key] = weight
+            else: _v49_set_metrics(value, cbm, weight)
+    elif isinstance(node, list):
+        for value in node: _v49_set_metrics(value, cbm, weight)
+
+
+def _v49_rewrite(node: Any, cbm: float | None, weight: float | None, product: str | None) -> Any:
+    import re as _re
+    if isinstance(node, dict):
+        for key, value in list(node.items()):
+            if key in {"request_metadata", "request_interpretation", "input_validation_v44"}:
+                continue
+            node[key] = _v49_rewrite(value, cbm, weight, product)
+    elif isinstance(node, list):
+        return [_v49_rewrite(value, cbm, weight, product) for value in node]
+    elif isinstance(node, str):
+        result = node
+        if weight is not None:
+            fw = f"{int(weight):,}" if float(weight).is_integer() else f"{weight:,.3f}".rstrip("0").rstrip(".")
+            result = _re.sub(r"(?i)(total\s+weight\s*:\s*)(?:not confirmed|none|[\d,.]+\s*kg)", rf"\g<1>{fw} kg", result)
+            result = _re.sub(r"(?i)(logistics\s*:\s*[\d,.]+\s*CBM\s*,\s*)(?:none|[\d,.]+)\s*kg", rf"\g<1>{fw} kg", result)
+        if product:
+            result = _re.sub(r"(?i)(product\s+')[^']+('\s+could not be classified)",
+                             lambda m: f"{m.group(1)}{product}{m.group(2)}", result)
+        return result
+    return node
+
+
+def _v49_stale(message: str, dimensions_known: bool, weight_known: bool) -> bool:
+    import re as _re
+    text = message.lower()
+    dim = (
+        r"missing dimensions",
+        r"length,\s*width,?\s*and\s*height\s+are\s+required",
+        r"confirm the final packed dimensions",
+        r"packed dimensions (?:are|is) missing",
+        r"final packed cbm or packed dimensions",
+        r"package dimensions or total packed volume",
+        r"cargo volume or dimensions were not provided",
+        r"cargo size information is confirmed",
+        r"cargo size information is missing",
+        r"item dimensions are missing",
+        r"add final packed cbm or item dimensions",
+        r"provide total cbm or packed dimensions",
+    )
+    wt = (r"missing weight", r"confirm the final packed .*weight",
+          r"packed weight (?:is|are) missing", r"weight is required")
+    synthetic_measurement_row = bool(_re.search(
+        r"^\s*(?:m|cm|mm|ft|feet|foot|in|inch(?:es)?|kg|kgs|lb|lbs)"
+        r"(?:\s*x\s*\d+(?:\.\d+)?)?\s*:",
+        text,
+        _re.I,
+    ))
+    stale_catalog_dimension = "missing dimensions and no catalog match found" in text
+    return (
+        dimensions_known
+        and (
+            any(_re.search(p, text) for p in dim)
+            or synthetic_measurement_row
+            or stale_catalog_dimension
+        )
+    ) or (weight_known and any(_re.search(p, text) for p in wt))
+
+
+def _v49_prune(node: Any, dimensions_known: bool, weight_known: bool, removed: list[str]) -> None:
+    if isinstance(node, dict):
+        for key, value in list(node.items()):
+            if isinstance(value, list):
+                kept = []
+                for item in value:
+                    if isinstance(item, str) and _v49_stale(item, dimensions_known, weight_known):
+                        removed.append(item)
+                    else: kept.append(item)
+                node[key] = kept
+                for item in kept: _v49_prune(item, dimensions_known, weight_known, removed)
+            else: _v49_prune(value, dimensions_known, weight_known, removed)
+    elif isinstance(node, list):
+        for item in node: _v49_prune(item, dimensions_known, weight_known, removed)
+
+
+def _v49_explicit_shipping(text: str) -> bool:
+    import re as _re
+    return bool(_re.search(r"\b(?:ship|shipping|send|freight|transport|arrange\s+(?:sea|air)?\s*freight|book(?:ing)?)\b", text, _re.I))
+
+
+def _v49_number(value: float | None) -> str:
+    if value is None:
+        return "not confirmed"
+    if float(value).is_integer():
+        return f"{int(value):,}"
+    return f"{value:,.3f}".rstrip("0").rstrip(".")
+
+
+def _v49_special_cargo(text: str) -> bool:
+    import re as _re
+    return bool(_re.search(
+        r"\b(?:radioactive|radionuclide|isotope|lithium(?:-ion)?|batter(?:y|ies)|"
+        r"dangerous goods?|hazardous|UN\s*\d{4})\b",
+        text,
+        _re.I,
+    ))
+
+
+def _v49_repair_string(
+    value: str,
+    *,
+    cbm: float | None,
+    weight: float | None,
+    dimensions_known: bool,
+    agents_called: list[str],
+    special_cargo: bool,
+) -> str:
+    import re as _re
+
+    result = value
+    cbm_text = _v49_number(cbm)
+    weight_text = _v49_number(weight)
+
+    if cbm is not None:
+        result = _re.sub(
+            r"(?i)(total\s+volume\s*:\s*)(?:not confirmed|none|[\d,.]+\s*CBM)",
+            rf"\g<1>{cbm_text} CBM",
+            result,
+        )
+        result = _re.sub(
+            r"(?i)(logistics\s*:\s*)[\d,.]+\s*CBM",
+            rf"\g<1>{cbm_text} CBM",
+            result,
+        )
+        result = _re.sub(
+            r"(?i)(total cargo is )[^.]{0,80}?\s*CBM",
+            rf"\g<1>{cbm_text} CBM",
+            result,
+        )
+
+    if weight is not None:
+        result = _re.sub(
+            r"(?i)(total\s+weight\s*:\s*)(?:not confirmed|none|[\d,.]+\s*kg)",
+            rf"\g<1>{weight_text} kg",
+            result,
+        )
+        result = _re.sub(
+            r"(?i)(logistics\s*:\s*[\d,.]+\s*CBM\s*,\s*)(?:none|[\d,.]+)\s*kg",
+            rf"\g<1>{weight_text} kg",
+            result,
+        )
+        result = _re.sub(
+            r"(?i)(weight is )(?:none|[\d,.]+)\s*kg",
+            rf"\g<1>{weight_text} kg",
+            result,
+        )
+
+    if agents_called:
+        readable_agents = ", ".join(agents_called)
+        result = _re.sub(
+            r"(?i)agents called:\s*[^.\n]+",
+            f"Agents called: {readable_agents}",
+            result,
+        )
+
+    if dimensions_known and cbm is not None:
+        replacements = (
+            (
+                r"(?i)do not book this shipment yet\. i can identify the route, risk, and document needs, but container planning is blocked until the missing cargo size information is provided\.",
+                "Do not book this shipment yet. Physical cargo totals are available, but dangerous-goods, document and carrier checks remain incomplete.",
+            ),
+            (
+                r"(?i)shipment is blocked until cargo size information is confirmed\.",
+                "Shipment requires dangerous-goods and document review before booking.",
+            ),
+            (
+                r"(?i)container planning is blocked until the missing cargo size information is provided\.",
+                "container planning uses the validated cargo totals, while dangerous-goods and carrier checks remain incomplete.",
+            ),
+            (
+                r"(?i)container cannot be selected reliably yet because final packed cbm or item dimensions are missing\.",
+                "Container selection must be reviewed for dangerous-goods carrier acceptance.",
+            ),
+            (
+                r"(?i)provide total cbm or packed dimensions so the app can calculate fit, utilization, and loading sequence\.",
+                "Use the validated cargo totals for fit planning and confirm dangerous-goods carrier acceptance before booking.",
+            ),
+            (
+                r"(?i)logistics plan status: partial_plan_needs_more_information\. weight is [\d,.]+ kg, but final packed cbm or dimensions are still missing\.",
+                f"Logistics plan requires specialist review. Validated cargo totals are {cbm_text} CBM and {weight_text} kg.",
+            ),
+            (
+                r"(?i)cargo volume or dimensions were not provided, so a container visualizer cannot be produced reliably\.",
+                "Validated cargo totals are available; visual loading remains subject to dangerous-goods carrier review.",
+            ),
+            (
+                r"(?i)what is the final packed cbm or packed dimensions for this shipment\?",
+                "",
+            ),
+            (
+                r"(?i)confirm the package dimensions or total packed volume\.",
+                "",
+            ),
+            (
+                r"(?i)add final packed cbm or item dimensions\.",
+                "",
+            ),
+            (
+                r"(?i)no shipment items were found for compliance review\.",
+                "Special cargo details require compliance review.",
+            ),
+            (
+                r"(?i)no shipment items were available, so document requirements may be incomplete\.",
+                "Special cargo details and documents require review.",
+            ),
+            (
+                r"(?i)which products and quantities are included in this shipment\?",
+                "",
+            ),
+        )
+        for pattern, replacement in replacements:
+            result = _re.sub(pattern, replacement, result)
+
+    if special_cargo:
+        result = result.replace(
+            "Trader Agent failed: 'GEMINI_API_KEY'",
+            "Trader Agent used deterministic fallback because Gemini credentials were unavailable.",
+        )
+        result = result.replace(
+            'Trader Agent failed: "GEMINI_API_KEY"',
+            "Trader Agent used deterministic fallback because Gemini credentials were unavailable.",
+        )
+
+    # Remove empty bullet/number lines left by targeted stale-question removal.
+    result = _re.sub(r"(?m)^\s*[-•]\s*$\n?", "", result)
+    result = _re.sub(r"(?m)^\s*\d+\.\s*$\n?", "", result)
+    result = _re.sub(r"\n{3,}", "\n\n", result).strip()
+    return result
+
+
+def _v49_repair_all_strings(
+    node: Any,
+    *,
+    cbm: float | None,
+    weight: float | None,
+    dimensions_known: bool,
+    agents_called: list[str],
+    special_cargo: bool,
+) -> Any:
+    if isinstance(node, dict):
+        for key, value in list(node.items()):
+            if key in {"request_metadata", "request_interpretation", "input_validation_v44"}:
+                continue
+            node[key] = _v49_repair_all_strings(
+                value,
+                cbm=cbm,
+                weight=weight,
+                dimensions_known=dimensions_known,
+                agents_called=agents_called,
+                special_cargo=special_cargo,
+            )
+        return node
+    if isinstance(node, list):
+        repaired = []
+        for value in node:
+            updated = _v49_repair_all_strings(
+                value,
+                cbm=cbm,
+                weight=weight,
+                dimensions_known=dimensions_known,
+                agents_called=agents_called,
+                special_cargo=special_cargo,
+            )
+            if isinstance(updated, str) and not updated.strip():
+                continue
+            repaired.append(updated)
+        return repaired
+    if isinstance(node, str):
+        return _v49_repair_string(
+            node,
+            cbm=cbm,
+            weight=weight,
+            dimensions_known=dimensions_known,
+            agents_called=agents_called,
+            special_cargo=special_cargo,
+        )
+    return node
+
+
+def _v49_sync_specialist_surfaces(
+    payload: dict[str, Any],
+    *,
+    text: str,
+    facts: dict[str, Any],
+    cbm: float | None,
+    weight: float | None,
+) -> None:
+    special = _v49_special_cargo(text)
+    if not special:
+        return
+
+    called = payload.get("agents_called")
+    if not isinstance(called, list):
+        called = []
+        payload["agents_called"] = called
+    for agent_name in ("logistics_agent", "compliance_agent", "document_ai_agent"):
+        if agent_name not in called:
+            called.append(agent_name)
+    while "shopping_agent" in called:
+        called.remove("shopping_agent")
+
+    quantity = facts.get("quantity")
+    product = facts.get("product") or "special cargo"
+    dimensions = facts.get("dimensions_m")
+    unit_cbm = None
+    if dimensions:
+        unit_cbm = round(dimensions[0] * dimensions[1] * dimensions[2], 6)
+
+    # Keep a truthful structured physical snapshot even when the original
+    # downstream builder produced no cargo rows.
+    shipment_item = {
+        "item_name": product,
+        "quantity": quantity,
+        "dimensions_m": {
+            "length": dimensions[0],
+            "width": dimensions[1],
+            "height": dimensions[2],
+        } if dimensions else None,
+        "unit_cbm": unit_cbm,
+        "total_cbm": cbm,
+        "total_weight_kg": weight,
+        "hazardous": True,
+    }
+    payload["authoritative_shipment_item_v49"] = shipment_item
+
+    metrics = payload.setdefault("logistics_metrics", {})
+    if isinstance(metrics, dict) and cbm is not None:
+        if cbm > 67.7:
+            metrics["recommended_container"] = "Multiple containers or specialist planning required"
+            metrics["recommended_load_type"] = "fcl_suitable"
+        if weight is not None:
+            metrics["total_weight_kg"] = weight
+        metrics["total_cbm"] = cbm
+        metrics["risk_level"] = "high"
+
+    visualizer = payload.get("logistics_visualizer")
+    if not isinstance(visualizer, dict):
+        visualizer = {}
+        payload["logistics_visualizer"] = visualizer
+    visualizer.update({
+        "visualizer_type": "container_load_visualizer",
+        "status": "review_required",
+        "reason": "Physical totals are available; final loading requires dangerous-goods carrier review.",
+        "container": {
+            "selected_container": metrics.get("recommended_container") if isinstance(metrics, dict) else None,
+            "recommended_load_type": metrics.get("recommended_load_type") if isinstance(metrics, dict) else None,
+            "total_cbm": cbm,
+            "total_weight_kg": weight,
+            "total_items": quantity,
+        },
+        "cargo_mix": [shipment_item],
+        "fit_check": {
+            "status": "specialist_review_required",
+            "warnings": ["Dangerous-goods carrier acceptance is required before final loading."],
+            "recommendations": ["Confirm UN number, battery rating and dangerous-goods documents before booking."],
+        },
+        "display_metrics": {
+            "loaded_cbm": cbm,
+            "total_weight_kg": weight,
+            "basis": "authoritative_physical_input_v49",
+        },
+    })
+
+    summaries = payload.get("agent_summaries")
+    if not isinstance(summaries, list):
+        summaries = []
+        payload["agent_summaries"] = summaries
+    existing = {
+        item.get("agent_name")
+        for item in summaries
+        if isinstance(item, dict)
+    }
+    if "compliance_agent" not in existing:
+        summaries.append({
+            "agent_name": "compliance_agent",
+            "status": "needs_more_information",
+            "summary": "Compliance review requires the UN number, battery rating and carrier dangerous-goods acceptance.",
+        })
+    if "document_ai_agent" not in existing:
+        summaries.append({
+            "agent_name": "document_ai_agent",
+            "status": "needs_more_information",
+            "summary": "Document review requires the dangerous-goods declaration, MSDS and transport documents.",
+        })
+    for item in summaries:
+        if not isinstance(item, dict):
+            continue
+        summary = str(item.get("summary") or "")
+        if item.get("agent_name") == "trader_agent" and "GEMINI_API_KEY" in summary:
+            item["status"] = "review_required"
+            item["summary"] = "Trader Agent used deterministic fallback because Gemini credentials were unavailable."
+
+    verdict = payload.get("final_verdict")
+    if isinstance(verdict, dict) and isinstance(verdict.get("agent_statuses"), list):
+        verdict["agent_statuses"] = [
+            "review_required" if status == "error" else status
+            for status in verdict["agent_statuses"]
+        ]
+
+    document_review = payload.get("document_quality_review")
+    if isinstance(document_review, dict):
+        document_review.update({
+            "applicable": True,
+            "status": "review_required",
+            "summary": "Document AI review requires dangerous-goods and transport documents before booking.",
+        })
+
+    # Synchronize UI cards that previously retained only Logistics and Trader.
+    for section in payload.get("ui_sections", []) if isinstance(payload.get("ui_sections"), list) else []:
+        if not isinstance(section, dict):
+            continue
+        if section.get("section_id") == "shipment_snapshot":
+            metrics_section = section.setdefault("metrics", {})
+            if isinstance(metrics_section, dict):
+                metrics_section["intent"] = "logistics"
+                metrics_section["total_cbm"] = cbm
+                metrics_section["total_weight_kg"] = weight
+                metrics_section["agents_called"] = list(called)
+            bullets = section.setdefault("bullets", [])
+            if isinstance(bullets, list):
+                bullets[:] = [
+                    bullet for bullet in bullets
+                    if not (isinstance(bullet, str) and bullet.lower().startswith("agents called:"))
+                ]
+                bullets.insert(0, "Agents called: " + ", ".join(called))
+        if section.get("section_id") == "logistics":
+            metrics_section = section.setdefault("metrics", {})
+            if isinstance(metrics_section, dict):
+                metrics_section["total_cbm"] = cbm
+                metrics_section["total_weight_kg"] = weight
+                metrics_section["recommended_container"] = metrics.get("recommended_container")
+                metrics_section["recommended_load_type"] = metrics.get("recommended_load_type")
+
+
+def _v49_physical_override_gate(
+    text: str,
+    validation: dict[str, Any] | None,
+    authority: dict[str, Any] | None,
+) -> tuple[bool, list[str]]:
+    """Return whether V49 must leave physical totals entirely to V44/V45.
+
+    V49 is a final-surface consistency layer, not a replacement for input
+    authority. Invalid/non-positive values and explicit unknowns must never be
+    reinterpreted from unsigned regex fragments such as ``-5`` becoming ``5``.
+    """
+    import re as _re
+
+    reasons: list[str] = []
+    validation = validation if isinstance(validation, dict) else {}
+    authority = authority if isinstance(authority, dict) else {}
+
+    errors = validation.get("errors")
+    if isinstance(errors, (list, tuple)) and any(str(value).strip() for value in errors):
+        reasons.append("v44_validation_errors")
+
+    for key in (
+        "quantity_explicitly_unknown",
+        "dimensions_explicitly_unknown",
+        "weight_explicitly_unknown",
+    ):
+        if authority.get(key) is True:
+            reasons.append(key)
+
+    quantity = authority.get("quantity")
+    if isinstance(quantity, (int, float)) and quantity <= 0:
+        reasons.append("nonpositive_authoritative_quantity")
+
+    cargo_units = (
+        r"crates?|pallets?|cartons?|boxes?|units?|packages?|pieces?|pcs|"
+        r"scooters?|bikes?|motorcycles?|televisions?|tvs?|mattresses?|pillows?|drums?|barrels?"
+    )
+    if _re.search(rf"(?<![\d.])-\s*\d+(?:\.\d+)?\s+(?:{cargo_units})\b", text, _re.I):
+        reasons.append("negative_quantity_in_source")
+    if _re.search(rf"\b0(?:\.0+)?\s+(?:{cargo_units})\b", text, _re.I):
+        reasons.append("zero_quantity_in_source")
+    if _re.search(
+        r"(?<![\d.])-\s*\d+(?:\.\d+)?\s*(?:kg|kgs|g|lb|lbs|m|cm|mm|ft|in)\b",
+        text,
+        _re.I,
+    ):
+        reasons.append("negative_measurement_in_source")
+
+    # Preserve V44's correction-only volume guard. A quantity/weight correction
+    # cannot manufacture CBM without explicit dimensions.
+    if authority.get("correction_without_dimensions") is True:
+        reasons.append("correction_without_dimensions")
+
+    return bool(reasons), reasons
+
+def _v49_apply_live_response_consistency(
+    payload: dict[str, Any],
+    original_text: str,
+    effective_text: str,
+    canonicalization_changes: list[str],
+) -> dict[str, Any]:
+    if not isinstance(payload, dict): return payload
+    text = original_text or effective_text
+    facts = _v49_single_item(text or effective_text)
+
+    # Prefer the quantity already resolved by V44/V45. This matters for prompts
+    # such as "10 crates ... Correction: quantity is 12, not 10" where the
+    # physical noun appears only beside the superseded quantity. V49 may repair
+    # final response surfaces, but it must not undo correction authority.
+    validation_before_sync = payload.get("input_validation_v44")
+    authority_before_sync = (
+        validation_before_sync.get("authoritative_facts")
+        if isinstance(validation_before_sync, dict)
+        else None
+    )
+    # Capture what the narrow V49 parser saw before applying the V44 gate.
+    # This is metadata-only evidence: it lets us record that V44 preserved a
+    # corrected quantity without allowing V49 to recalculate blocked metrics.
+    parsed_quantity_before_gate = facts.get("quantity")
+
+    physical_override_blocked, physical_override_reasons = _v49_physical_override_gate(
+        text,
+        validation_before_sync if isinstance(validation_before_sync, dict) else None,
+        authority_before_sync if isinstance(authority_before_sync, dict) else None,
+    )
+
+    authoritative_quantity = None
+    correction_quantity_preserved = False
+    if isinstance(authority_before_sync, dict):
+        candidate_quantity = authority_before_sync.get("quantity")
+        if isinstance(candidate_quantity, (int, float)) and candidate_quantity > 0:
+            authoritative_quantity = float(candidate_quantity)
+            superseded_quantity = authority_before_sync.get("superseded_quantity")
+            correction_quantity_preserved = bool(
+                (
+                    isinstance(parsed_quantity_before_gate, (int, float))
+                    and abs(float(parsed_quantity_before_gate) - authoritative_quantity) > 1e-9
+                )
+                or (
+                    isinstance(superseded_quantity, (int, float))
+                    and abs(float(superseded_quantity) - authoritative_quantity) > 1e-9
+                )
+            )
+
+    if physical_override_blocked:
+        # Keep the pre-V49 result untouched. V44/V45 already cleared unsafe
+        # totals or preserved a correction-only weight. Recording correction
+        # metadata above does not bypass this authority gate.
+        facts = {}
+    elif authoritative_quantity is not None:
+        facts["quantity"] = (
+            int(authoritative_quantity)
+            if authoritative_quantity.is_integer()
+            else authoritative_quantity
+        )
+        unit_weight = facts.get("per_unit_weight_kg")
+        if isinstance(unit_weight, (int, float)) and unit_weight > 0:
+            corrected_weight = round(authoritative_quantity * float(unit_weight), 6)
+            if abs(corrected_weight - round(corrected_weight)) < 0.005:
+                corrected_weight = float(round(corrected_weight))
+            facts["total_weight_kg"] = corrected_weight
+        dimensions = facts.get("dimensions_m")
+        if (
+            isinstance(dimensions, list)
+            and len(dimensions) == 3
+            and all(isinstance(value, (int, float)) and value > 0 for value in dimensions)
+        ):
+            facts["total_cbm"] = round(
+                authoritative_quantity
+                * float(dimensions[0])
+                * float(dimensions[1])
+                * float(dimensions[2]),
+                6,
+            )
+
+    if physical_override_blocked:
+        cbm = _v49_existing(payload, "total_cbm")
+        derived_weight = None
+        weight = _v49_existing(payload, "total_weight_kg")
+    else:
+        cbm = facts.get("total_cbm") or _v49_existing(payload, "total_cbm")
+        derived_weight = facts.get("total_weight_kg")
+        weight = derived_weight or _v49_existing(payload, "total_weight_kg")
+    weight_conflict_preserved = False
+
+    # V44 already distinguishes an explicit stated shipment total from a
+    # quantity-derived total. When they conflict, preserve the explicit total
+    # in final response surfaces while retaining the derived value and asking
+    # the existing clarification question. V49 must never erase that authority.
+    if isinstance(authority_before_sync, dict):
+        explicit_total = authority_before_sync.get("explicit_total_weight_kg")
+        if (
+            isinstance(explicit_total, (int, float))
+            and explicit_total > 0
+            and isinstance(derived_weight, (int, float))
+            and derived_weight > 0
+            and abs(float(explicit_total) - float(derived_weight)) > 0.02
+        ):
+            weight = float(explicit_total)
+            weight_conflict_preserved = True
+    if _v49_explicit_shipping(text):
+        payload["detected_intent"] = "logistics"
+        if isinstance(payload.get("agents_called"), list):
+            payload["agents_called"] = [x for x in payload["agents_called"] if x != "shopping_agent"]
+    _v49_set_metrics(payload, cbm, weight)
+    _v49_rewrite(payload, cbm, weight, facts.get("product"))
+    dimensions_known = bool(facts.get("dimensions_m")) or bool(cbm)
+    removed: list[str] = []
+    _v49_prune(payload, dimensions_known, bool(weight), removed)
+    _v49_sync_specialist_surfaces(
+        payload,
+        text=text,
+        facts=facts,
+        cbm=cbm,
+        weight=weight,
+    )
+    called_for_display = (
+        [str(value) for value in payload.get("agents_called", [])]
+        if isinstance(payload.get("agents_called"), list)
+        else []
+    )
+    _v49_repair_all_strings(
+        payload,
+        cbm=cbm,
+        weight=weight,
+        dimensions_known=dimensions_known,
+        agents_called=called_for_display,
+        special_cargo=_v49_special_cargo(text),
+    )
+    metrics = payload.setdefault("logistics_metrics", {})
+    if isinstance(metrics, dict):
+        if cbm is not None: metrics["total_cbm"] = cbm
+        if weight is not None: metrics["total_weight_kg"] = weight
+    validation = payload.get("input_validation_v44")
+    if (
+        not physical_override_blocked
+        and isinstance(validation, dict)
+        and isinstance(validation.get("authoritative_facts"), dict)
+    ):
+        authority = validation["authoritative_facts"]
+        for key in ("quantity", "dimensions_m", "per_unit_weight_kg"):
+            if facts.get(key) is not None: authority[key] = facts[key]
+        if cbm is not None: authority["total_cbm"] = cbm
+        if derived_weight is not None:
+            authority["derived_total_weight_kg"] = derived_weight
+        if weight is not None:
+            authority["total_weight_kg"] = weight
+    if isinstance(payload.get("missing_information"), list):
+        payload["missing_information_count"] = len(payload["missing_information"])
+    metadata = payload.setdefault("request_metadata", {})
+    if isinstance(metadata, dict):
+        metadata["original_input_source"] = text
+        metadata["input_source"] = text
+        metadata["live_response_consistency_v49"] = {
+            "status": "applied",
+            "stale_missing_messages_removed": len(removed),
+            "single_item_authority_used": bool(
+                facts.get("total_cbm") or facts.get("total_weight_kg")
+            ),
+            "canonicalization_changes": canonicalization_changes,
+            "correction_quantity_preserved": correction_quantity_preserved,
+            "authoritative_quantity_used": authoritative_quantity,
+            "weight_conflict_preserved": weight_conflict_preserved,
+            "physical_override_blocked": physical_override_blocked,
+            "physical_override_reasons": physical_override_reasons,
+        }
+    return payload
+
+# LANDED_COST_CALL_PATH_INTEGRATION_V50
+# V36 sits earlier in the wrapper chain. V41 can deterministically reinterpret a
+# merged shipment + "Additional information" prompt and omit the finance clauses
+# before V36 sees them. Reapply only the explicit original cost fields here, at
+# the existing V48 boundary, then run the established V36 answer synchronizer.
+_V50_REQUIRED_COST_KEYS = (
+    "procurement_value_usd",
+    "freight_quote_usd",
+    "insurance_premium_usd",
+    "duty_rate_percent",
+    "import_tax_rate_percent",
+    "customs_brokerage_usd",
+    "local_delivery_usd",
+)
+
+
+def _v50_cost_message_is_stale(value: Any) -> bool:
+    if not isinstance(value, str):
+        return False
+    lowered = value.lower()
+    concepts = (
+        "procurement value", "declared value", "cargo value", "freight quote",
+        "insurance premium", "duty rate", "import tax", "vat rate",
+        "customs brokerage", "clearance fee", "local delivery", "last-mile",
+        "landed cost input",
+    )
+    missing_words = ("missing", "needed", "provide", "confirm", "add", "get ")
+    return any(token in lowered for token in concepts) and any(token in lowered for token in missing_words)
+
+
+def _v50_prune_completed_cost_prompts(node: Any) -> Any:
+    if isinstance(node, dict):
+        for key, value in list(node.items()):
+            if isinstance(value, list):
+                node[key] = [
+                    _v50_prune_completed_cost_prompts(item)
+                    for item in value
+                    if not _v50_cost_message_is_stale(item)
+                ]
+            else:
+                node[key] = _v50_prune_completed_cost_prompts(value)
+        return node
+    if isinstance(node, list):
+        return [
+            _v50_prune_completed_cost_prompts(item)
+            for item in node
+            if not _v50_cost_message_is_stale(item)
+        ]
+    return node
+
+
+# LANDED_COST_INPUT_SYNTAX_V51
+# The established V16 parser accepts "procurement value 15000 USD", while the
+# merged Additional-information request naturally uses "value is 15000 USD".
+# Normalize only the harmless separator between a known cost label and number.
+def _v51_normalize_cost_input_syntax(text: str) -> str:
+    import re as _re
+
+    value = str(text or "")
+    labels = (
+        r"procurement\s+value|product\s+value|cargo\s+value|declared\s+value|"
+        r"freight\s+quote|insurance\s+premium|duty\s+rate|import\s+tax|"
+        r"vat\s+rate|customs\s+brokerage|local\s+delivery"
+    )
+    return _re.sub(
+        rf"(?i)\b({labels})\s+(?:is\s+|=\s*|:\s*)",
+        r"\1 ",
+        value,
+    )
+
+
+def _v50_restore_completed_cost_workflow(response: dict[str, Any], original_text: str) -> dict[str, Any]:
+    if not isinstance(response, dict) or not _v49_is_cost_workflow(original_text):
         return response
 
-    _v48_restore_original_request_metadata(response, text, canonical_text, normalization)
+    parser = globals().get("_phase2_v16_parse_cost_inputs")
+    apply_costs = globals().get("_phase2_v16_apply_costs")
+    answer_sync = globals().get("_v36_sync_completed_cost_answer")
+    if not callable(parser) or not callable(apply_costs) or not callable(answer_sync):
+        response.setdefault("request_metadata", {})["landed_cost_restore_v50"] = {
+            "status": "unavailable",
+            "reason": "required_v16_v36_helpers_missing",
+        }
+        return response
+
+    normalized_text = _v51_normalize_cost_input_syntax(original_text)
+    try:
+        costs = parser(normalized_text)
+    except Exception as error:
+        response.setdefault("request_metadata", {})["landed_cost_restore_v50"] = {
+            "status": "error",
+            "reason": type(error).__name__,
+        }
+        return response
+
+    if not isinstance(costs, dict):
+        return response
+
+    complete = all(costs.get(key) is not None for key in _V50_REQUIRED_COST_KEYS)
+    if not complete:
+        return response
+
+    response = apply_costs(response, costs)
+    landed = response.setdefault("landed_cost_advice", {})
+    if not isinstance(landed, dict):
+        landed = {}
+        response["landed_cost_advice"] = landed
+    known = landed.setdefault("known_inputs", {})
+    if not isinstance(known, dict):
+        known = {}
+        landed["known_inputs"] = known
+    for key, value in costs.items():
+        if value is not None:
+            known[key] = value
+
+    # The earlier blocked advice may have left blockers/recommendations behind.
+    # A complete deterministic calculation must clear those stale blockers or
+    # V36 will correctly refuse to surface the total.
+    landed["applicable"] = True
+    landed["status"] = "review_required"
+    landed["missing_cost_inputs"] = []
+    landed["blockers"] = []
+    landed["warnings"] = [
+        item for item in (landed.get("warnings") or [])
+        if not _v50_cost_message_is_stale(item)
+    ]
+    landed["recommendations"] = [
+        item for item in (landed.get("recommendations") or [])
+        if not _v50_cost_message_is_stale(item)
+    ]
+
+    for surface_name in ("text_cost_inputs", "finance_inputs", "cost_inputs"):
+        surface = response.setdefault(surface_name, {})
+        if isinstance(surface, dict):
+            surface.update({key: value for key, value in costs.items() if value is not None})
+
+    metadata = response.setdefault("request_metadata", {})
+    if isinstance(metadata, dict):
+        metadata["input_source"] = original_text
+        metadata["original_input_source"] = original_text
+        metadata["landed_cost_restore_v50"] = {
+            "status": "applied",
+            "complete_cost_inputs": list(_V50_REQUIRED_COST_KEYS),
+        }
+
+    response = _v50_prune_completed_cost_prompts(response)
+
+    # Rebuild downstream summaries from the repaired cost advice where the
+    # established builders are available, then use V36 as the answer authority.
+    for target, builder_name in (
+        ("action_plan", "build_action_plan"),
+        ("executive_summary", "build_executive_summary"),
+        ("ui_sections", "build_ui_sections"),
+    ):
+        builder = globals().get(builder_name)
+        if callable(builder):
+            try:
+                response[target] = builder(response)
+            except Exception:
+                pass
+
+    response = answer_sync(response, original_text)
+    try:
+        response["ui_sections"] = build_ui_sections(response)
+    except Exception:
+        pass
+    return response
+
+def process_text_request(text: str, *args, **kwargs):
+    original_text = text
+    is_cost_workflow = isinstance(original_text, str) and _v49_is_cost_workflow(original_text)
+
+    if isinstance(original_text, str) and not is_cost_workflow:
+        effective_text, canonicalization_changes = _v49_canonicalize_live_text(original_text)
+    else:
+        effective_text, canonicalization_changes = original_text, []
+
+    canonical_text, normalization = _v48_canonical_request_text(effective_text)
+    response = _process_text_request_before_remaining_backend_robustness_v48(
+        canonical_text,
+        *args,
+        **kwargs,
+    )
+    if not isinstance(response, dict) or not isinstance(original_text, str):
+        return response
+
+    _v48_restore_original_request_metadata(
+        response,
+        original_text,
+        canonical_text,
+        normalization,
+    )
+    metadata = response.setdefault("request_metadata", {})
+    if isinstance(metadata, dict):
+        metadata["input_source"] = original_text
+        metadata["original_input_source"] = original_text
+
     _v48_canonicalize_document_agent(response)
 
     if response.get("detected_intent") == "document":
@@ -11115,13 +12243,23 @@ def process_text_request(text: str, *args, **kwargs):
             agents.insert(0, "document_ai_agent")
         response["agents_called"] = _v48_deduplicate(agents)
 
-    _v48_apply_special_shipping_intent(response, text)
+    _v48_apply_special_shipping_intent(response, original_text)
 
-    booking = _v48_booking_route_and_date(text)
+    booking = _v48_booking_route_and_date(original_text)
     if booking:
         _v48_attach_booking_fields(response, booking)
 
-    _v48_attach_missing_information(response, text)
+    _v48_attach_missing_information(response, original_text)
     _v48_refresh_known_weight_text(response)
     _v48_canonicalize_document_agent(response)
+
+    if is_cost_workflow:
+        return _v50_restore_completed_cost_workflow(response, original_text)
+
+    response = _v49_apply_live_response_consistency(
+        response,
+        original_text,
+        effective_text,
+        canonicalization_changes,
+    )
     return response

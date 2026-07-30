@@ -73,6 +73,7 @@ TEST_COMMANDS = [
     [sys.executable, "scripts/test_rule_router_fallback_v45.py"],
     [sys.executable, "scripts/test_parser_robustness_v47.py"],
     [sys.executable, "scripts/test_remaining_backend_robustness_v48.py"],
+    [sys.executable, "scripts/test_live_backend_consistency_v49.py"],
 ]
 
 
