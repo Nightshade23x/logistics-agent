@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from app.text_request_intent import classify_text_request_intent
 
@@ -48,6 +48,7 @@ def _normalize(text: str) -> str:
     return " ".join(text.lower().split())
 
 
+# RULE_ROUTER_FALLBACK_V45: use the richer deterministic classifier only when keyword scores are zero.
 def detect_text_intent(text: str) -> dict[str, Any]:
     normalized = _normalize(text)
 
@@ -60,7 +61,12 @@ def detect_text_intent(text: str) -> dict[str, Any]:
     detected_intent = max(scores, key=scores.get)
 
     if scores[detected_intent] == 0:
-        detected_intent = "unknown"
+        fallback_intent = classify_text_request_intent(normalized)
+        if fallback_intent in scores and fallback_intent != "unknown":
+            detected_intent = fallback_intent
+            scores[fallback_intent] = 1
+        else:
+            detected_intent = "unknown"
 
     return {
         "detected_intent": detected_intent,
@@ -164,4 +170,3 @@ try:
 
 except NameError:
     pass
-

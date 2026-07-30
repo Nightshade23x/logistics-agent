@@ -10478,6 +10478,32 @@ def _v44_apply_adversarial_authority(payload, user_text):
         )
         _v44_sync_corrected_quantity(payload, corrected_quantity, superseded_quantity)
 
+    # CORRECTION_VOLUME_AUTHORITY_V45
+    # A quantity correction authorizes the corrected count and any derived weight,
+    # but it does not authorize catalog-estimated dimensions. Keep CBM unresolved
+    # unless dimensions or aggregate volume were explicitly supplied by the user.
+    correction_without_dimensions = (
+        corrected_quantity is not None
+        and dimensions is None
+        and not dimensions_unknown
+        and not multi_item_shipment
+    )
+
+    # MULTI_ITEM_REPAIR_AUTHORITY_V45
+    # Routing multi-item text into Logistics Agent can surface catalog estimates
+    # for only part of the cargo. Preserve combined totals only when V42 completed
+    # deterministic item-by-item structured repair.
+    interpretation = payload.get("request_interpretation")
+    interpretation_reason = (
+        str(interpretation.get("reason") or "").strip().lower()
+        if isinstance(interpretation, dict)
+        else ""
+    )
+    multi_item_without_structured_repair = (
+        multi_item_shipment
+        and interpretation_reason != "local_structured_repair"
+    )
+
     if quantity_unknown:
         quantity = None
 
@@ -10598,14 +10624,43 @@ def _v44_apply_adversarial_authority(payload, user_text):
         authoritative_weight = None
     if invalid_dimensions or dimensions_unknown:
         authoritative_cbm = None
+    if correction_without_dimensions:
+        authoritative_cbm = None
+        warnings.append(
+            "The corrected quantity was accepted, but dimensions or total CBM were not supplied, so shipment volume remains unresolved."
+        )
+        questions.append("Confirm cargo dimensions or total CBM for the corrected quantity.")
+    if multi_item_without_structured_repair:
+        authoritative_cbm = None
+        authoritative_weight = None
+        warnings.append(
+            "The request contains multiple cargo rows, but complete item-by-item structured facts were not available, so partial catalog estimates were not used as shipment totals."
+        )
+        questions.append(
+            "Confirm quantity, dimensions, and weight for every cargo row, or enable deterministic structured repair before calculating combined totals."
+        )
     if invalid_weight or weight_unknown:
         authoritative_weight = None
 
     # Apply only facts directly supported by the user's text. Explicit unknowns clear
     # stale/default metrics produced by older advisory fallbacks.
-    if authoritative_cbm is not None or dimensions_unknown or invalid_quantity or invalid_dimensions or unitless_dimensions:
+    if (
+        authoritative_cbm is not None
+        or dimensions_unknown
+        or invalid_quantity
+        or invalid_dimensions
+        or unitless_dimensions
+        or correction_without_dimensions
+        or multi_item_without_structured_repair
+    ):
         _v44_sync_metric(payload, "total_cbm", _v44_clean_number(authoritative_cbm))
-    if authoritative_weight is not None or weight_unknown or invalid_quantity or invalid_weight:
+    if (
+        authoritative_weight is not None
+        or weight_unknown
+        or invalid_quantity
+        or invalid_weight
+        or multi_item_without_structured_repair
+    ):
         _v44_sync_metric(payload, "total_weight_kg", _v44_clean_number(authoritative_weight))
 
     validation = {
@@ -10627,6 +10682,8 @@ def _v44_apply_adversarial_authority(payload, user_text):
             "dimensions_explicitly_unknown": dimensions_unknown,
             "quantity_explicitly_unknown": quantity_unknown,
             "multi_item_shipment": multi_item_shipment,
+            "correction_without_dimensions": correction_without_dimensions,
+            "multi_item_without_structured_repair": multi_item_without_structured_repair,
         },
     }
     payload["input_validation_v44"] = validation
