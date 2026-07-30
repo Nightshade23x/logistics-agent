@@ -65,6 +65,7 @@ TEST_COMMANDS = [
     [sys.executable, "scripts/test_container_planning_multi_item_consistency.py"],
     [sys.executable, "scripts/test_empty_state_simple_tabs_v38.py"],
     [sys.executable, "scripts/test_ease_of_access_guided_workflow_v39.py"],
+    [sys.executable, "scripts/test_llm_request_interpreter_v40.py"],
 ]
 
 

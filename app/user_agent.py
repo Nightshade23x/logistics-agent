@@ -3937,3 +3937,18 @@ def run_user_agent_from_text(user_text):
         ),
         agents_called=[],
     )
+# ROBUST_LLM_REQUEST_INTERPRETER_V40
+# The LLM only repairs and structures natural-language input. Existing agents,
+# calculations, validation, safety checks, and final decisions stay deterministic.
+try:
+    _run_user_agent_from_text_before_llm_interpreter_v40 = run_user_agent_from_text
+
+    def run_user_agent_from_text(user_text):
+        from app.llm_request_interpreter import run_with_interpreter
+
+        return run_with_interpreter(
+            user_text,
+            _run_user_agent_from_text_before_llm_interpreter_v40,
+        )
+except Exception:
+    pass
