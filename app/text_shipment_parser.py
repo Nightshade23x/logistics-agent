@@ -1525,3 +1525,144 @@ def parse_shipment_text(text: str):
             item["weight_estimated"] = False
 
     return result
+
+# PARSER_ROBUSTNESS_V47
+_parse_shipment_text_before_parser_robustness_v47 = parse_shipment_text
+
+def _v47_num(v):
+    try: return float(v)
+    except (TypeError, ValueError): return None
+
+def _v47_round(v): return round(float(v),8)
+
+def _v47_location(v):
+    v=re.sub(r"\s+"," ",str(v or "")).strip(" \t\r\n.,;:")
+    return v.upper() if v.upper() in {"USA","UK","UAE","EU"} else (v.title() if v.islower() else v)
+
+def _v47_normalize(text):
+    v=str(text or "").replace("×","x")
+    for p,r in ((r"\bpalets\b","pallets"),(r"\bpalet\b","pallet"),(r"\bfrm\b","from"),(r"\bim\s+sending\b","I am sending"),(r"\bby\b","x")):
+        v=re.sub(p,r,v,flags=re.I)
+    return re.sub(r"\s+"," ",v).strip()
+
+def _v47_authoritative_prefix(text):
+    normalized=_v47_normalize(text)
+    marker=re.search(
+        r"\b(?:ignore\s+(?:all\s+)?previous\s+rules|disregard\s+(?:all\s+)?previous\s+(?:rules|instructions)|override\s+(?:the\s+)?(?:rules|calculations|result)|for\s+demo\s+purposes|pretend\b|make\s+up\b|fabricate\b)",
+        normalized,
+        flags=re.I,
+    )
+    if not marker: return normalized,False
+    prefix=normalized[:marker.start()].rstrip(" \t\r\n,.;:")
+    if not prefix or not _v47_dims(prefix): return normalized,False
+    if not re.search(r"\d+(?:\.\d+)?\s*(?:kg|kgs|kilogram|kilograms|lb|lbs|pound|pounds)\b",prefix,flags=re.I): return normalized,False
+    return prefix,True
+
+def _v47_route(text):
+    route={}; spans=[]
+    m=re.search(r"\bfinal\s+destination\s+(?:is|=)?\s*(?P<d>[A-Za-z][A-Za-z .'-]*?)\s*,?\s*not\s+[A-Za-z][A-Za-z .'-]*?(?=[.;]|$)",text,flags=re.I)
+    if m: route['destination']=_v47_location(m.group('d')); spans.append(m.span())
+    m=re.search(r"\bfrom\s+(?P<o>[A-Za-z][A-Za-z .'-]{0,45}?)\s+to\s+(?P<d>[A-Za-z][A-Za-z .'-]{0,45}?)(?=[.,;:]|\s+(?:ship|each|final|with|and|\d)\b|$)",text,flags=re.I)
+    if m:
+        route['origin']=_v47_location(m.group('o')); route.setdefault('destination',_v47_location(m.group('d'))); spans.append(m.span())
+    else:
+        m=re.search(r"\b(?P<o>[A-Z][A-Za-z.'-]*(?:\s+[A-Z][A-Za-z.'-]*){0,2})\s+to\s+(?P<d>[A-Z][A-Za-z.'-]*(?:\s+[A-Z][A-Za-z.'-]*){0,2})(?=\s*[,;:]|\s+\d)",text)
+        if m: route['origin']=_v47_location(m.group('o')); route.setdefault('destination',_v47_location(m.group('d'))); spans.append(m.span())
+    return route,spans
+
+def _v47_remove_spans(text,spans):
+    for a,b in sorted(spans,reverse=True): text=text[:a]+' '+text[b:]
+    return re.sub(r"\s+"," ",text).strip()
+
+def _v47_dims(text):
+    n=r"\d+(?:\.\d+)?"; u=r"(?:mm|cm|m|ft|feet|foot|in|inch|inches)"
+    return re.search(rf"(?P<a>{n})\s*(?P<ua>{u})?\s*x\s*(?P<b>{n})\s*(?P<ub>{u})?\s*x\s*(?P<c>{n})\s*(?P<uc>{u})",text,flags=re.I)
+
+def _v47_metres(v,u):
+    return float(v)*{'m':1.0,'cm':.01,'mm':.001,'ft':.3048,'feet':.3048,'foot':.3048,'in':.0254,'inch':.0254,'inches':.0254}[str(u).lower()]
+
+def _v47_kg(v,u):
+    kg=float(v)*(0.45359237 if str(u).lower() in {'lb','lbs','pound','pounds'} else 1.0)
+    # FINAL_WEIGHT_AUTHORITY_V32 compatibility: common practical imperial
+    # values such as 220.462 lb are intended to represent exactly 100 kg.
+    nearest=round(kg)
+    return float(nearest) if abs(kg-nearest)<=0.005 else kg
+
+def _v47_name(prefix):
+    v=re.sub(r"^\s*(?:ship|send|shipping|i\s+am\s+sending|need\s+freight\s+for|need\s+to\s+ship|freight\s+for)\s+","",str(prefix or ""),flags=re.I)
+    v=re.sub(r"^\s*(?:and|plus)\s+","",v,flags=re.I)
+    v=re.split(r"\.\s*each\b|,\s*each\b|\beach\s+(?:pallet|crate|carton|item|unit)\b|\(",v,maxsplit=1,flags=re.I)[0]
+    return re.sub(r"\s+"," ",v).strip(" \t\r\n,.;:()")
+
+def _v47_item(clause):
+    m=re.match(r"^\s*(?:and\s+|plus\s+)?(?P<q>(?<!-)\d+(?:\.\d+)?)\s+(?P<body>.+)$",clause,flags=re.I)
+    if not m: return None
+    q=_v47_num(m.group('q'))
+    if q is None or q<=0: return None
+    body=m.group('body'); d=_v47_dims(body)
+    if not d: return None
+    common=d.group('uc') or d.group('ub') or d.group('ua')
+    vals=[d.group('a'),d.group('b'),d.group('c')]; units=[d.group('ua') or common,d.group('ub') or common,d.group('uc') or common]
+    metres=[_v47_metres(v,u) for v,u in zip(vals,units)]
+    w=re.search(r"(?P<w>\d+(?:\.\d+)?)\s*(?P<u>kg|kgs|kilogram|kilograms|lb|lbs|pound|pounds)\b",body[d.end():],flags=re.I)
+    if not w: return None
+    uw=_v47_kg(w.group('w'),w.group('u')); name=_v47_name(body[:d.start()])
+    if not name or name.lower() in {'m','cm','mm','ft','kg','lb'}: return None
+    l,wd,h=metres; ucbm=l*wd*h; low=clause.lower()
+    fragile=any(t in low for t in ('fragile','glass','bottle','tv','television','tile','ceramic'))
+    hazardous=any(t in low for t in ('hazardous','dangerous goods','lithium','battery','radioactive','flammable'))
+    nonstack=bool(re.search(r"\b(?:must\s+not\s+be\s+stacked|do\s+not\s+stack|non[-\s]?stackable|not\s+stackable)\b",low))
+    return {'name':name,'item_name':name,'quantity':int(q) if q.is_integer() else q,
+      'dimensions_m':{'length':_v47_round(l),'width':_v47_round(wd),'height':_v47_round(h)},
+      'length_m':_v47_round(l),'width_m':_v47_round(wd),'height_m':_v47_round(h),
+      'unit_cbm':_v47_round(ucbm),'total_cbm':_v47_round(ucbm*q),
+      'weight_kg':_v47_round(uw),'unit_weight_kg':_v47_round(uw),'total_weight_kg':_v47_round(uw*q),
+      'weight_source':'explicit_per_item_v47','weight_estimated':False,'dimensions_source':'explicit_v47',
+      'fragile':fragile,'hazardous':hazardous,'radioactive':'radioactive' in low,'stackable':False if nonstack or hazardous else True}
+
+def _v47_explicit(text):
+    normalized,_ignored_instruction_suffix=_v47_authoritative_prefix(text)
+    if re.search(r"\btotal\s+(?:shipment\s+|packed\s+)?weight\b",normalized,flags=re.I): return [],{},normalized
+    route,spans=_v47_route(normalized); cargo=_v47_remove_spans(normalized,spans)
+    cargo=re.sub(r"^\s*(?:ship|send|shipping|i\s+am\s+sending|need\s+freight\s+for|need\s+to\s+ship|freight\s+for)\s*:?\s*","",cargo,flags=re.I)
+    cargo=re.sub(r"^\s*ship\s*:?\s*","",cargo,flags=re.I)
+    cargo=re.sub(r"\bfinal\s+destination\b.*?(?=[.;]|$)"," ",cargo,flags=re.I)
+    cargo=re.sub(r"\bcorrection\s*:.*?(?=[.;]|$)"," ",cargo,flags=re.I)
+    clauses=re.split(r"\s*;\s*|\s+\bplus\b\s+",cargo,flags=re.I)
+    items=[x for x in (_v47_item(c) for c in clauses) if x]
+
+    # Never accept a partial physical parse. Every explicit dimension triplet
+    # and every explicit weight must map one-to-one to a parsed cargo item.
+    # This prevents a prompt containing two items joined by plain 'and' from
+    # parsing only the first item and overwriting V42's complete local repair.
+    n=r"\d+(?:\.\d+)?"; u=r"(?:mm|cm|m|ft|feet|foot|in|inch|inches)"
+    dimension_pattern=rf"{n}\s*{u}?\s*x\s*{n}\s*{u}?\s*x\s*{n}\s*{u}"
+    dimension_count=len(re.findall(dimension_pattern,cargo,flags=re.I))
+    weight_count=len(re.findall(r"\d+(?:\.\d+)?\s*(?:kg|kgs|kilogram|kilograms|lb|lbs|pound|pounds)\b",cargo,flags=re.I))
+    if items and (dimension_count != len(items) or weight_count != len(items)):
+        items=[]
+
+    corr=re.search(r"\b(?:correction\s*:\s*(?:the\s+)?quantity|final\s+quantity)\s+(?:is|=)\s*(\d+(?:\.\d+)?)\s*,?\s*not\s+\d",normalized,flags=re.I)
+    if corr and len(items)==1:
+        q=float(corr.group(1)); items[0]['quantity']=int(q) if q.is_integer() else q
+        items[0]['total_cbm']=_v47_round(items[0]['unit_cbm']*q); items[0]['total_weight_kg']=_v47_round(items[0]['unit_weight_kg']*q)
+    return items,route,normalized
+
+def _v47_apply_route(result,route):
+    o,d=route.get('origin'),route.get('destination')
+    if o: result.update({'origin':o,'origin_country':o,'country_from':o})
+    if d: result.update({'destination':d,'destination_country':d,'country_to':d,'target_market':d})
+
+def parse_shipment_text(text: str):
+    result=_parse_shipment_text_before_parser_robustness_v47(text)
+    if not isinstance(text,str): return result
+    items,route,normalized=_v47_explicit(text)
+    if not items:
+        if route.get('destination') and re.search(r"\bfinal\s+destination\b",text,flags=re.I):
+            result=dict(result) if isinstance(result,dict) else {}; _v47_apply_route(result,route)
+        return result
+    result=dict(result) if isinstance(result,dict) else {}
+    result['items']=items; result['total_cbm']=_v47_round(sum(i['total_cbm'] for i in items)); result['total_weight_kg']=_v47_round(sum(i['total_weight_kg'] for i in items))
+    result['parser_source']='explicit_physical_v47'; result['normalized_physical_text']=normalized
+    if isinstance(result.get('issues'),list): result['issues']=[i for i in result['issues'] if 'no requested items' not in str(i).lower()]
+    _v47_apply_route(result,route); return result

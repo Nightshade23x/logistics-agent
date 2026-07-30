@@ -10707,3 +10707,87 @@ def process_text_request(user_text, include_raw_response=False):
         include_raw_response,
     )
     return _v44_apply_adversarial_authority(payload, user_text)
+
+# PARSER_ROBUSTNESS_BACKEND_AUTHORITY_V47
+_process_text_request_before_parser_robustness_v47 = process_text_request
+
+def _v47_sync_destination(value,destination):
+    if isinstance(value,dict):
+        for key,child in list(value.items()):
+            if key in {'destination','destination_country','country_to','target_market'}:
+                if child is not None or key in {'destination','destination_country'}: value[key]=destination
+            else: _v47_sync_destination(child,destination)
+    elif isinstance(value,list):
+        for child in value: _v47_sync_destination(child,destination)
+
+def _v47_sync_totals(value,cbm,weight):
+    if isinstance(value,dict):
+        for key,child in list(value.items()):
+            if key=='total_cbm': value[key]=cbm
+            elif key=='total_weight_kg': value[key]=weight
+            else: _v47_sync_totals(child,cbm,weight)
+    elif isinstance(value,list):
+        for child in value: _v47_sync_totals(child,cbm,weight)
+
+def _v47_mark_ignored_instruction(response,original_text,effective_text):
+    metadata=response.setdefault('request_metadata',{})
+    if isinstance(metadata,dict):
+        metadata['input_source']=original_text
+        metadata['original_input_source']=original_text
+    response['input_sanitization_v47']={
+        'status':'review_required',
+        'reason':'non_authoritative_instruction_suffix_ignored',
+        'effective_text':effective_text,
+    }
+    validation=response.setdefault('input_validation_v44',{})
+    if isinstance(validation,dict):
+        validation['status']='review_required'
+        warnings=validation.setdefault('warnings',[])
+        note='Ignored a non-authoritative instruction suffix that attempted to override explicit shipment facts.'
+        if isinstance(warnings,list) and note not in warnings: warnings.append(note)
+    response['decision']='review_required'
+    verdict=response.get('final_verdict')
+    if isinstance(verdict,dict): verdict['verdict']='review_required'
+
+def process_text_request(text: str,*args,**kwargs):
+    effective_text=text; ignored_instruction=False
+    if isinstance(text,str):
+        try:
+            from app.text_shipment_parser import _v47_authoritative_prefix
+            candidate,ignored_instruction=_v47_authoritative_prefix(text)
+            if ignored_instruction: effective_text=candidate
+        except Exception:
+            effective_text=text; ignored_instruction=False
+
+    response=_process_text_request_before_parser_robustness_v47(effective_text,*args,**kwargs)
+    if not isinstance(response,dict) or not isinstance(text,str): return response
+
+    if ignored_instruction:
+        _v47_mark_ignored_instruction(response,text,effective_text)
+
+    try:
+        from app.text_shipment_parser import parse_shipment_text as _v47_parse
+        parsed=_v47_parse(effective_text)
+    except Exception: return response
+    if not isinstance(parsed,dict): return response
+
+    destination=parsed.get('destination') or parsed.get('destination_country')
+    if destination and re.search(r"\bfinal\s+destination\b",effective_text,flags=re.I):
+        _v47_sync_destination(response,destination)
+        response['destination']=destination
+        response['destination_country']=destination
+
+    interpretation=response.get('request_interpretation')
+    if isinstance(interpretation,dict) and interpretation.get('reason')=='local_structured_repair':
+        return response
+
+    if parsed.get('parser_source')!='explicit_physical_v47': return response
+    cbm,weight=parsed.get('total_cbm'),parsed.get('total_weight_kg')
+    _v47_sync_totals(response,cbm,weight)
+    li=response.get('logistics_input')
+    if isinstance(li,dict):
+        li['items']=parsed.get('items',[]); li['total_cbm']=cbm; li['total_weight_kg']=weight
+        for key in ('origin','origin_country','country_from','destination','destination_country','country_to','target_market'):
+            if parsed.get(key) is not None: li[key]=parsed[key]
+    response['parser_source']='explicit_physical_v47'
+    return response
