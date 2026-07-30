@@ -10791,3 +10791,337 @@ def process_text_request(text: str,*args,**kwargs):
             if parsed.get(key) is not None: li[key]=parsed[key]
     response['parser_source']='explicit_physical_v47'
     return response
+
+# REMAINING_BACKEND_ROBUSTNESS_V48
+_process_text_request_before_remaining_backend_robustness_v48 = process_text_request
+
+
+def _v48_canonical_request_text(text):
+    import re as _re
+    if not isinstance(text, str):
+        return text, None
+
+    match = _re.match(
+        r"^\s*(?:calculate|estimate|work\s+out)\s+(?:the\s+)?landed\s+cost\s+for\s+",
+        text,
+        flags=_re.IGNORECASE,
+    )
+    if not match:
+        return text, None
+
+    canonical = "Ship " + text[match.end():].lstrip()
+    canonical = _re.sub(
+        r"\bgoods?\s+value\b",
+        "procurement value",
+        canonical,
+        flags=_re.IGNORECASE,
+    )
+    if not _re.search(r"\blanded\s+cost\b", canonical, flags=_re.IGNORECASE):
+        canonical = canonical.rstrip() + " Calculate landed cost."
+
+    return canonical, {
+        "status": "normalized",
+        "reason": "landed_cost_physical_prefix_normalized",
+        "physical_parser_prefix": "Ship",
+        "goods_value_alias": "procurement_value_usd",
+    }
+
+
+def _v48_restore_original_request_metadata(response, original_text, canonical_text, normalization):
+    if not isinstance(response, dict) or not isinstance(normalization, dict):
+        return
+    metadata = response.setdefault("request_metadata", {})
+    if isinstance(metadata, dict):
+        metadata["input_source"] = original_text
+        metadata["original_input_source"] = original_text
+        metadata["normalized_input_source_v48"] = canonical_text
+    response["request_normalization_v48"] = dict(normalization)
+
+
+def _v48_clean_location(value):
+    import re as _re
+    text = _re.sub(r"\s+", " ", str(value or "")).strip(" \t\r\n,.;:")
+    if text.upper() in {"USA", "UK", "UAE", "EU"}:
+        return text.upper()
+    return text.title() if text.islower() else text
+
+
+def _v48_deduplicate(values):
+    result = []
+    seen = set()
+    for value in values or []:
+        marker = str(value).strip().lower()
+        if not marker or marker in seen:
+            continue
+        seen.add(marker)
+        result.append(value)
+    return result
+
+
+def _v48_canonicalize_document_agent(value):
+    if isinstance(value, dict):
+        if "document_agent" in value and "document_ai_agent" not in value:
+            value["document_ai_agent"] = value.pop("document_agent")
+        elif "document_agent" in value:
+            value.pop("document_agent", None)
+
+        for key, child in list(value.items()):
+            if key == "agents_called" and isinstance(child, list):
+                normalized = ["document_ai_agent" if item == "document_agent" else item for item in child]
+                value[key] = _v48_deduplicate(normalized)
+            elif key == "agent_name" and child == "document_agent":
+                value[key] = "document_ai_agent"
+            else:
+                _v48_canonicalize_document_agent(child)
+    elif isinstance(value, list):
+        for child in value:
+            _v48_canonicalize_document_agent(child)
+
+
+def _v48_sync_route(value, origin=None, destination=None):
+    if isinstance(value, dict):
+        for key, child in list(value.items()):
+            if origin and key in {"origin", "origin_country", "country_from"}:
+                value[key] = origin
+            elif destination and key in {"destination", "destination_country", "country_to", "target_market"}:
+                value[key] = destination
+            else:
+                _v48_sync_route(child, origin=origin, destination=destination)
+    elif isinstance(value, list):
+        for child in value:
+            _v48_sync_route(child, origin=origin, destination=destination)
+
+
+def _v48_booking_route_and_date(text):
+    import re as _re
+    weekday = r"(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)"
+    date_phrase = rf"(?:(?:next|this)\s+{weekday}|tomorrow|today|tonight)"
+    match = _re.search(
+        rf"\bfrom\s+(?P<origin>[A-Za-z][A-Za-z .'-]*?)\s+to\s+(?P<destination>[A-Za-z][A-Za-z .'-]*?)\s+(?P<date>{date_phrase})(?=[.,;]|$)",
+        str(text or ""),
+        flags=_re.IGNORECASE,
+    )
+    if not match:
+        return None
+    return {
+        "origin": _v48_clean_location(match.group("origin")),
+        "destination": _v48_clean_location(match.group("destination")),
+        "requested_date_text": _re.sub(r"\s+", " ", match.group("date")).strip(),
+    }
+
+
+def _v48_attach_booking_fields(response, booking):
+    if not isinstance(response, dict) or not isinstance(booking, dict):
+        return
+    origin = booking.get("origin")
+    destination = booking.get("destination")
+    date_text = booking.get("requested_date_text")
+    _v48_sync_route(response, origin=origin, destination=destination)
+    if origin:
+        response["origin"] = origin
+        response["origin_country"] = origin
+    if destination:
+        response["destination"] = destination
+        response["destination_country"] = destination
+    if date_text:
+        response["requested_date_text"] = date_text
+        request_metadata = response.setdefault("request_metadata", {})
+        if isinstance(request_metadata, dict):
+            request_metadata["requested_date_text"] = date_text
+        booking_request = response.setdefault("booking_request", {})
+        if isinstance(booking_request, dict):
+            booking_request.update(
+                {
+                    "origin": origin,
+                    "destination": destination,
+                    "requested_date_text": date_text,
+                }
+            )
+        for key in ("logistics_input", "shipment_input", "input_resolution"):
+            section = response.get(key)
+            if isinstance(section, dict):
+                section["requested_date_text"] = date_text
+
+
+def _v48_is_special_shipping_request(text):
+    import re as _re
+    value = str(text or "")
+    shipping = _re.search(r"\b(?:ship|shipping|send|sending|freight|transport)\b", value, flags=_re.IGNORECASE)
+    special = _re.search(
+        r"\b(?:radioactive|lithium|battery|batteries|hazardous|dangerous\s+goods|flammable|explosive)\b",
+        value,
+        flags=_re.IGNORECASE,
+    )
+    shopping = _re.search(
+        r"\b(?:supplier|suppliers|vendor|vendors|procure|procurement|purchase|buy|sourcing)\b",
+        value,
+        flags=_re.IGNORECASE,
+    )
+    return bool(shipping and special and not shopping)
+
+
+def _v48_apply_special_shipping_intent(response, text):
+    if not isinstance(response, dict) or not _v48_is_special_shipping_request(text):
+        return
+
+    response["detected_intent"] = "logistics"
+    agents = [agent for agent in (response.get("agents_called") or []) if agent != "shopping_agent"]
+    for agent in ("compliance_agent", "document_ai_agent"):
+        if agent not in agents:
+            agents.append(agent)
+
+    metrics = response.get("logistics_metrics")
+    has_physical_plan = isinstance(metrics, dict) and (
+        metrics.get("total_cbm") is not None or metrics.get("total_weight_kg") is not None
+    )
+    if has_physical_plan and "logistics_agent" not in agents:
+        agents.insert(0, "logistics_agent")
+    response["agents_called"] = _v48_deduplicate(agents)
+
+    specialist_responses = response.get("specialist_responses")
+    if isinstance(specialist_responses, dict):
+        specialist_responses.pop("shopping_agent", None)
+
+    for key in ("shopping_response", "shopping_input"):
+        response.pop(key, None)
+
+    response["summary"] = (
+        "The request is a shipment/logistics case requiring specialist compliance and document review."
+    )
+    response["router_source"] = "shipping_guardrail_v48"
+
+    snapshot = response.get("executive_summary")
+    if isinstance(snapshot, dict):
+        shipment_snapshot = snapshot.get("shipment_snapshot")
+        if isinstance(shipment_snapshot, dict):
+            shipment_snapshot["intent"] = "logistics"
+            shipment_snapshot["agents_called"] = list(response["agents_called"])
+
+    for key in ("shopping_quality_review", "procurement_advice"):
+        section = response.get(key)
+        if isinstance(section, dict):
+            section["applicable"] = False
+            section["status"] = "not_applicable"
+            section["summary"] = "No supplier-sourcing request was made."
+
+
+def _v48_explicit_missing_information(text, response):
+    import re as _re
+    value = str(text or "")
+    lowered = value.lower()
+    items = []
+
+    def add(message):
+        if message not in items:
+            items.append(message)
+
+    unknown = r"(?:not\s+(?:yet\s+)?confirmed|unknown|not\s+confirmed|to\s+be\s+confirmed|tbc)"
+    if _re.search(rf"\bquantity\b[^.;]{{0,80}}\b{unknown}\b", lowered) or _re.search(rf"\b{unknown}\b[^.;]{{0,80}}\bquantity\b", lowered):
+        add("Confirm the cargo quantity.")
+    if _re.search(rf"\b(?:dimensions?|size)\b[^.;]{{0,100}}\b{unknown}\b", lowered) or _re.search(rf"\b{unknown}\b[^.;]{{0,100}}\b(?:dimensions?|size)\b", lowered):
+        add("Confirm the final packed dimensions for each cargo item.")
+    if _re.search(rf"\bweight\b[^.;]{{0,100}}\b{unknown}\b", lowered) or _re.search(rf"\b{unknown}\b[^.;]{{0,100}}\bweight\b", lowered):
+        add("Confirm the final packed weight for each cargo item.")
+    if "isotope" in lowered and _re.search(unknown, lowered):
+        add("Confirm the radioactive isotope.")
+    if "activity" in lowered and _re.search(unknown, lowered):
+        add("Confirm the radioactive activity and measurement unit.")
+    if _re.search(r"\bun\s*(?:number|no\.?|#)\b", lowered) and _re.search(unknown, lowered):
+        add("Confirm the applicable UN number.")
+    if _re.search(r"\bwh\s+rating\b|\bwatt[-\s]?hour\s+rating\b", lowered) and _re.search(unknown, lowered):
+        add("Confirm the battery watt-hour rating.")
+    if _re.search(r"\b(?:cargo|goods|declared)\s+value\b", lowered) and _re.search(unknown, lowered):
+        add("Confirm the declared cargo value.")
+
+    metrics = response.get("logistics_metrics") if isinstance(response, dict) else None
+    if _v48_is_special_shipping_request(value) and isinstance(metrics, dict):
+        if metrics.get("total_cbm") is None and not any("dimensions" in item.lower() for item in items):
+            add("Confirm the package dimensions or total packed volume.")
+        if metrics.get("total_weight_kg") is None and not any("weight" in item.lower() for item in items):
+            add("Confirm the final packed shipment weight.")
+
+    if _re.search(r"\bbook\b", lowered) and isinstance(metrics, dict) and metrics.get("total_cbm") is None:
+        add("Confirm the cargo items, quantity, packed dimensions, and packed weight before booking.")
+
+    return items
+
+
+def _v48_attach_missing_information(response, text):
+    if not isinstance(response, dict):
+        return
+    existing = response.get("missing_information")
+    if isinstance(existing, str) and existing.strip():
+        values = [existing.strip()]
+    elif isinstance(existing, list):
+        values = [str(item).strip() for item in existing if str(item).strip()]
+    else:
+        values = []
+
+    explicit = _v48_explicit_missing_information(text, response)
+    values.extend(explicit)
+
+    if not values:
+        questions = response.get("clarification_questions")
+        if isinstance(questions, list):
+            values.extend(str(item).strip() for item in questions if str(item).strip())
+
+    values = _v48_deduplicate(values)
+    if values:
+        response["missing_information"] = values
+        response["missing_information_count"] = len(values)
+        response["missing_information_preview"] = values[:5]
+
+
+def _v48_refresh_known_weight_text(response):
+    import re as _re
+    if not isinstance(response, dict):
+        return
+    metrics = response.get("logistics_metrics")
+    if not isinstance(metrics, dict) or metrics.get("total_weight_kg") is None:
+        return
+    try:
+        number = float(metrics["total_weight_kg"])
+    except (TypeError, ValueError):
+        return
+    formatted = str(int(number)) if number.is_integer() else (f"{number:.6f}".rstrip("0").rstrip("."))
+
+    def update(container, key):
+        value = container.get(key)
+        if not isinstance(value, str):
+            return
+        value = _re.sub(r"\bNone(?:\.0)?\s*kg\b", f"{formatted} kg", value, flags=_re.IGNORECASE)
+        value = _re.sub(r"(?i)(total\s+weight\s*:\s*)not\s+confirmed\b", rf"\g<1>{formatted} kg", value)
+        container[key] = value
+
+    for key in ("short_answer", "display_answer", "frontend_answer"):
+        update(response, key)
+    final_answer = response.get("final_answer")
+    if isinstance(final_answer, dict):
+        update(final_answer, "answer_text")
+
+
+def process_text_request(text: str, *args, **kwargs):
+    canonical_text, normalization = _v48_canonical_request_text(text)
+    response = _process_text_request_before_remaining_backend_robustness_v48(canonical_text, *args, **kwargs)
+    if not isinstance(response, dict) or not isinstance(text, str):
+        return response
+
+    _v48_restore_original_request_metadata(response, text, canonical_text, normalization)
+    _v48_canonicalize_document_agent(response)
+
+    if response.get("detected_intent") == "document":
+        agents = list(response.get("agents_called") or [])
+        if "document_ai_agent" not in agents:
+            agents.insert(0, "document_ai_agent")
+        response["agents_called"] = _v48_deduplicate(agents)
+
+    _v48_apply_special_shipping_intent(response, text)
+
+    booking = _v48_booking_route_and_date(text)
+    if booking:
+        _v48_attach_booking_fields(response, booking)
+
+    _v48_attach_missing_information(response, text)
+    _v48_refresh_known_weight_text(response)
+    _v48_canonicalize_document_agent(response)
+    return response

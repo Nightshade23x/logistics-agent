@@ -170,3 +170,61 @@ try:
 
 except NameError:
     pass
+
+# SHIPPING_INTENT_GUARDRAIL_V48
+import re as _re
+
+_detect_text_intent_before_shipping_guardrail_v48 = detect_text_intent
+
+
+def _v48_explicit_shipping_signal(text: str) -> bool:
+    normalized = _normalize(text)
+    active_shipping = _re.search(
+        r"\b(?:ship|shipping|send|sending|freight|transport|book)\b",
+        normalized,
+        flags=_re.IGNORECASE,
+    )
+    # Do not treat a bare origin/destination phrase as proof of shipping.
+    # Requests such as "I need 50 TVs from India to USA under FOB terms" are
+    # established procurement requests and must remain Shopping Agent work.
+    # The guardrail only corrects intent when an explicit shipping action is used.
+    return bool(active_shipping)
+
+
+def _v48_explicit_shopping_signal(text: str) -> bool:
+    normalized = _normalize(text)
+    return bool(
+        _re.search(
+            r"\b(?:supplier|suppliers|vendor|vendors|procure|procurement|purchase|buy|sourcing)\b",
+            normalized,
+            flags=_re.IGNORECASE,
+        )
+        or _re.search(
+            r"\b(?:find|compare|source)\s+(?:me\s+)?(?:some\s+)?(?:supplier|suppliers|vendor|vendors)\b",
+            normalized,
+            flags=_re.IGNORECASE,
+        )
+        or _re.search(
+            r"\bcompare\b.{0,40}\b(?:price|quality|supplier|vendor)\b",
+            normalized,
+            flags=_re.IGNORECASE,
+        )
+    )
+
+
+def detect_text_intent(text: str) -> dict[str, Any]:
+    result = _detect_text_intent_before_shipping_guardrail_v48(text)
+    if not isinstance(result, dict):
+        return result
+
+    if _v48_explicit_shipping_signal(text) and not _v48_explicit_shopping_signal(text):
+        result = dict(result)
+        scores = dict(result.get("scores") or {})
+        scores["logistics"] = max(1, int(scores.get("logistics") or 0))
+        result["scores"] = scores
+        result["detected_intent"] = "logistics"
+        # Preserve the established V45 router-source contract. The guardrail
+        # corrects intent only; it is not a separate routing backend.
+        result.setdefault("source", "text")
+
+    return result
