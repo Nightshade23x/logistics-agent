@@ -1,7 +1,5 @@
 import Badge from "./Badge.jsx";
-import AnswerFlow from "./AnswerFlow.jsx";
 import {
-  buildNextStepFlow,
   getAgentSummaryFallback,
   getAnswerActions,
   getAnswerStatus,
@@ -38,9 +36,8 @@ export default function AnswerCard({ result }) {
   const actions = getAnswerActions(result);
   const status = getAnswerStatus(result);
   const sections = parseAnswerSections(displayText);
-  const flowSteps = buildNextStepFlow(result, actions);
 
-  if (!displayText && !actions.length && !flowSteps.length) return null;
+  if (!displayText && !actions.length) return null;
 
   return (
     <div className="card answer-card-v2">
@@ -61,9 +58,6 @@ export default function AnswerCard({ result }) {
           </div>
         </div>
 
-        <div className="answer-flow-full-width">
-          <AnswerFlow steps={flowSteps} result={result} />
-        </div>
       </div>
     </div>
   );

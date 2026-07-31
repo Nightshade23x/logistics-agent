@@ -18,6 +18,24 @@ function finiteNumber(value) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+function flexibleDisplayMeasurement(result, key, fallbackValue, fallbackUnit) {
+  const measurement = result?.display_measurements?.[key] || {};
+  const valueKey = key === "weight" ? "total_weight" : "total_volume";
+  const requestedValue = finiteNumber(measurement?.[valueKey]);
+  return {
+    value: requestedValue ?? fallbackValue,
+    unit: String(measurement?.display_unit || fallbackUnit),
+  };
+}
+
+function cargoWeightDisplay(item) {
+  const requested = finiteNumber(item?.display_total_weight);
+  const internal = finiteNumber(item?.total_weight_kg);
+  const value = requested ?? internal;
+  const unit = requested !== null ? String(item?.display_weight_unit || "kg") : "kg";
+  return value === null ? "—" : `${value} ${unit}`;
+}
+
 function completeCargoTotal(cargo, key) {
   if (!Array.isArray(cargo) || !cargo.length) return null;
   const values = cargo.map((item) => finiteNumber(item?.[key]));
@@ -137,9 +155,16 @@ export function getContainerPlanningMetrics(result) {
       ? Number(((totalCbm / Number(container.capacity_cbm)) * 100).toFixed(2))
       : null);
 
+  const displayWeight = flexibleDisplayMeasurement(result, "weight", totalWeightKg, "kg");
+  const displayVolume = flexibleDisplayMeasurement(result, "volume", totalCbm, "CBM");
+
   return {
     totalCbm,
     totalWeightKg,
+    displayWeightValue: displayWeight.value,
+    displayWeightUnit: displayWeight.unit,
+    displayVolumeValue: displayVolume.value,
+    displayVolumeUnit: displayVolume.unit,
     utilizationPercent,
     weightKnown,
     packedDimensionsKnown,
@@ -276,11 +301,11 @@ export default function ContainerPlanning() {
           return (
             <>
               <div className="kpi-grid">
-                <Kpi label={userView === "simple" ? "Total cargo space" : "Total CBM"} value={canonical.totalCbm} unit="CBM" tone="blue" />
+                <Kpi label={userView === "simple" ? "Total cargo space" : "Total volume"} value={canonical.displayVolumeValue} unit={canonical.displayVolumeUnit} tone="blue" />
                 <Kpi
                   label="Total Weight"
-                  value={canonical.weightKnown ? canonical.totalWeightKg : "Not confirmed"}
-                  unit={canonical.weightKnown ? "kg" : ""}
+                  value={canonical.weightKnown ? canonical.displayWeightValue : "Not confirmed"}
+                  unit={canonical.weightKnown ? canonical.displayWeightUnit : ""}
                   tone="teal"
                 />
                 <Kpi label="Risk Score" value={lm.risk_score} unit={`(${lm.risk_level})`} tone={lm.risk_level === "high" ? "red" : "amber"} />
@@ -305,7 +330,7 @@ export default function ContainerPlanning() {
                       <div className="table-wrap">
                         <table className="table">
                           <thead>
-                            <tr><th>Item</th><th>Qty</th><th className="num">Unit CBM</th><th className="num">Total CBM</th><th className="num">Total Weight (kg)</th><th>Tags</th></tr>
+                            <tr><th>Item</th><th>Qty</th><th className="num">Unit CBM</th><th className="num">Total CBM</th><th className="num">Total Weight</th><th>Tags</th></tr>
                           </thead>
                           <tbody>
                             {(lv.cargo_mix || []).map((item) => (
@@ -314,7 +339,7 @@ export default function ContainerPlanning() {
                                 <td>{item.quantity}</td>
                                 <td className="num">{item.unit_cbm}</td>
                                 <td className="num">{item.total_cbm}</td>
-                                <td className="num">{item.total_weight_kg}</td>
+                                <td className="num">{cargoWeightDisplay(item)}</td>
                                 <td>{(item.category_tags || []).join(", ")}</td>
                               </tr>
                             ))}

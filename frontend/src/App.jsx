@@ -4,6 +4,7 @@ import Sidebar from "./components/Sidebar.jsx";
 import Dashboard from "./pages/Dashboard.jsx";
 import Shipments from "./pages/Shipments.jsx";
 import ContainerPlanning from "./pages/ContainerPlanning.jsx";
+import ProcessFlow from "./pages/ProcessFlow.jsx";
 import Procurement from "./pages/Procurement.jsx";
 import Compliance from "./pages/Compliance.jsx";
 import PartnerAgents from "./pages/PartnerAgents.jsx";
@@ -22,6 +23,7 @@ export default function App() {
             <Route path="/" element={<Dashboard />} />
             <Route path="/shipments" element={<Shipments />} />
             <Route path="/container-planning" element={<ContainerPlanning />} />
+            <Route path="/process-flow" element={<ProcessFlow />} />
             <Route path="/procurement" element={<Procurement />} />
             <Route path="/compliance" element={<Compliance />} />
             <Route path="/partner-agents" element={<PartnerAgents />} />

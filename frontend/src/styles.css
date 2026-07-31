@@ -3105,3 +3105,12 @@ summary:focus-visible {
     flex-direction:column;
   }
 }
+
+/* FLEXIBLE_UNITS_AND_PROCESS_FLOW_TAB_V67 */
+.wizard-measurement-choice{max-width:520px;margin-bottom:18px}
+.wizard-weight-row{margin-top:18px}
+.wizard-custom-unit{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px;margin:14px 0 4px;padding:14px;border:1px dashed var(--border);border-radius:12px;background:var(--panel-soft)}
+.wizard-custom-unit .wizard-field-error{grid-column:1/-1}
+.process-flow-page-v67{width:100%;min-width:0}
+.process-flow-page-v67 .answer-flow{width:100%;max-width:none;margin:0}
+@media (max-width:760px){.wizard-custom-unit{grid-template-columns:1fr}}

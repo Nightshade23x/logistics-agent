@@ -7,6 +7,7 @@ const NAV = [
     items: [
       { to: "/", label: "Start a Shipment", icon: "🏠", end: true },
       { to: "/shipments", label: "Shipment Plan", icon: "📦" },
+      { to: "/process-flow", label: "Process Flow", icon: "🔀" },
       { to: "/container-planning", label: "Loading Plan", icon: "🚢" },
     ],
   },

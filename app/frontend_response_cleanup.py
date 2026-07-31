@@ -1378,3 +1378,1128 @@ try:
 
 except Exception:
     pass
+
+# FLEXIBLE_DISPLAY_UNITS_V67
+# Preserve requested display units while keeping kg/CBM internally.
+import re as _v67_re
+
+_cleanup_frontend_response_before_flexible_units_v67 = cleanup_frontend_response
+
+
+def _v67_num(value):
+    try:
+        if value in (None, "", True, False):
+            return None
+        return float(str(value).replace(",", "").strip())
+    except Exception:
+        return None
+
+
+def _v67_round(value):
+    number = _v67_num(value)
+    if number is None:
+        return None
+    rounded = round(number, 6)
+    return int(rounded) if float(rounded).is_integer() else rounded
+
+
+def _v67_text(payload, original_text=None):
+    metadata = payload.get("request_metadata")
+    metadata = metadata if isinstance(metadata, dict) else {}
+    for value in (
+        original_text,
+        metadata.get("input_source"),
+        metadata.get("original_text"),
+        metadata.get("request_text"),
+        payload.get("original_prompt"),
+        payload.get("request_text"),
+        payload.get("user_request"),
+        payload.get("prompt"),
+        payload.get("input_text"),
+    ):
+        text = str(value or "").strip()
+        if text:
+            return text
+    return ""
+
+
+def _v67_quantity(text):
+    for pattern in (
+        r"(?i)\b(?:ship|send|export|import|calculate[^.]{0,80}?for|list[^.]{0,80}?for|find[^.]{0,80}?for)\s+([0-9][0-9,]*)\s+[a-z][a-z0-9 _/-]{0,40}\s+of\b",
+        r"(?i)^\s*([0-9][0-9,]*)\s+[a-z][a-z0-9 _/-]{0,40}\s+of\b",
+    ):
+        match = _v67_re.search(pattern, text)
+        if match:
+            value = _v67_num(match.group(1))
+            if value and value > 0:
+                return int(value)
+    return None
+
+
+def _v67_weight_alias(raw):
+    value = str(raw or "").strip().lower().rstrip(".")
+    return {
+        "kg": ("kg", 1.0), "kgs": ("kg", 1.0), "kilogram": ("kg", 1.0), "kilograms": ("kg", 1.0),
+        "g": ("g", 0.001), "gram": ("g", 0.001), "grams": ("g", 0.001),
+        "t": ("tonnes", 1000.0), "tonne": ("tonnes", 1000.0), "tonnes": ("tonnes", 1000.0),
+        "metric ton": ("tonnes", 1000.0), "metric tons": ("tonnes", 1000.0),
+        "lb": ("lb", 0.45359237), "lbs": ("lb", 0.45359237), "llb": ("lb", 0.45359237),
+        "llbs": ("lb", 0.45359237), "pound": ("lb", 0.45359237), "pounds": ("lb", 0.45359237),
+        "oz": ("oz", 0.028349523125), "ounce": ("oz", 0.028349523125), "ounces": ("oz", 0.028349523125),
+        "st": ("st", 6.35029318), "stone": ("st", 6.35029318), "stones": ("st", 6.35029318),
+    }.get(value)
+
+
+def _v67_weight(text):
+    quantity = _v67_quantity(text)
+
+    custom = _v67_re.search(
+        r"(?i)\boriginal\s+package\s+weight\s*:\s*([0-9][0-9,.]*)\s+([a-z][a-z0-9 _/-]{0,40})\s*[.;]",
+        text,
+    )
+    if custom:
+        value = _v67_num(custom.group(1))
+        unit = str(custom.group(2)).strip()
+        if value is not None and unit:
+            return {
+                "source": "original_package_weight",
+                "unit_weight": _v67_round(value),
+                "display_unit": unit,
+                "package_count": quantity,
+                "total_weight": _v67_round(value * quantity) if quantity else None,
+                "kg_factor": None,
+            }
+
+    total = _v67_re.search(
+        r"(?i)\btotal(?:\s+shipment|\s+cargo|\s+load)?\s+weight\s*(?:is|=|:)?\s*([0-9][0-9,.]*)\s*(kg|kgs?|kilograms?|g|grams?|t|tonnes?|metric\s+tons?|lb|lbs?|llb|llbs?|pounds?|oz|ounces?|st|stones?)\b",
+        text,
+    )
+    if total:
+        info = _v67_weight_alias(total.group(2))
+        value = _v67_num(total.group(1))
+        if info and value is not None:
+            return {
+                "source": "explicit_total_weight",
+                "unit_weight": None,
+                "display_unit": info[0],
+                "package_count": quantity,
+                "total_weight": _v67_round(value),
+                "kg_factor": info[1],
+            }
+
+    each = _v67_re.search(
+        r"(?i)\beach\b[^.;\n]{0,500}?\b(?:weighs?|weight\s*(?:is|=|:))\s*([0-9][0-9,.]*)\s*(kg|kgs?|kilograms?|g|grams?|t|tonnes?|metric\s+tons?|lb|lbs?|llb|llbs?|pounds?|oz|ounces?|st|stones?)\b",
+        text,
+    )
+    if each:
+        info = _v67_weight_alias(each.group(2))
+        value = _v67_num(each.group(1))
+        if info and value is not None:
+            return {
+                "source": "per_package_weight",
+                "unit_weight": _v67_round(value),
+                "display_unit": info[0],
+                "package_count": quantity,
+                "total_weight": _v67_round(value * quantity) if quantity else None,
+                "kg_factor": info[1],
+            }
+    return None
+
+
+def _v67_volume_alias(raw):
+    value = str(raw or "").strip().lower().rstrip(".")
+    return {
+        "cbm": ("CBM", 1.0), "m3": ("CBM", 1.0), "m^3": ("CBM", 1.0),
+        "cubic metre": ("CBM", 1.0), "cubic metres": ("CBM", 1.0),
+        "cubic meter": ("CBM", 1.0), "cubic meters": ("CBM", 1.0),
+        "l": ("L", 0.001), "litre": ("L", 0.001), "litres": ("L", 0.001),
+        "liter": ("L", 0.001), "liters": ("L", 0.001),
+        "ml": ("mL", 0.000001), "millilitre": ("mL", 0.000001), "millilitres": ("mL", 0.000001),
+        "milliliter": ("mL", 0.000001), "milliliters": ("mL", 0.000001),
+        "ft3": ("ft³", 0.028316846592), "ft^3": ("ft³", 0.028316846592),
+        "cubic foot": ("ft³", 0.028316846592), "cubic feet": ("ft³", 0.028316846592),
+        "in3": ("in³", 0.000016387064), "in^3": ("in³", 0.000016387064),
+        "cubic inch": ("in³", 0.000016387064), "cubic inches": ("in³", 0.000016387064),
+    }.get(value)
+
+
+def _v67_volume(text):
+    quantity = _v67_quantity(text)
+    match = _v67_re.search(
+        r"(?i)\boriginal\s+package\s+volume\s*:\s*([0-9][0-9,.]*)\s+([a-z][a-z0-9³^ _/-]{0,40})\s*[.;]",
+        text,
+    )
+    if not match:
+        return None
+    value = _v67_num(match.group(1))
+    raw_unit = str(match.group(2)).strip()
+    known = _v67_volume_alias(raw_unit)
+    if value is None or not raw_unit:
+        return None
+    return {
+        "source": "original_package_volume",
+        "unit_volume": _v67_round(value),
+        "display_unit": known[0] if known else raw_unit,
+        "package_count": quantity,
+        "total_volume": _v67_round(value * quantity) if quantity else None,
+        "cbm_factor": known[1] if known else None,
+    }
+
+
+def _v67_sync_weight(payload, display):
+    """Synchronise user-facing weight units with internal kilograms.
+
+    The final backend wrapper supplies the original request text, so pounds,
+    ounces, tonnes and custom units remain visible even after older backend
+    stages normalise calculations to kilograms.
+    """
+    if not isinstance(payload, dict) or not isinstance(display, dict):
+        return
+
+    unit_display = _v67_num(display.get("unit_weight"))
+    package_count = _v67_num(display.get("package_count"))
+    total_display = _v67_num(display.get("total_weight"))
+
+    if (
+        total_display is None
+        and unit_display is not None
+        and package_count is not None
+        and package_count > 0
+    ):
+        total_display = unit_display * package_count
+        display["total_weight"] = _v67_round(total_display)
+
+    factor = _v67_num(display.get("kg_factor"))
+    calculated_kg = (
+        total_display * factor
+        if total_display is not None and factor is not None
+        else None
+    )
+
+    metrics = payload.get("logistics_metrics")
+    if not isinstance(metrics, dict):
+        metrics = {}
+        payload["logistics_metrics"] = metrics
+
+    handoff = payload.get("handoff_payload")
+    review = payload.get("logistics_quality_review")
+    visualizer = payload.get("logistics_visualizer")
+    container = (
+        visualizer.get("container")
+        if isinstance(visualizer, dict)
+        and isinstance(visualizer.get("container"), dict)
+        else None
+    )
+
+    candidates = (
+        calculated_kg,
+        _v67_num(metrics.get("total_weight_kg")),
+        _v67_num(handoff.get("total_weight_kg"))
+        if isinstance(handoff, dict)
+        else None,
+        _v67_num(review.get("total_weight_kg"))
+        if isinstance(review, dict)
+        else None,
+        _v67_num(container.get("total_weight_kg"))
+        if isinstance(container, dict)
+        else None,
+    )
+
+    total_kg = next(
+        (
+            value
+            for value in candidates
+            if value is not None and value >= 0
+        ),
+        None,
+    )
+
+    display_measurements = payload.get("display_measurements")
+    if not isinstance(display_measurements, dict):
+        display_measurements = {}
+        payload["display_measurements"] = display_measurements
+
+    display_measurements["weight"] = display
+
+    display_total = (
+        _v67_round(total_display)
+        if total_display is not None
+        else display.get("total_weight")
+    )
+    display_unit = display.get("display_unit")
+
+    if total_kg is None:
+        # A custom unit can still be displayed even when no conversion factor
+        # was supplied. The shipment remains incomplete for payload checks.
+        metrics.update(
+            {
+                "display_total_weight": display_total,
+                "display_weight_unit": display_unit,
+            }
+        )
+        return
+
+    total_kg = _v67_round(total_kg)
+    if total_kg is None:
+        return
+
+    metrics.update(
+        {
+            "total_weight_kg": total_kg,
+            "weight_known": True,
+            "display_total_weight": display_total,
+            "display_weight_unit": display_unit,
+        }
+    )
+
+    for key in (
+        "handoff_payload",
+        "logistics_quality_review",
+    ):
+        section = payload.get(key)
+        if isinstance(section, dict):
+            section.update(
+                {
+                    "total_weight_kg": total_kg,
+                    "weight_known": True,
+                    "display_total_weight": display_total,
+                    "display_weight_unit": display_unit,
+                }
+            )
+
+    executive = payload.get("executive_summary")
+    if (
+        isinstance(executive, dict)
+        and isinstance(
+            executive.get("shipment_snapshot"),
+            dict,
+        )
+    ):
+        executive["shipment_snapshot"].update(
+            {
+                "total_weight_kg": total_kg,
+                "display_total_weight": display_total,
+                "display_weight_unit": display_unit,
+            }
+        )
+
+    if not isinstance(visualizer, dict):
+        return
+
+    container = visualizer.get("container")
+    if not isinstance(container, dict):
+        container = {}
+        visualizer["container"] = container
+
+    container.update(
+        {
+            "total_weight_kg": total_kg,
+            "weight_known": True,
+            "display_total_weight": display_total,
+            "display_weight_unit": display_unit,
+        }
+    )
+
+    display_metrics = visualizer.get("display_metrics")
+    if isinstance(display_metrics, dict):
+        display_metrics.update(
+            {
+                "total_weight_kg": total_kg,
+                "display_total_weight": display_total,
+                "display_weight_unit": display_unit,
+            }
+        )
+
+    cargo = visualizer.get("cargo_mix")
+    if (
+        isinstance(cargo, list)
+        and len(cargo) == 1
+        and isinstance(cargo[0], dict)
+    ):
+        quantity = (
+            _v67_num(cargo[0].get("quantity"))
+            or package_count
+            or 1
+        )
+        if quantity <= 0:
+            quantity = 1
+
+        cargo[0].update(
+            {
+                "total_weight_kg": total_kg,
+                "unit_weight_kg": _v67_round(
+                    float(total_kg) / quantity
+                ),
+                "display_total_weight": display_total,
+                "display_unit_weight": display.get(
+                    "unit_weight"
+                ),
+                "display_weight_unit": display_unit,
+                "weight_known": True,
+            }
+        )
+
+    sections = payload.get("ui_sections")
+    if isinstance(sections, list):
+        for section in sections:
+            if not isinstance(section, dict):
+                continue
+            if section.get("section_id") not in {
+                "logistics",
+                "container_planning",
+            }:
+                continue
+
+            section_metrics = section.get("metrics")
+            if not isinstance(section_metrics, dict):
+                section_metrics = {}
+                section["metrics"] = section_metrics
+
+            section_metrics.update(
+                {
+                    "total_weight_kg": total_kg,
+                    "display_total_weight": display_total,
+                    "display_weight_unit": display_unit,
+                }
+            )
+
+
+def _v67_sync_volume(payload, display, text):
+    """Synchronise direct-volume display data without ever replacing valid
+    internal CBM with None.
+
+    V67 may run more than once in the response-cleanup chain. On a later pass,
+    the original display clause can be incomplete while the payload already
+    contains a valid CBM total. This function therefore resolves the total from
+    every trustworthy source before updating the payload.
+    """
+    if not isinstance(payload, dict) or not isinstance(display, dict):
+        return
+
+    total_display = _v67_num(display.get("total_volume"))
+    unit_display = _v67_num(display.get("unit_volume"))
+    package_count = _v67_num(display.get("package_count"))
+
+    if (
+        total_display is None
+        and unit_display is not None
+        and package_count is not None
+        and package_count > 0
+    ):
+        total_display = unit_display * package_count
+        display["total_volume"] = _v67_round(total_display)
+
+    factor = _v67_num(display.get("cbm_factor"))
+    calculated_cbm = (
+        total_display * factor
+        if total_display is not None and factor is not None
+        else None
+    )
+
+    explicit_total = None
+    for pattern in (
+        r"(?i)\btotal\s+shipment\s+volume\s+is\s+([0-9][0-9,.]*)\s*CBM\b",
+        r"(?i)\b([0-9][0-9,.]*)\s*CBM\s+of\b",
+    ):
+        match = _v67_re.search(pattern, str(text or ""))
+        if match:
+            explicit_total = _v67_num(match.group(1))
+            if explicit_total is not None:
+                break
+
+    metrics = payload.get("logistics_metrics")
+    if not isinstance(metrics, dict):
+        metrics = {}
+        payload["logistics_metrics"] = metrics
+
+    handoff = payload.get("handoff_payload")
+    review = payload.get("logistics_quality_review")
+    visualizer = payload.get("logistics_visualizer")
+    container = (
+        visualizer.get("container")
+        if isinstance(visualizer, dict)
+        and isinstance(visualizer.get("container"), dict)
+        else None
+    )
+
+    candidates = (
+        calculated_cbm,
+        explicit_total,
+        _v67_num(metrics.get("total_cbm")),
+        _v67_num(handoff.get("total_cbm")) if isinstance(handoff, dict) else None,
+        _v67_num(review.get("total_cbm")) if isinstance(review, dict) else None,
+        _v67_num(container.get("total_cbm")) if isinstance(container, dict) else None,
+    )
+
+    total_cbm = next(
+        (
+            value
+            for value in candidates
+            if value is not None and value >= 0
+        ),
+        None,
+    )
+
+    if total_cbm is None:
+        return
+
+    total_cbm = _v67_round(total_cbm)
+    if total_cbm is None:
+        return
+
+    display_total = (
+        _v67_round(total_display)
+        if total_display is not None
+        else display.get("total_volume")
+    )
+    display_unit = display.get("display_unit")
+
+    metrics.update(
+        {
+            "total_cbm": total_cbm,
+            "display_total_volume": display_total,
+            "display_volume_unit": display_unit,
+        }
+    )
+
+    for key in ("handoff_payload", "logistics_quality_review"):
+        section = payload.get(key)
+        if isinstance(section, dict):
+            section.update(
+                {
+                    "total_cbm": total_cbm,
+                    "display_total_volume": display_total,
+                    "display_volume_unit": display_unit,
+                }
+            )
+
+    executive = payload.get("executive_summary")
+    if (
+        isinstance(executive, dict)
+        and isinstance(executive.get("shipment_snapshot"), dict)
+    ):
+        executive["shipment_snapshot"].update(
+            {
+                "total_cbm": total_cbm,
+                "display_total_volume": display_total,
+                "display_volume_unit": display_unit,
+            }
+        )
+
+    if not isinstance(visualizer, dict):
+        return
+
+    container = visualizer.get("container")
+    if not isinstance(container, dict):
+        container = {}
+        visualizer["container"] = container
+
+    container.update(
+        {
+            "total_cbm": total_cbm,
+            "display_total_volume": display_total,
+            "display_volume_unit": display_unit,
+        }
+    )
+
+    display_metrics = visualizer.get("display_metrics")
+    if isinstance(display_metrics, dict):
+        display_metrics.update(
+            {
+                "total_cbm": total_cbm,
+                "loaded_cbm": total_cbm,
+                "display_total_volume": display_total,
+                "display_volume_unit": display_unit,
+            }
+        )
+
+    capacity = _v67_num(container.get("capacity_cbm"))
+    if capacity is not None and capacity > 0:
+        container["utilization_percent"] = round(
+            float(total_cbm) / capacity * 100,
+            2,
+        )
+        if isinstance(display_metrics, dict):
+            display_metrics["utilization_percent"] = container[
+                "utilization_percent"
+            ]
+
+    cargo = visualizer.get("cargo_mix")
+    if (
+        isinstance(cargo, list)
+        and len(cargo) == 1
+        and isinstance(cargo[0], dict)
+    ):
+        quantity = (
+            _v67_num(cargo[0].get("quantity"))
+            or package_count
+            or 1
+        )
+        if quantity <= 0:
+            quantity = 1
+
+        cargo[0].update(
+            {
+                "total_cbm": total_cbm,
+                "unit_cbm": _v67_round(float(total_cbm) / quantity),
+                "display_total_volume": display_total,
+                "display_unit_volume": display.get("unit_volume"),
+                "display_volume_unit": display_unit,
+            }
+        )
+
+    sections = payload.get("ui_sections")
+    if isinstance(sections, list):
+        for section in sections:
+            if not isinstance(section, dict):
+                continue
+            if section.get("section_id") not in {
+                "logistics",
+                "container_planning",
+            }:
+                continue
+
+            section_metrics = section.get("metrics")
+            if not isinstance(section_metrics, dict):
+                section_metrics = {}
+                section["metrics"] = section_metrics
+
+            section_metrics.update(
+                {
+                    "total_cbm": total_cbm,
+                    "display_total_volume": display_total,
+                    "display_volume_unit": display_unit,
+                }
+            )
+
+
+def cleanup_frontend_response(payload, original_text=None):
+    cleaned = _cleanup_frontend_response_before_flexible_units_v67(payload, original_text)
+    if not isinstance(cleaned, dict):
+        return cleaned
+    text = _v67_text(cleaned, original_text)
+    if not text:
+        return cleaned
+
+    weight = _v67_weight(text)
+    volume = _v67_volume(text)
+    display = cleaned.get("display_measurements")
+    if not isinstance(display, dict):
+        display = {}
+        cleaned["display_measurements"] = display
+
+    if weight:
+        display["weight"] = weight
+        _v67_sync_weight(cleaned, weight)
+    if volume:
+        display["volume"] = volume
+        _v67_sync_volume(cleaned, volume, text)
+
+    metadata = cleaned.get("request_metadata")
+    if not isinstance(metadata, dict):
+        metadata = {}
+        cleaned["request_metadata"] = metadata
+    metadata["flexible_display_units_v67"] = {
+        "status": "applied",
+        "weight_unit": weight.get("display_unit") if weight else None,
+        "volume_unit": volume.get("display_unit") if volume else None,
+    }
+    return cleaned
+
+# BEGIN FINAL_DISPLAY_UNIT_AUTHORITY_V71
+# This wrapper runs after every existing frontend cleanup pass. It restores the
+# units from the original request without changing internal kg/CBM calculations.
+_final_display_unit_previous_cleanup_v71 = cleanup_frontend_response
+
+_FINAL_NUMBER_V71 = r"[0-9][0-9,]*(?:\.[0-9]+)?"
+
+
+def _final_number_v71(value):
+    try:
+        number = float(str(value).replace(",", "").strip())
+    except (TypeError, ValueError):
+        return None
+    return number if number >= 0 else None
+
+
+def _final_round_v71(value):
+    number = _final_number_v71(value)
+    if number is None:
+        return None
+    rounded = round(number, 6)
+    return int(rounded) if float(rounded).is_integer() else rounded
+
+
+def _final_original_text_v71(payload, args, kwargs):
+    for key in (
+        "user_text",
+        "text",
+        "request_text",
+        "prompt",
+        "original_text",
+    ):
+        value = kwargs.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+
+    for value in args[1:]:
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+
+    metadata = payload.get("request_metadata")
+    if isinstance(metadata, dict):
+        for key in (
+            "original_input_source",
+            "input_source",
+            "original_text",
+            "request_text",
+            "user_text",
+            "prompt",
+        ):
+            value = metadata.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+
+    for key in (
+        "original_prompt",
+        "request_text",
+        "user_request",
+        "prompt",
+        "input_text",
+    ):
+        value = payload.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+
+    return ""
+
+
+def _final_quantity_v71(text):
+    patterns = (
+        rf"(?i)\b(?:ship|send|move|transport|deliver|export|import)\s+"
+        rf"({_FINAL_NUMBER_V71})\s+"
+        rf"(?:packages?|boxes?|cartons?|crates?|pallets?|bags?|drums?|"
+        rf"bottles?|barrels?|bundles?|sacks?|cases?|units?|pieces?|pcs?)\b",
+        rf"(?i)\b({_FINAL_NUMBER_V71})\s+"
+        rf"(?:packages?|boxes?|cartons?|crates?|pallets?|bags?|drums?|"
+        rf"bottles?|barrels?|bundles?|sacks?|cases?|units?|pieces?|pcs?)\s+of\b",
+    )
+
+    for pattern in patterns:
+        match = re.search(pattern, text)
+        if match:
+            quantity = _final_number_v71(match.group(1))
+            if quantity is not None and quantity > 0:
+                return quantity
+
+    return 1.0
+
+
+def _final_weight_unit_v71(raw_unit):
+    key = re.sub(r"[^a-z0-9]+", "", str(raw_unit or "").lower())
+
+    mapping = {
+        "lb": ("lb", 0.45359237),
+        "lbs": ("lb", 0.45359237),
+        "llb": ("lb", 0.45359237),
+        "llbs": ("lb", 0.45359237),
+        "pound": ("lb", 0.45359237),
+        "pounds": ("lb", 0.45359237),
+        "kg": ("kg", 1.0),
+        "kgs": ("kg", 1.0),
+        "kilogram": ("kg", 1.0),
+        "kilograms": ("kg", 1.0),
+        "g": ("g", 0.001),
+        "gram": ("g", 0.001),
+        "grams": ("g", 0.001),
+        "oz": ("oz", 0.028349523125),
+        "ounce": ("oz", 0.028349523125),
+        "ounces": ("oz", 0.028349523125),
+        "st": ("st", 6.35029318),
+        "stone": ("st", 6.35029318),
+        "stones": ("st", 6.35029318),
+        "t": ("t", 1000.0),
+        "tonne": ("t", 1000.0),
+        "tonnes": ("t", 1000.0),
+        "metricton": ("t", 1000.0),
+        "metrictons": ("t", 1000.0),
+        "ton": ("ton", 907.18474),
+        "tons": ("ton", 907.18474),
+    }
+
+    return mapping.get(key, (None, None))
+
+
+def _final_weight_v71(text):
+    quantity = _final_quantity_v71(text)
+    unit_pattern = (
+        r"(llbs?|lbs?|pounds?|kgs?|kilograms?|kg|grams?|g|"
+        r"tonnes?|metric\s+tons?|tons?|t|ounces?|oz|stones?|st)"
+    )
+
+    per_package_patterns = (
+        rf"(?is)\beach\b.{{0,260}}?"
+        rf"\bweighs?\s+({_FINAL_NUMBER_V71})\s*{unit_pattern}\b",
+        rf"(?is)\bper\s+(?:package|box|carton|crate|pallet|bag|drum|"
+        rf"bottle|barrel|bundle|sack|case|unit|piece)\b"
+        rf"[^.!?\r\n]{{0,120}}?({_FINAL_NUMBER_V71})\s*{unit_pattern}\b",
+    )
+
+    for pattern in per_package_patterns:
+        match = re.search(pattern, text)
+        if not match:
+            continue
+
+        unit_value = _final_number_v71(match.group(1))
+        display_unit, kg_factor = _final_weight_unit_v71(match.group(2))
+
+        if unit_value is None or display_unit is None:
+            continue
+
+        return {
+            "unit_weight": _final_round_v71(unit_value),
+            "total_weight": _final_round_v71(unit_value * quantity),
+            "display_unit": display_unit,
+            "source_unit": str(match.group(2)).strip(),
+            "package_count": _final_round_v71(quantity),
+            "kg_factor": kg_factor,
+            "source": "original_request_per_package",
+        }
+
+    total_patterns = (
+        rf"(?is)\btotal(?:\s+shipment)?\s+weight\s*(?:is|:)?\s*"
+        rf"({_FINAL_NUMBER_V71})\s*{unit_pattern}\b",
+        rf"(?is)\bweighing\s+({_FINAL_NUMBER_V71})\s*{unit_pattern}"
+        rf"\s+total\b",
+    )
+
+    for pattern in total_patterns:
+        match = re.search(pattern, text)
+        if not match:
+            continue
+
+        total_value = _final_number_v71(match.group(1))
+        display_unit, kg_factor = _final_weight_unit_v71(match.group(2))
+
+        if total_value is None or display_unit is None:
+            continue
+
+        return {
+            "unit_weight": None,
+            "total_weight": _final_round_v71(total_value),
+            "display_unit": display_unit,
+            "source_unit": str(match.group(2)).strip(),
+            "package_count": _final_round_v71(quantity),
+            "kg_factor": kg_factor,
+            "source": "original_request_total",
+        }
+
+    return None
+
+
+def _final_volume_unit_v71(raw_unit):
+    key = re.sub(r"[^a-z0-9³]+", "", str(raw_unit or "").lower())
+
+    mapping = {
+        "l": ("L", 0.001),
+        "litre": ("L", 0.001),
+        "litres": ("L", 0.001),
+        "liter": ("L", 0.001),
+        "liters": ("L", 0.001),
+        "ml": ("mL", 0.000001),
+        "millilitre": ("mL", 0.000001),
+        "millilitres": ("mL", 0.000001),
+        "milliliter": ("mL", 0.000001),
+        "milliliters": ("mL", 0.000001),
+        "cbm": ("m³", 1.0),
+        "m3": ("m³", 1.0),
+        "m³": ("m³", 1.0),
+        "cubicmetre": ("m³", 1.0),
+        "cubicmetres": ("m³", 1.0),
+        "cubicmeter": ("m³", 1.0),
+        "cubicmeters": ("m³", 1.0),
+        "ft3": ("ft³", 0.028316846592),
+        "ft³": ("ft³", 0.028316846592),
+        "cubicfoot": ("ft³", 0.028316846592),
+        "cubicfeet": ("ft³", 0.028316846592),
+        "in3": ("in³", 0.000016387064),
+        "in³": ("in³", 0.000016387064),
+        "cubicinch": ("in³", 0.000016387064),
+        "cubicinches": ("in³", 0.000016387064),
+    }
+
+    return mapping.get(key, (None, None))
+
+
+def _final_volume_v71(text):
+    quantity = _final_quantity_v71(text)
+    unit_pattern = (
+        r"(litres?|liters?|millilitres?|milliliters?|ml|"
+        r"cbm|m3|m³|cubic\s+met(?:re|er)s?|"
+        r"cubic\s+feet|cubic\s+foot|ft3|ft³|"
+        r"cubic\s+inches?|in3|in³)"
+    )
+
+    patterns = (
+        rf"(?is)\boriginal\s+package\s+volume\s*(?:is|:)?\s*"
+        rf"({_FINAL_NUMBER_V71})\s*{unit_pattern}\b",
+        rf"(?is)\beach\b.{{0,220}}?"
+        rf"\b(?:has|with)\s+(?:a\s+)?(?:packed\s+)?volume\s+(?:of\s+)?"
+        rf"({_FINAL_NUMBER_V71})\s*{unit_pattern}\b",
+    )
+
+    for pattern in patterns:
+        match = re.search(pattern, text)
+        if not match:
+            continue
+
+        unit_value = _final_number_v71(match.group(1))
+        display_unit, cbm_factor = _final_volume_unit_v71(match.group(2))
+
+        if unit_value is None or display_unit is None:
+            continue
+
+        return {
+            "unit_volume": _final_round_v71(unit_value),
+            "total_volume": _final_round_v71(unit_value * quantity),
+            "display_unit": display_unit,
+            "source_unit": str(match.group(2)).strip(),
+            "package_count": _final_round_v71(quantity),
+            "cbm_factor": cbm_factor,
+            "source": "original_request_per_package",
+        }
+
+    return None
+
+
+def _final_sync_weight_v71(payload, weight):
+    """Synchronise the original display unit and repair a missing canonical kg
+    total when the deterministic backend did not recognise the source spelling
+    (for example the historical typo ``llbs``).
+
+    Existing canonical kilogram values always win. Conversion is used only when
+    ``total_weight_kg`` is absent, null, or non-numeric.
+    """
+    if not isinstance(payload, dict) or not isinstance(weight, dict):
+        return
+
+    display = payload.get("display_measurements")
+    if not isinstance(display, dict):
+        display = {}
+        payload["display_measurements"] = display
+    display["weight"] = dict(weight)
+
+    metrics = payload.get("logistics_metrics")
+    if not isinstance(metrics, dict):
+        metrics = {}
+        payload["logistics_metrics"] = metrics
+
+    existing_total_kg = _final_number_v71(metrics.get("total_weight_kg"))
+    display_total = _final_number_v71(weight.get("total_weight"))
+    kg_factor = _final_number_v71(weight.get("kg_factor"))
+
+    repaired_total_kg = existing_total_kg
+    if (
+        repaired_total_kg is None
+        and display_total is not None
+        and kg_factor is not None
+    ):
+        repaired_total_kg = _final_round_v71(display_total * kg_factor)
+
+    metrics.update(
+        {
+            "display_unit_weight": weight.get("unit_weight"),
+            "display_total_weight": weight.get("total_weight"),
+            "display_weight_unit": weight.get("display_unit"),
+        }
+    )
+
+    if repaired_total_kg is not None:
+        metrics["total_weight_kg"] = repaired_total_kg
+        metrics["weight_known"] = True
+
+    measurement = payload.get("cargo_measurement_status")
+    if isinstance(measurement, dict) and repaired_total_kg is not None:
+        measurement["weight_known"] = True
+
+    for section_name in (
+        "handoff_payload",
+        "logistics_quality_review",
+    ):
+        section = payload.get(section_name)
+        if not isinstance(section, dict):
+            continue
+
+        section.update(
+            {
+                "display_unit_weight": weight.get("unit_weight"),
+                "display_total_weight": weight.get("total_weight"),
+                "display_weight_unit": weight.get("display_unit"),
+            }
+        )
+
+        if (
+            repaired_total_kg is not None
+            and _final_number_v71(section.get("total_weight_kg")) is None
+        ):
+            section["total_weight_kg"] = repaired_total_kg
+            section["weight_known"] = True
+
+    executive = payload.get("executive_summary")
+    if (
+        isinstance(executive, dict)
+        and isinstance(executive.get("shipment_snapshot"), dict)
+    ):
+        snapshot = executive["shipment_snapshot"]
+        snapshot.update(
+            {
+                "display_total_weight": weight.get("total_weight"),
+                "display_weight_unit": weight.get("display_unit"),
+            }
+        )
+        if (
+            repaired_total_kg is not None
+            and _final_number_v71(snapshot.get("total_weight_kg")) is None
+        ):
+            snapshot["total_weight_kg"] = repaired_total_kg
+
+    visualizer = payload.get("logistics_visualizer")
+    if isinstance(visualizer, dict):
+        container = visualizer.get("container")
+        if isinstance(container, dict):
+            container.update(
+                {
+                    "display_total_weight": weight.get("total_weight"),
+                    "display_weight_unit": weight.get("display_unit"),
+                }
+            )
+            if (
+                repaired_total_kg is not None
+                and _final_number_v71(container.get("total_weight_kg")) is None
+            ):
+                container["total_weight_kg"] = repaired_total_kg
+                container["weight_known"] = True
+
+        cargo = visualizer.get("cargo_mix")
+        if (
+            isinstance(cargo, list)
+            and len(cargo) == 1
+            and isinstance(cargo[0], dict)
+        ):
+            item = cargo[0]
+            item.update(
+                {
+                    "display_unit_weight": weight.get("unit_weight"),
+                    "display_total_weight": weight.get("total_weight"),
+                    "display_weight_unit": weight.get("display_unit"),
+                }
+            )
+            if (
+                repaired_total_kg is not None
+                and _final_number_v71(item.get("total_weight_kg")) is None
+            ):
+                item["total_weight_kg"] = repaired_total_kg
+
+            quantity = _final_number_v71(weight.get("package_count"))
+            if (
+                repaired_total_kg is not None
+                and quantity is not None
+                and quantity > 0
+                and _final_number_v71(item.get("unit_weight_kg")) is None
+            ):
+                item["unit_weight_kg"] = _final_round_v71(
+                    repaired_total_kg / quantity
+                )
+
+    metadata = payload.get("request_metadata")
+    if not isinstance(metadata, dict):
+        metadata = {}
+        payload["request_metadata"] = metadata
+
+    authority = metadata.get("final_display_unit_authority_v71")
+    if not isinstance(authority, dict):
+        authority = {"status": "applied"}
+        metadata["final_display_unit_authority_v71"] = authority
+
+    authority["weight_unit"] = weight.get("display_unit")
+    authority["canonical_weight_repaired"] = (
+        existing_total_kg is None and repaired_total_kg is not None
+    )
+
+
+def _final_sync_volume_v71(payload, volume):
+    if not isinstance(volume, dict):
+        return
+
+    display = payload.get("display_measurements")
+    if not isinstance(display, dict):
+        display = {}
+        payload["display_measurements"] = display
+    display["volume"] = dict(volume)
+
+    metrics = payload.get("logistics_metrics")
+    if not isinstance(metrics, dict):
+        metrics = {}
+        payload["logistics_metrics"] = metrics
+
+    metrics.update(
+        {
+            "display_unit_volume": volume.get("unit_volume"),
+            "display_total_volume": volume.get("total_volume"),
+            "display_volume_unit": volume.get("display_unit"),
+        }
+    )
+
+    visualizer = payload.get("logistics_visualizer")
+    if isinstance(visualizer, dict):
+        container = visualizer.get("container")
+        if isinstance(container, dict):
+            container.update(
+                {
+                    "display_total_volume": volume.get("total_volume"),
+                    "display_volume_unit": volume.get("display_unit"),
+                }
+            )
+
+        cargo = visualizer.get("cargo_mix")
+        if (
+            isinstance(cargo, list)
+            and len(cargo) == 1
+            and isinstance(cargo[0], dict)
+        ):
+            cargo[0].update(
+                {
+                    "display_unit_volume": volume.get("unit_volume"),
+                    "display_total_volume": volume.get("total_volume"),
+                    "display_volume_unit": volume.get("display_unit"),
+                }
+            )
+
+
+def cleanup_frontend_response(*args, **kwargs):
+    cleaned = _final_display_unit_previous_cleanup_v71(*args, **kwargs)
+
+    if not isinstance(cleaned, dict):
+        return cleaned
+
+    original_text = _final_original_text_v71(cleaned, args, kwargs)
+    weight = _final_weight_v71(original_text)
+    volume = _final_volume_v71(original_text)
+
+    _final_sync_weight_v71(cleaned, weight)
+    _final_sync_volume_v71(cleaned, volume)
+
+    metadata = cleaned.get("request_metadata")
+    if not isinstance(metadata, dict):
+        metadata = {}
+        cleaned["request_metadata"] = metadata
+
+    metadata["final_display_unit_authority_v71"] = {
+        "status": "applied",
+        "original_text_available": bool(original_text),
+        "weight_unit": weight.get("display_unit") if weight else None,
+        "volume_unit": volume.get("display_unit") if volume else None,
+    }
+
+    return cleaned
+# END FINAL_DISPLAY_UNIT_AUTHORITY_V71
