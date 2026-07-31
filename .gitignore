@@ -69,3 +69,11 @@ backups/
 
 # Generated test and diagnostic reports
 test_outputs/
+
+# Local development, generated output, and secrets
+.env.*
+!.env.example
+
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
