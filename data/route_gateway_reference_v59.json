@@ -1,5 +1,5 @@
 {
-  "version": "2026-07-31",
+  "version": "2026-07-31-v64",
   "basis": "indicative_static_gateway_reference",
   "notes": [
     "Port and corridor suggestions are planning references, not carrier bookings.",
@@ -78,21 +78,48 @@
             "Nhava Sheva",
             "Jawaharlal Nehru Port"
           ],
-          "basin": "arabian_sea"
+          "basin": "arabian_sea",
+          "priority": 1,
+          "service_areas": [
+            "Mumbai",
+            "Navi Mumbai",
+            "Maharashtra",
+            "Pune",
+            "Nashik"
+          ]
         },
         {
-          "name": "Port of Mundra",
+          "name": "Mundra Port",
           "aliases": [
-            "Mundra"
+            "Mundra",
+            "Mundra Port",
+            "Port of Mundra"
           ],
-          "basin": "arabian_sea"
+          "basin": "arabian_sea",
+          "priority": 2,
+          "service_areas": [
+            "Gujarat",
+            "Ahmedabad",
+            "Rajkot",
+            "Kutch"
+          ]
         },
         {
-          "name": "Port of Chennai",
+          "name": "Chennai Port",
           "aliases": [
-            "Chennai"
+            "Chennai",
+            "Chennai Port",
+            "Port of Chennai"
           ],
-          "basin": "indian_ocean"
+          "basin": "indian_ocean",
+          "priority": 1,
+          "service_areas": [
+            "Chennai",
+            "Tamil Nadu",
+            "Bengaluru",
+            "Bangalore",
+            "Hyderabad"
+          ]
         }
       ]
     },
@@ -104,14 +131,24 @@
           "aliases": [
             "Hamburg"
           ],
-          "basin": "north_sea"
+          "basin": "north_sea",
+          "priority": 1,
+          "service_areas": [
+            "Hamburg",
+            "Northern Germany"
+          ]
         },
         {
           "name": "Port of Bremerhaven",
           "aliases": [
             "Bremerhaven"
           ],
-          "basin": "north_sea"
+          "basin": "north_sea",
+          "priority": 2,
+          "service_areas": [
+            "Bremerhaven",
+            "Bremen"
+          ]
         }
       ]
     },
