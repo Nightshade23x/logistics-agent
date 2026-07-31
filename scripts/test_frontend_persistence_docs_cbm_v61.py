@@ -62,14 +62,14 @@ def main() -> None:
     # V61_WHITESPACE_TOLERANT_STORAGE_ASSERTIONS
     require(
         re.search(
-            r"localStorage\.setItem\(\s*DASHBOARD_TEXT_KEY\s*,\s*text\s*\)",
+            r"sessionStorage\.setItem\(\s*DASHBOARD_TEXT_KEY\s*,\s*text\s*\)",
             dashboard,
         ) is not None,
         "free-text draft is not persisted",
     )
     require(
         re.search(
-            r"localStorage\.setItem\(\s*DASHBOARD_SIMPLE_INPUT_MODE_KEY\s*,\s*simpleInputMode\s*\)",
+            r"sessionStorage\.setItem\(\s*DASHBOARD_SIMPLE_INPUT_MODE_KEY\s*,\s*simpleInputMode\s*\)",
             dashboard,
         ) is not None,
         "free/guided selection is not persisted",
@@ -196,7 +196,7 @@ def main() -> None:
         glasses_docs,
     )
 
-    print("PASS - free-text prompt and free/guided selection persist until explicit clear")
+    print("PASS - free-text prompt and free/guided selection persist in the current tab until explicit clear")
     print("PASS - guided draft and current wizard step persist until Start over/Clear")
     print("PASS - cargo-space KPI uses CBM")
     print("PASS - origin documents vary by route/agreement")

@@ -1,4 +1,4 @@
-﻿import Badge from "./Badge.jsx";
+import Badge from "./Badge.jsx";
 import AnswerFlow from "./AnswerFlow.jsx";
 import {
   buildNextStepFlow,
@@ -59,8 +59,10 @@ export default function AnswerCard({ result }) {
               <AnswerSection section={section} key={`${section.title}-${index}`} />
             ))}
           </div>
+        </div>
 
-          <AnswerFlow steps={flowSteps} />
+        <div className="answer-flow-full-width">
+          <AnswerFlow steps={flowSteps} result={result} />
         </div>
       </div>
     </div>

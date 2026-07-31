@@ -102,10 +102,12 @@ const DASHBOARD_JSON_KEY = "meridian.dashboard.json";
 const DASHBOARD_SIMPLE_INPUT_MODE_KEY = "meridian.dashboard.simpleInputMode";
 const USER_FRIENDLY_VIEW_V37 = true;
 // DASHBOARD_INPUT_PERSISTENCE_V61
+// BLANK_ENTRY_SESSION_DRAFT_V62
+// Drafts persist only in the current browser tab; a new app entry starts blank.
 
 function loadDashboardValue(key, fallback) {
   try {
-    const saved = localStorage.getItem(key);
+    const saved = sessionStorage.getItem(key);
 
     return saved === null
       ? fallback
@@ -133,26 +135,27 @@ export default function Dashboard() {
     return saved === "free" ? "free" : "guided";
   });
   const [wizardKey, setWizardKey] = useState(0);
+  const [editGuidedFromExisting, setEditGuidedFromExisting] = useState(false); // SYNCED_FREE_GUIDED_INPUT_V62
 
   useEffect(() => {
     try {
-      localStorage.setItem(
+      sessionStorage.setItem(
         DASHBOARD_MODE_KEY,
         mode
       );
 
 
-      localStorage.setItem(
+      sessionStorage.setItem(
         DASHBOARD_TEXT_KEY,
         text
       );
 
-      localStorage.setItem(
+      sessionStorage.setItem(
         DASHBOARD_JSON_KEY,
         jsonText
       );
 
-      localStorage.setItem(
+      sessionStorage.setItem(
         DASHBOARD_SIMPLE_INPUT_MODE_KEY,
         simpleInputMode
       );
@@ -182,6 +185,7 @@ export default function Dashboard() {
     setShowCurrentResult(false);
     setSimpleInputMode("guided");
     setWizardKey((value) => value + 1);
+    setEditGuidedFromExisting(false);
     try {
       sessionStorage.removeItem("meridian.guidedShipmentDraft.v39");
       sessionStorage.removeItem("meridian.guidedShipmentStep.v61");
@@ -198,6 +202,16 @@ export default function Dashboard() {
   function clearEverything() {
     clearAll();
     resetDashboardDraft();
+  }
+
+
+  function updateFreeText(value) {
+    setText(value);
+    setEditGuidedFromExisting(false);
+  }
+
+  function beginGuidedEditing() {
+    setEditGuidedFromExisting(true);
   }
 
 
@@ -290,12 +304,31 @@ export default function Dashboard() {
             )}
 
             {mode === "text" && userView === "simple" && simpleInputMode === "guided" && (
-              <GuidedShipmentWizard
-                key={wizardKey}
-                loading={loading}
-                onDraftChange={setText}
-                onSubmit={submit}
-              />
+              text.trim() && !editGuidedFromExisting ? (
+  <div className="guided-synced-request">
+    <div className="guided-synced-request-head">
+      <div>
+        <h3>Current shipment request</h3>
+        <p>This is the same request shown in Describe it myself. It will stay here until Clear or Start over.</p>
+      </div>
+    </div>
+    <textarea aria-label="Current synchronized shipment request" value={text} readOnly />
+    <div className="guided-synced-request-actions">
+      <button className="btn btn-primary" type="button" onClick={() => submit(text)} disabled={loading}>
+        {loading ? "Preparing your result..." : "Use this same request"}
+      </button>
+      <button className="btn" type="button" onClick={beginGuidedEditing}>
+        Edit this request step by step
+      </button>
+    </div>
+  </div>
+) : (
+  <GuidedShipmentWizard
+                  key={wizardKey}
+                  loading={loading}
+                  onSubmit={submit}
+                />
+)
             )}
 
             {mode === "text" && (userView === "advanced" || simpleInputMode === "free") && (
@@ -305,7 +338,7 @@ export default function Dashboard() {
                   id="shipping-request"
                   className="form-textarea request-textarea-v2"
                   value={text}
-                  onChange={(e) => setText(e.target.value)}
+                  onChange={(e) => updateFreeText(e.target.value)}
                   aria-describedby="shipping-request-help"
                   placeholder={userView === "simple" ? "Example: Ship 10 boxes from India to Germany. Each box weighs 25 kg and the contents are fragile." : "Example: Find suppliers for 1000 ceramic tiles from India to Germany using CIF. Budget 12000 USD."}
                 />
@@ -318,7 +351,7 @@ export default function Dashboard() {
                 <div className="sample-label">Try an example</div>
                 <div className="example-card-grid">
                   {QUICK_SAMPLES.map((sample, index) => (
-                    <button type="button" className="example-card" key={sample} onClick={() => setText(sample)}>
+                    <button type="button" className="example-card" key={sample} onClick={() => updateFreeText(sample)}>
                       <span className="example-card-kicker">Example {index + 1}</span>
                       <span className="example-card-text">{sample}</span>
                     </button>
