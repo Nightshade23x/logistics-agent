@@ -1,12 +1,6 @@
-// DASHBOARD_CURRENT_WORKSPACE_RESET_V1
-try {
-  localStorage.removeItem("meridian.dashboard.mode");
-  localStorage.removeItem("meridian.dashboard.text");
-  localStorage.removeItem("meridian.dashboard.json");
-  // Keep the current result available to other open tabs.
-} catch {
-  // Browser storage unavailable; continue normally.
-}
+// DASHBOARD_INPUT_PERSISTENCE_V61
+// Keep the current request draft until the user explicitly chooses Clear current,
+// Clear all, or Start over. Do not erase it merely because the app remounted.
 
 import React from "react";
 import ReactDOM from "react-dom/client";

@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 
 const SESSION_KEY = "meridian.guidedShipmentDraft.v39";
 
+const STEP_SESSION_KEY = "meridian.guidedShipmentStep.v61"; // GUIDED_STEP_PERSISTENCE_V61
+
 const EMPTY_DRAFT = {
   origin: "",
   destination: "",
@@ -37,6 +39,15 @@ function loadDraft() {
     return raw ? { ...EMPTY_DRAFT, ...JSON.parse(raw) } : EMPTY_DRAFT;
   } catch {
     return EMPTY_DRAFT;
+  }
+}
+
+function loadStep() {
+  try {
+    const parsed = Number(sessionStorage.getItem(STEP_SESSION_KEY));
+    return Number.isInteger(parsed) && parsed >= 0 && parsed < STEPS.length ? parsed : 0;
+  } catch {
+    return 0;
   }
 }
 
@@ -107,7 +118,7 @@ function ReviewRow({ label, value }) {
 
 export default function GuidedShipmentWizard({ loading = false, onDraftChange, onSubmit }) {
   const [draft, setDraft] = useState(loadDraft);
-  const [step, setStep] = useState(0);
+  const [step, setStep] = useState(loadStep);
   const [errors, setErrors] = useState({});
   const requestText = useMemo(() => buildGuidedShipmentRequest(draft), [draft]);
 
@@ -115,6 +126,10 @@ export default function GuidedShipmentWizard({ loading = false, onDraftChange, o
     try { sessionStorage.setItem(SESSION_KEY, JSON.stringify(draft)); } catch { /* Session storage is optional. */ }
     onDraftChange?.(requestText);
   }, [draft, requestText, onDraftChange]);
+
+  useEffect(() => {
+    try { sessionStorage.setItem(STEP_SESSION_KEY, String(step)); } catch { /* Session storage is optional. */ }
+  }, [step]);
 
   function update(field, value) {
     setDraft((current) => ({ ...current, [field]: value }));
@@ -170,7 +185,10 @@ export default function GuidedShipmentWizard({ loading = false, onDraftChange, o
     setDraft(EMPTY_DRAFT);
     setErrors({});
     setStep(0);
-    try { sessionStorage.removeItem(SESSION_KEY); } catch { /* Session storage is optional. */ }
+    try {
+      sessionStorage.removeItem(SESSION_KEY);
+      sessionStorage.removeItem(STEP_SESSION_KEY);
+    } catch { /* Session storage is optional. */ }
   }
 
   function submit() {

@@ -276,7 +276,7 @@ export default function ContainerPlanning() {
           return (
             <>
               <div className="kpi-grid">
-                <Kpi label={userView === "simple" ? "Total cargo space" : "Total CBM"} value={canonical.totalCbm} unit="m³" tone="blue" />
+                <Kpi label={userView === "simple" ? "Total cargo space" : "Total CBM"} value={canonical.totalCbm} unit="CBM" tone="blue" />
                 <Kpi
                   label="Total Weight"
                   value={canonical.weightKnown ? canonical.totalWeightKg : "Not confirmed"}

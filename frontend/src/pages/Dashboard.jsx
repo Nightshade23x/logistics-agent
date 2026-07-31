@@ -97,8 +97,11 @@ function ResultDecisionStrip({ result, onBreakdown }) {
 }
 
 const DASHBOARD_MODE_KEY = "meridian.dashboard.mode";
+const DASHBOARD_TEXT_KEY = "meridian.dashboard.text";
 const DASHBOARD_JSON_KEY = "meridian.dashboard.json";
+const DASHBOARD_SIMPLE_INPUT_MODE_KEY = "meridian.dashboard.simpleInputMode";
 const USER_FRIENDLY_VIEW_V37 = true;
+// DASHBOARD_INPUT_PERSISTENCE_V61
 
 function loadDashboardValue(key, fallback) {
   try {
@@ -119,13 +122,16 @@ export default function Dashboard() {
   const navigate = useNavigate();
 
   const [mode, setMode] = useState(() => loadDashboardValue(DASHBOARD_MODE_KEY, "text"));
-  const [text, setText] = useState("");
+  const [text, setText] = useState(() => loadDashboardValue(DASHBOARD_TEXT_KEY, ""));
   const [jsonText, setJsonText] = useState(() => loadDashboardValue(DASHBOARD_JSON_KEY, JSON.stringify(SAMPLE_JSON, null, 2)));
   const [files, setFiles] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [showCurrentResult, setShowCurrentResult] = useState(false);
-  const [simpleInputMode, setSimpleInputMode] = useState("guided");
+  const [simpleInputMode, setSimpleInputMode] = useState(() => {
+    const saved = loadDashboardValue(DASHBOARD_SIMPLE_INPUT_MODE_KEY, "guided");
+    return saved === "free" ? "free" : "guided";
+  });
   const [wizardKey, setWizardKey] = useState(0);
 
   useEffect(() => {
@@ -137,14 +143,24 @@ export default function Dashboard() {
 
 
       localStorage.setItem(
+        DASHBOARD_TEXT_KEY,
+        text
+      );
+
+      localStorage.setItem(
         DASHBOARD_JSON_KEY,
         jsonText
+      );
+
+      localStorage.setItem(
+        DASHBOARD_SIMPLE_INPUT_MODE_KEY,
+        simpleInputMode
       );
 
     } catch {
       // Keep the app usable if browser storage is unavailable.
     }
-  }, [mode, jsonText]);
+  }, [mode, text, jsonText, simpleInputMode]);
 
 
   useEffect(() => { if (userView === "simple" && mode !== "text") setMode("text"); }, [userView, mode]);
@@ -166,7 +182,10 @@ export default function Dashboard() {
     setShowCurrentResult(false);
     setSimpleInputMode("guided");
     setWizardKey((value) => value + 1);
-    try { sessionStorage.removeItem("meridian.guidedShipmentDraft.v39"); } catch { /* Session storage is optional. */ }
+    try {
+      sessionStorage.removeItem("meridian.guidedShipmentDraft.v39");
+      sessionStorage.removeItem("meridian.guidedShipmentStep.v61");
+    } catch { /* Session storage is optional. */ }
   }
 
 
@@ -184,6 +203,7 @@ export default function Dashboard() {
 
   async function submit(overrideText = null) {
     const submittedText = typeof overrideText === "string" ? overrideText.trim() : text.trim();
+    if (mode === "text" && submittedText) setText(submittedText);
     setError(null);
     if (mode === "text" && !submittedText) {
       setShowCurrentResult(false);

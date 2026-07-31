@@ -587,6 +587,118 @@ def _sync_route_fields(payload: dict[str, Any], origin: str, destination: str, r
         )
 
 
+# CARGO_DOCUMENT_CONDITION_SYNC_V61
+def _explicit_cargo_conditions(text: str) -> dict[str, bool]:
+    lowered = re.sub(r"\s+", " ", str(text or "").lower())
+
+    dangerous_detail = bool(
+        re.search(
+            r"\b(?:lithium|battery|radioactive|flammable|explosive|dangerous\s+goods|"
+            r"un\s*\d{4}|hazmat|toxic|corrosive)\b",
+            lowered,
+        )
+    )
+    non_hazardous = bool(
+        re.search(
+            r"\b(?:non[-\s]?hazardous|not\s+hazardous|without\s+hazardous|"
+            r"does\s+not\s+contain\s+hazardous|contains?\s+no\s+hazardous)\b",
+            lowered,
+        )
+    ) and not dangerous_detail
+
+    non_fragile = bool(
+        re.search(r"\b(?:not\s+fragile|non[-\s]?fragile|not\s+breakable)\b", lowered)
+    )
+    stackable = bool(re.search(r"\bstackable\b", lowered)) and not bool(
+        re.search(r"\b(?:non[-\s]?stackable|not\s+stackable|do\s+not\s+stack)\b", lowered)
+    )
+
+    return {
+        "non_hazardous": non_hazardous,
+        "non_fragile": non_fragile,
+        "stackable": stackable,
+        "ordinary_cargo": non_hazardous and non_fragile and stackable,
+    }
+
+
+def _filter_text_entries(values: Any, forbidden: tuple[str, ...]) -> list[Any]:
+    output = []
+    for value in _list(values):
+        lowered = str(value or "").lower()
+        if any(term in lowered for term in forbidden):
+            continue
+        output.append(value)
+    return _unique(output)
+
+
+def _sync_cargo_specific_documents(payload: dict[str, Any], original_text: str) -> None:
+    conditions = _explicit_cargo_conditions(original_text)
+    if not any(conditions.values()):
+        return
+
+    forbidden_docs: list[str] = []
+    forbidden_notes: list[str] = []
+
+    if conditions["non_fragile"]:
+        forbidden_docs.extend(["fragile handling", "fragile packing"])
+        forbidden_notes.extend(["fragile cargo", "fragile handling"])
+
+    if conditions["stackable"]:
+        forbidden_docs.extend(["non-stackable", "non stackable"])
+        forbidden_notes.extend(["non-stackable", "non stackable", "do not stack"])
+
+    if conditions["non_hazardous"]:
+        forbidden_docs.extend(
+            ["dangerous goods", "msds", "safety data sheet", "un38.3", "battery declaration"]
+        )
+        forbidden_notes.extend(
+            ["hazardous cargo", "possible hazardous", "dangerous goods", "carrier acceptance"]
+        )
+
+    if conditions["ordinary_cargo"]:
+        forbidden_notes.extend(["special cargo details", "special cargo"])
+
+    doc_terms = tuple(_unique(forbidden_docs))
+    note_terms = tuple(_unique(forbidden_notes))
+
+    docs = _dict(payload.get("document_requirements_advice"))
+    if docs:
+        docs["conditional_documents"] = _filter_text_entries(
+            docs.get("conditional_documents"), doc_terms
+        )
+        docs["warnings"] = _filter_text_entries(docs.get("warnings"), note_terms)
+        docs["recommendations"] = _filter_text_entries(
+            docs.get("recommendations"), doc_terms + note_terms
+        )
+        payload["document_requirements_advice"] = docs
+
+    compliance = _dict(payload.get("trade_compliance_readiness"))
+    if compliance:
+        for key in ("blockers", "warnings", "compliance_flags", "recommendations"):
+            compliance[key] = _filter_text_entries(
+                compliance.get(key), note_terms + doc_terms
+            )
+        payload["trade_compliance_readiness"] = compliance
+
+    sections = payload.get("ui_sections")
+    if isinstance(sections, list):
+        for section in sections:
+            if not isinstance(section, dict) or section.get("section_id") != "compliance_documents":
+                continue
+            metrics = _dict(section.get("metrics"))
+            if metrics:
+                metrics["conditional_documents"] = _filter_text_entries(
+                    metrics.get("conditional_documents"), doc_terms
+                )
+                section["metrics"] = metrics
+            section["bullets"] = _filter_text_entries(
+                section.get("bullets"), note_terms + doc_terms
+            )
+            section["actions"] = _filter_text_entries(
+                section.get("actions"), note_terms + doc_terms
+            )
+
+
 def _sync_documents_and_compliance(
     payload: dict[str, Any],
     agreement: dict[str, Any],
@@ -755,6 +867,7 @@ def enrich_route_trade_payload(payload: Any, original_text: Any = None) -> Any:
     payload["trade_agreement_advice"] = agreement
     _sync_route_fields(payload, origin, destination, route_plan)
     _sync_documents_and_compliance(payload, agreement)
+    _sync_cargo_specific_documents(payload, text)
     _sync_ui_sections(payload, route_plan, agreement)
 
     metadata = payload.setdefault("request_metadata", {})
