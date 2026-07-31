@@ -12558,4 +12558,18 @@ def process_text_request(text: str, *args, **kwargs):
         effective_text,
         canonicalization_changes,
     )
+    # ROUTE_TRADE_ENRICHMENT_V59
+    # Integrate at the existing final V48/V49 boundary; do not add another wrapper.
+    try:
+        from app.route_trade_enrichment import enrich_route_trade_payload as _v59_enrich_route_trade_payload
+        response = _v59_enrich_route_trade_payload(response, original_text)
+    except Exception as _v59_route_trade_error:
+        if isinstance(response, dict):
+            _v59_metadata = response.setdefault("request_metadata", {})
+            if isinstance(_v59_metadata, dict):
+                _v59_metadata["route_trade_enrichment_v59"] = {
+                    "status": "error",
+                    "error_type": type(_v59_route_trade_error).__name__,
+                }
+
     return response

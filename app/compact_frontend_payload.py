@@ -73,6 +73,10 @@ def build_compact_frontend_payload(full_payload):
         return compact
 
     passthrough_keys = [
+
+        "route_plan",
+
+        "trade_agreement_advice",
         "status",
         "summary",
         "detected_intent",
