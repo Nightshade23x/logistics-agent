@@ -40,6 +40,7 @@ CORRIDOR_EDGES = [
     ("north_atlantic", "mediterranean", 1.0, "Strait of Gibraltar and Mediterranean"),
     ("mediterranean", "red_sea", 1.0, "Mediterranean and Suez Canal"),
     ("red_sea", "indian_ocean", 1.0, "Red Sea, Bab el-Mandeb, and Gulf of Aden"),
+    ("arabian_sea", "red_sea", 0.55, "Arabian Sea, Gulf of Aden, and Bab el-Mandeb"),
     ("indian_ocean", "arabian_sea", 0.5, "Indian Ocean and Arabian Sea"),
     ("arabian_sea", "persian_gulf", 0.5, "Arabian Sea and Strait of Hormuz"),
     ("north_atlantic", "north_sea", 0.7, "English Channel and North Sea"),
@@ -164,29 +165,53 @@ def _explicit_port_route(text: str) -> dict[str, str | None]:
         "destination_port": None,
         "origin_country": None,
         "destination_country": None,
+        "origin_location": None,
+        "destination_location": None,
     }
 
-    paired = re.search(
-        r"\bfrom\s+(?:the\s+)?(?:port\s+of\s+)?"
+    # SMART_GATEWAY_SELECTION_V64
+    # A city-country pair is a location hint, not automatically a port.
+    paired_ports = re.search(
+        r"\bfrom\s+(?:the\s+)?port\s+of\s+"
         r"(?P<origin_port>[A-Za-z][A-Za-z .'\-/]{1,60}?)\s*,\s*"
         r"(?P<origin_country>[A-Za-z][A-Za-z .'-]{1,50}?)\s+to\s+"
-        r"(?:the\s+)?(?:port\s+of\s+)?"
+        r"(?:the\s+)?port\s+of\s+"
         r"(?P<destination_port>[A-Za-z][A-Za-z .'\-/]{1,60}?)\s*,\s*"
         r"(?P<destination_country>[A-Za-z][A-Za-z .'-]{1,50}?)"
         r"(?=\s+(?:using|under|with|on)\b|[.;]|$)",
         raw,
         flags=re.IGNORECASE,
     )
-    if paired:
+    if paired_ports:
         result.update(
             {
-                "origin_port": _clean_port(paired.group("origin_port")),
-                "destination_port": _clean_port(paired.group("destination_port")),
-                "origin_country": _clean_country(paired.group("origin_country")),
-                "destination_country": _clean_country(paired.group("destination_country")),
+                "origin_port": _clean_port(paired_ports.group("origin_port")),
+                "destination_port": _clean_port(paired_ports.group("destination_port")),
+                "origin_country": _clean_country(paired_ports.group("origin_country")),
+                "destination_country": _clean_country(paired_ports.group("destination_country")),
             }
         )
         return result
+
+    paired_locations = re.search(
+        r"\bfrom\s+"
+        r"(?P<origin_location>[A-Za-z][A-Za-z .'\-/]{1,60}?)\s*,\s*"
+        r"(?P<origin_country>[A-Za-z][A-Za-z .'-]{1,50}?)\s+to\s+"
+        r"(?P<destination_location>[A-Za-z][A-Za-z .'\-/]{1,60}?)\s*,\s*"
+        r"(?P<destination_country>[A-Za-z][A-Za-z .'-]{1,50}?)"
+        r"(?=\s+(?:using|under|with|on)\b|[.;]|$)",
+        raw,
+        flags=re.IGNORECASE,
+    )
+    if paired_locations:
+        result.update(
+            {
+                "origin_location": _clean_port(paired_locations.group("origin_location")),
+                "destination_location": _clean_port(paired_locations.group("destination_location")),
+                "origin_country": _clean_country(paired_locations.group("origin_country")),
+                "destination_country": _clean_country(paired_locations.group("destination_country")),
+            }
+        )
 
     patterns = {
         "origin_port": [
@@ -204,6 +229,7 @@ def _explicit_port_route(text: str) -> dict[str, str | None]:
             if match:
                 result[key] = _clean_port(match.group(1))
                 break
+
     return result
 
 
@@ -257,12 +283,16 @@ def _gateway_index(data: dict[str, Any]) -> dict[str, dict[str, Any]]:
 def _match_explicit_gateway(port_name: str | None, data: dict[str, Any]) -> dict[str, Any] | None:
     if not port_name:
         return None
+
     key = re.sub(r"[^a-z0-9]+", " ", port_name.lower()).strip()
     found = _gateway_index(data).get(key)
     if found:
         return dict(found)
+
+    # Preserve the user-supplied terminal name exactly.
+    # Never invent a generic "Port of ..." label.
     return {
-        "name": f"Port of {port_name}" if not port_name.lower().startswith("port") else port_name,
+        "name": port_name,
         "aliases": [port_name],
         "basin": None,
         "reference_country": None,
@@ -274,6 +304,37 @@ def _country_gateways(country: str, data: dict[str, Any]) -> tuple[dict[str, Any
     detail = _dict(_dict(data.get("countries")).get(country))
     gateways = [dict(item) for item in _list(detail.get("gateways")) if isinstance(item, dict)]
     return detail, gateways
+
+# SMART_GATEWAY_SELECTION_V64
+def _normalise_location(value: Any) -> str:
+    if not isinstance(value, str):
+        return ""
+    return re.sub(r"[^a-z0-9]+", " ", value.lower()).strip()
+
+
+def _gateway_location_penalty(gateway: dict[str, Any], location: str | None) -> int:
+    target = _normalise_location(location)
+    if not target:
+        return 0
+
+    candidates = [
+        gateway.get("name"),
+        *_list(gateway.get("aliases")),
+        *_list(gateway.get("service_areas")),
+    ]
+    normalised = [
+        _normalise_location(value)
+        for value in candidates
+        if isinstance(value, str)
+    ]
+
+    for value in normalised:
+        if not value:
+            continue
+        if target == value or target in value or value in target:
+            return 0
+
+    return 5
 
 
 def _adjacency() -> dict[str, list[tuple[str, float, str]]]:
@@ -338,28 +399,67 @@ def _choose_gateways(
             "confirmation_required": True,
         }]
 
-    best_pair: tuple[float, int, dict[str, Any], dict[str, Any], list[str]] | None = None
+    best_pair: tuple[
+        int,
+        float,
+        int,
+        int,
+        dict[str, Any],
+        dict[str, Any],
+        list[str],
+    ] | None = None
+
     for oi, origin_gateway in enumerate(origin_candidates):
         for di, destination_gateway in enumerate(destination_candidates):
             cost, _, labels = _shortest_corridor(
                 origin_gateway.get("basin"),
                 destination_gateway.get("basin"),
             )
+
+            location_penalty = (
+                _gateway_location_penalty(
+                    origin_gateway,
+                    explicit.get("origin_location"),
+                )
+                + _gateway_location_penalty(
+                    destination_gateway,
+                    explicit.get("destination_location"),
+                )
+            )
+
+            priority = (
+                int(origin_gateway.get("priority") or oi + 1)
+                + int(destination_gateway.get("priority") or di + 1)
+            )
             tie_break = oi * 100 + di
-            candidate = (cost, tie_break, origin_gateway, destination_gateway, labels)
-            if best_pair is None or candidate[:2] < best_pair[:2]:
+
+            candidate = (
+                location_penalty,
+                cost,
+                priority,
+                tie_break,
+                origin_gateway,
+                destination_gateway,
+                labels,
+            )
+
+            if best_pair is None or candidate[:4] < best_pair[:4]:
                 best_pair = candidate
 
     assert best_pair is not None
-    _, _, origin_gateway, destination_gateway, labels = best_pair
+    _, _, _, _, origin_gateway, destination_gateway, labels = best_pair
+
     if explicit_origin and explicit_destination:
         basis = "user_supplied_ports"
     elif explicit_origin or explicit_destination:
         basis = "mixed_user_and_reference_ports"
+    elif explicit.get("origin_location") or explicit.get("destination_location"):
+        basis = "location_and_reference_gateway_selection"
     elif origin_detail or destination_detail:
         basis = "reference_gateway_selection"
     else:
         basis = "carrier_gateway_confirmation_required"
+
     return origin_gateway, destination_gateway, labels, basis
 
 
