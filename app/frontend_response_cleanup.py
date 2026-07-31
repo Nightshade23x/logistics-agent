@@ -1350,3 +1350,31 @@ def cleanup_frontend_response(payload, original_text=None):
         payload,
         original_text,
     )
+
+# DYNAMIC_COMPLIANCE_DOCS_V65_FINAL_CLEANUP_HOOK
+# Run deterministic compliance/document enrichment after all existing
+# cleanup and polish wrappers, so the API payload and React ui_sections
+# receive the same final values.
+try:
+    from app.dynamic_compliance_enrichment import (
+        enrich_dynamic_compliance_payload as _dynamic_compliance_docs_v65_final,
+    )
+
+    _cleanup_frontend_response_before_dynamic_compliance_docs_v65 = (
+        cleanup_frontend_response
+    )
+
+    def cleanup_frontend_response(payload, original_text=None):
+        cleaned = (
+            _cleanup_frontend_response_before_dynamic_compliance_docs_v65(
+                payload,
+                original_text,
+            )
+        )
+        return _dynamic_compliance_docs_v65_final(
+            cleaned,
+            original_text,
+        )
+
+except Exception:
+    pass
