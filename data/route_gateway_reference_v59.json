@@ -1,0 +1,882 @@
+{
+  "version": "2026-07-31",
+  "basis": "indicative_static_gateway_reference",
+  "notes": [
+    "Port and corridor suggestions are planning references, not carrier bookings.",
+    "Live closures, congestion, security, sanctions, weather, and service schedules must be verified before booking."
+  ],
+  "countries": {
+    "USA": {
+      "landlocked": false,
+      "gateways": [
+        {
+          "name": "Port of New York and New Jersey",
+          "aliases": [
+            "New York",
+            "New York/New Jersey",
+            "Port of New York"
+          ],
+          "basin": "north_atlantic"
+        },
+        {
+          "name": "Port of Savannah",
+          "aliases": [
+            "Savannah"
+          ],
+          "basin": "north_atlantic"
+        },
+        {
+          "name": "Port of Los Angeles",
+          "aliases": [
+            "Los Angeles",
+            "LA Port"
+          ],
+          "basin": "pacific"
+        },
+        {
+          "name": "Port of Long Beach",
+          "aliases": [
+            "Long Beach"
+          ],
+          "basin": "pacific"
+        },
+        {
+          "name": "Port of Houston",
+          "aliases": [
+            "Houston"
+          ],
+          "basin": "north_atlantic"
+        }
+      ]
+    },
+    "Israel": {
+      "landlocked": false,
+      "gateways": [
+        {
+          "name": "Port of Haifa",
+          "aliases": [
+            "Haifa"
+          ],
+          "basin": "mediterranean"
+        },
+        {
+          "name": "Port of Ashdod",
+          "aliases": [
+            "Ashdod"
+          ],
+          "basin": "mediterranean"
+        }
+      ]
+    },
+    "India": {
+      "landlocked": false,
+      "gateways": [
+        {
+          "name": "Jawaharlal Nehru Port (Nhava Sheva)",
+          "aliases": [
+            "JNPT",
+            "Nhava Sheva",
+            "Jawaharlal Nehru Port"
+          ],
+          "basin": "arabian_sea"
+        },
+        {
+          "name": "Port of Mundra",
+          "aliases": [
+            "Mundra"
+          ],
+          "basin": "arabian_sea"
+        },
+        {
+          "name": "Port of Chennai",
+          "aliases": [
+            "Chennai"
+          ],
+          "basin": "indian_ocean"
+        }
+      ]
+    },
+    "Germany": {
+      "landlocked": false,
+      "gateways": [
+        {
+          "name": "Port of Hamburg",
+          "aliases": [
+            "Hamburg"
+          ],
+          "basin": "north_sea"
+        },
+        {
+          "name": "Port of Bremerhaven",
+          "aliases": [
+            "Bremerhaven"
+          ],
+          "basin": "north_sea"
+        }
+      ]
+    },
+    "China": {
+      "landlocked": false,
+      "gateways": [
+        {
+          "name": "Port of Shanghai",
+          "aliases": [
+            "Shanghai"
+          ],
+          "basin": "east_asia"
+        },
+        {
+          "name": "Ningbo-Zhoushan Port",
+          "aliases": [
+            "Ningbo",
+            "Ningbo-Zhoushan"
+          ],
+          "basin": "east_asia"
+        },
+        {
+          "name": "Port of Shenzhen (Yantian)",
+          "aliases": [
+            "Shenzhen",
+            "Yantian"
+          ],
+          "basin": "east_asia"
+        },
+        {
+          "name": "Port of Qingdao",
+          "aliases": [
+            "Qingdao"
+          ],
+          "basin": "east_asia"
+        }
+      ]
+    },
+    "Brazil": {
+      "landlocked": false,
+      "gateways": [
+        {
+          "name": "Port of Santos",
+          "aliases": [
+            "Santos"
+          ],
+          "basin": "south_atlantic"
+        },
+        {
+          "name": "Port of Paranagua",
+          "aliases": [
+            "Paranagua",
+            "Paranaguá"
+          ],
+          "basin": "south_atlantic"
+        },
+        {
+          "name": "Port of Rio de Janeiro",
+          "aliases": [
+            "Rio de Janeiro"
+          ],
+          "basin": "south_atlantic"
+        }
+      ]
+    },
+    "Zambia": {
+      "landlocked": true,
+      "gateways": [
+        {
+          "name": "Port of Dar es Salaam",
+          "aliases": [
+            "Dar es Salaam"
+          ],
+          "gateway_country": "Tanzania",
+          "basin": "indian_ocean",
+          "inland_note": "Road/rail pre-carriage through Tanzania"
+        },
+        {
+          "name": "Port of Beira",
+          "aliases": [
+            "Beira"
+          ],
+          "gateway_country": "Mozambique",
+          "basin": "indian_ocean",
+          "inland_note": "Road/rail pre-carriage through Mozambique"
+        },
+        {
+          "name": "Port of Durban",
+          "aliases": [
+            "Durban"
+          ],
+          "gateway_country": "South Africa",
+          "basin": "indian_ocean",
+          "inland_note": "Regional road/rail pre-carriage through southern Africa"
+        }
+      ]
+    },
+    "Finland": {
+      "landlocked": false,
+      "gateways": [
+        {
+          "name": "Port of Helsinki",
+          "aliases": [
+            "Helsinki"
+          ],
+          "basin": "baltic"
+        },
+        {
+          "name": "Port of HaminaKotka",
+          "aliases": [
+            "HaminaKotka",
+            "Kotka",
+            "Hamina"
+          ],
+          "basin": "baltic"
+        }
+      ]
+    },
+    "UK": {
+      "landlocked": false,
+      "gateways": [
+        {
+          "name": "Port of Felixstowe",
+          "aliases": [
+            "Felixstowe"
+          ],
+          "basin": "north_sea"
+        },
+        {
+          "name": "Port of Southampton",
+          "aliases": [
+            "Southampton"
+          ],
+          "basin": "north_atlantic"
+        }
+      ]
+    },
+    "France": {
+      "landlocked": false,
+      "gateways": [
+        {
+          "name": "Port of Le Havre",
+          "aliases": [
+            "Le Havre"
+          ],
+          "basin": "north_atlantic"
+        },
+        {
+          "name": "Port of Marseille Fos",
+          "aliases": [
+            "Marseille",
+            "Marseille Fos"
+          ],
+          "basin": "mediterranean"
+        }
+      ]
+    },
+    "Netherlands": {
+      "landlocked": false,
+      "gateways": [
+        {
+          "name": "Port of Rotterdam",
+          "aliases": [
+            "Rotterdam"
+          ],
+          "basin": "north_sea"
+        }
+      ]
+    },
+    "Belgium": {
+      "landlocked": false,
+      "gateways": [
+        {
+          "name": "Port of Antwerp-Bruges",
+          "aliases": [
+            "Antwerp",
+            "Antwerp-Bruges",
+            "Bruges"
+          ],
+          "basin": "north_sea"
+        }
+      ]
+    },
+    "Spain": {
+      "landlocked": false,
+      "gateways": [
+        {
+          "name": "Port of Valencia",
+          "aliases": [
+            "Valencia"
+          ],
+          "basin": "mediterranean"
+        },
+        {
+          "name": "Port of Algeciras",
+          "aliases": [
+            "Algeciras"
+          ],
+          "basin": "mediterranean"
+        }
+      ]
+    },
+    "Portugal": {
+      "landlocked": false,
+      "gateways": [
+        {
+          "name": "Port of Sines",
+          "aliases": [
+            "Sines"
+          ],
+          "basin": "north_atlantic"
+        },
+        {
+          "name": "Port of Leixoes",
+          "aliases": [
+            "Leixoes",
+            "Leixões"
+          ],
+          "basin": "north_atlantic"
+        }
+      ]
+    },
+    "Italy": {
+      "landlocked": false,
+      "gateways": [
+        {
+          "name": "Port of Genoa",
+          "aliases": [
+            "Genoa"
+          ],
+          "basin": "mediterranean"
+        },
+        {
+          "name": "Port of Gioia Tauro",
+          "aliases": [
+            "Gioia Tauro"
+          ],
+          "basin": "mediterranean"
+        }
+      ]
+    },
+    "Turkey": {
+      "landlocked": false,
+      "gateways": [
+        {
+          "name": "Port of Ambarli",
+          "aliases": [
+            "Ambarli",
+            "Ambarlı",
+            "Istanbul"
+          ],
+          "basin": "mediterranean"
+        },
+        {
+          "name": "Port of Mersin",
+          "aliases": [
+            "Mersin"
+          ],
+          "basin": "mediterranean"
+        }
+      ]
+    },
+    "UAE": {
+      "landlocked": false,
+      "gateways": [
+        {
+          "name": "Jebel Ali Port",
+          "aliases": [
+            "Jebel Ali",
+            "Dubai"
+          ],
+          "basin": "persian_gulf"
+        }
+      ]
+    },
+    "Iran": {
+      "landlocked": false,
+      "gateways": [
+        {
+          "name": "Port of Bandar Abbas",
+          "aliases": [
+            "Bandar Abbas",
+            "Shahid Rajaee"
+          ],
+          "basin": "persian_gulf"
+        }
+      ]
+    },
+    "Japan": {
+      "landlocked": false,
+      "gateways": [
+        {
+          "name": "Port of Yokohama",
+          "aliases": [
+            "Yokohama"
+          ],
+          "basin": "east_asia"
+        },
+        {
+          "name": "Port of Kobe",
+          "aliases": [
+            "Kobe"
+          ],
+          "basin": "east_asia"
+        }
+      ]
+    },
+    "Singapore": {
+      "landlocked": false,
+      "gateways": [
+        {
+          "name": "Port of Singapore",
+          "aliases": [
+            "Singapore"
+          ],
+          "basin": "indian_ocean"
+        }
+      ]
+    },
+    "Australia": {
+      "landlocked": false,
+      "gateways": [
+        {
+          "name": "Port of Melbourne",
+          "aliases": [
+            "Melbourne"
+          ],
+          "basin": "indian_ocean"
+        },
+        {
+          "name": "Port Botany (Sydney)",
+          "aliases": [
+            "Port Botany",
+            "Sydney"
+          ],
+          "basin": "pacific"
+        }
+      ]
+    },
+    "Canada": {
+      "landlocked": false,
+      "gateways": [
+        {
+          "name": "Port of Vancouver",
+          "aliases": [
+            "Vancouver"
+          ],
+          "basin": "pacific"
+        },
+        {
+          "name": "Port of Montreal",
+          "aliases": [
+            "Montreal",
+            "Montréal"
+          ],
+          "basin": "north_atlantic"
+        },
+        {
+          "name": "Port of Halifax",
+          "aliases": [
+            "Halifax"
+          ],
+          "basin": "north_atlantic"
+        }
+      ]
+    },
+    "Mexico": {
+      "landlocked": false,
+      "gateways": [
+        {
+          "name": "Port of Manzanillo",
+          "aliases": [
+            "Manzanillo"
+          ],
+          "basin": "pacific"
+        },
+        {
+          "name": "Port of Veracruz",
+          "aliases": [
+            "Veracruz"
+          ],
+          "basin": "north_atlantic"
+        }
+      ]
+    },
+    "South Africa": {
+      "landlocked": false,
+      "gateways": [
+        {
+          "name": "Port of Durban",
+          "aliases": [
+            "Durban"
+          ],
+          "basin": "indian_ocean"
+        },
+        {
+          "name": "Port of Cape Town",
+          "aliases": [
+            "Cape Town"
+          ],
+          "basin": "south_atlantic"
+        }
+      ]
+    },
+    "Egypt": {
+      "landlocked": false,
+      "gateways": [
+        {
+          "name": "Port Said",
+          "aliases": [
+            "Port Said"
+          ],
+          "basin": "mediterranean"
+        },
+        {
+          "name": "Port of Alexandria",
+          "aliases": [
+            "Alexandria"
+          ],
+          "basin": "mediterranean"
+        }
+      ]
+    },
+    "Saudi Arabia": {
+      "landlocked": false,
+      "gateways": [
+        {
+          "name": "Jeddah Islamic Port",
+          "aliases": [
+            "Jeddah"
+          ],
+          "basin": "red_sea"
+        },
+        {
+          "name": "King Abdulaziz Port (Dammam)",
+          "aliases": [
+            "Dammam"
+          ],
+          "basin": "persian_gulf"
+        }
+      ]
+    },
+    "South Korea": {
+      "landlocked": false,
+      "gateways": [
+        {
+          "name": "Port of Busan",
+          "aliases": [
+            "Busan"
+          ],
+          "basin": "east_asia"
+        }
+      ]
+    },
+    "Indonesia": {
+      "landlocked": false,
+      "gateways": [
+        {
+          "name": "Port of Tanjung Priok",
+          "aliases": [
+            "Tanjung Priok",
+            "Jakarta"
+          ],
+          "basin": "indian_ocean"
+        }
+      ]
+    },
+    "Malaysia": {
+      "landlocked": false,
+      "gateways": [
+        {
+          "name": "Port Klang",
+          "aliases": [
+            "Port Klang",
+            "Klang"
+          ],
+          "basin": "indian_ocean"
+        }
+      ]
+    },
+    "Thailand": {
+      "landlocked": false,
+      "gateways": [
+        {
+          "name": "Laem Chabang Port",
+          "aliases": [
+            "Laem Chabang"
+          ],
+          "basin": "east_asia"
+        }
+      ]
+    },
+    "Vietnam": {
+      "landlocked": false,
+      "gateways": [
+        {
+          "name": "Cat Lai Port",
+          "aliases": [
+            "Cat Lai",
+            "Ho Chi Minh City"
+          ],
+          "basin": "east_asia"
+        }
+      ]
+    },
+    "Kenya": {
+      "landlocked": false,
+      "gateways": [
+        {
+          "name": "Port of Mombasa",
+          "aliases": [
+            "Mombasa"
+          ],
+          "basin": "indian_ocean"
+        }
+      ]
+    },
+    "Tanzania": {
+      "landlocked": false,
+      "gateways": [
+        {
+          "name": "Port of Dar es Salaam",
+          "aliases": [
+            "Dar es Salaam"
+          ],
+          "basin": "indian_ocean"
+        }
+      ]
+    },
+    "Mozambique": {
+      "landlocked": false,
+      "gateways": [
+        {
+          "name": "Port of Beira",
+          "aliases": [
+            "Beira"
+          ],
+          "basin": "indian_ocean"
+        },
+        {
+          "name": "Port of Maputo",
+          "aliases": [
+            "Maputo"
+          ],
+          "basin": "indian_ocean"
+        }
+      ]
+    },
+    "Nigeria": {
+      "landlocked": false,
+      "gateways": [
+        {
+          "name": "Lagos Port Complex",
+          "aliases": [
+            "Lagos",
+            "Apapa"
+          ],
+          "basin": "north_atlantic"
+        }
+      ]
+    },
+    "Ghana": {
+      "landlocked": false,
+      "gateways": [
+        {
+          "name": "Port of Tema",
+          "aliases": [
+            "Tema"
+          ],
+          "basin": "north_atlantic"
+        }
+      ]
+    },
+    "Morocco": {
+      "landlocked": false,
+      "gateways": [
+        {
+          "name": "Tanger Med Port",
+          "aliases": [
+            "Tanger Med",
+            "Tangier"
+          ],
+          "basin": "mediterranean"
+        }
+      ]
+    },
+    "Greece": {
+      "landlocked": false,
+      "gateways": [
+        {
+          "name": "Port of Piraeus",
+          "aliases": [
+            "Piraeus"
+          ],
+          "basin": "mediterranean"
+        }
+      ]
+    },
+    "Sweden": {
+      "landlocked": false,
+      "gateways": [
+        {
+          "name": "Port of Gothenburg",
+          "aliases": [
+            "Gothenburg"
+          ],
+          "basin": "north_sea"
+        },
+        {
+          "name": "Ports of Stockholm",
+          "aliases": [
+            "Stockholm"
+          ],
+          "basin": "baltic"
+        }
+      ]
+    },
+    "Norway": {
+      "landlocked": false,
+      "gateways": [
+        {
+          "name": "Port of Oslo",
+          "aliases": [
+            "Oslo"
+          ],
+          "basin": "north_sea"
+        }
+      ]
+    },
+    "Denmark": {
+      "landlocked": false,
+      "gateways": [
+        {
+          "name": "Port of Aarhus",
+          "aliases": [
+            "Aarhus"
+          ],
+          "basin": "north_sea"
+        }
+      ]
+    },
+    "Poland": {
+      "landlocked": false,
+      "gateways": [
+        {
+          "name": "Port of Gdansk",
+          "aliases": [
+            "Gdansk",
+            "Gdańsk"
+          ],
+          "basin": "baltic"
+        }
+      ]
+    },
+    "Chile": {
+      "landlocked": false,
+      "gateways": [
+        {
+          "name": "Port of San Antonio",
+          "aliases": [
+            "San Antonio"
+          ],
+          "basin": "pacific"
+        }
+      ]
+    },
+    "Peru": {
+      "landlocked": false,
+      "gateways": [
+        {
+          "name": "Port of Callao",
+          "aliases": [
+            "Callao"
+          ],
+          "basin": "pacific"
+        }
+      ]
+    },
+    "Colombia": {
+      "landlocked": false,
+      "gateways": [
+        {
+          "name": "Port of Cartagena",
+          "aliases": [
+            "Cartagena"
+          ],
+          "basin": "caribbean"
+        },
+        {
+          "name": "Port of Buenaventura",
+          "aliases": [
+            "Buenaventura"
+          ],
+          "basin": "pacific"
+        }
+      ]
+    },
+    "Argentina": {
+      "landlocked": false,
+      "gateways": [
+        {
+          "name": "Port of Buenos Aires",
+          "aliases": [
+            "Buenos Aires"
+          ],
+          "basin": "south_atlantic"
+        }
+      ]
+    },
+    "New Zealand": {
+      "landlocked": false,
+      "gateways": [
+        {
+          "name": "Port of Auckland",
+          "aliases": [
+            "Auckland"
+          ],
+          "basin": "pacific"
+        }
+      ]
+    },
+    "Bangladesh": {
+      "landlocked": false,
+      "gateways": [
+        {
+          "name": "Port of Chattogram",
+          "aliases": [
+            "Chattogram",
+            "Chittagong"
+          ],
+          "basin": "indian_ocean"
+        }
+      ]
+    },
+    "Pakistan": {
+      "landlocked": false,
+      "gateways": [
+        {
+          "name": "Port of Karachi",
+          "aliases": [
+            "Karachi"
+          ],
+          "basin": "arabian_sea"
+        },
+        {
+          "name": "Port of Qasim",
+          "aliases": [
+            "Port Qasim",
+            "Qasim"
+          ],
+          "basin": "arabian_sea"
+        }
+      ]
+    },
+    "Sri Lanka": {
+      "landlocked": false,
+      "gateways": [
+        {
+          "name": "Port of Colombo",
+          "aliases": [
+            "Colombo"
+          ],
+          "basin": "indian_ocean"
+        }
+      ]
+    }
+  }
+}

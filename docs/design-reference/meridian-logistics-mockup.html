@@ -1,0 +1,2099 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Meridian Logistics — Cargo Operations Console</title>
+<style>
+  :root {
+    --navy-900: #0a1929;
+    --navy-800: #102a43;
+    --navy-700: #1a3a5c;
+    --navy-600: #234876;
+    --steel-500: #486581;
+    --steel-400: #627d98;
+    --steel-300: #829ab1;
+    --steel-200: #9fb3c8;
+    --steel-100: #bcccdc;
+    --steel-50: #d9e2ec;
+    --bg-page: #f4f6f9;
+    --bg-card: #ffffff;
+    --bg-subtle: #f7f9fc;
+    --border: #e1e8ef;
+    --border-strong: #cdd7e0;
+    --text-primary: #0a1929;
+    --text-secondary: #486581;
+    --text-muted: #829ab1;
+    --accent-teal: #0f766e;
+    --accent-teal-bg: #ecfdf5;
+    --accent-teal-border: #a7f3d0;
+    --accent-amber: #b45309;
+    --accent-amber-bg: #fffbeb;
+    --accent-amber-border: #fde68a;
+    --accent-red: #b91c1c;
+    --accent-red-bg: #fef2f2;
+    --accent-red-border: #fecaca;
+    --accent-blue: #1e40af;
+    --accent-blue-bg: #eff6ff;
+    --accent-blue-border: #bfdbfe;
+    --shadow-sm: 0 1px 2px rgba(10, 25, 41, 0.04);
+    --shadow-md: 0 1px 3px rgba(10, 25, 41, 0.06), 0 1px 2px rgba(10, 25, 41, 0.04);
+    --shadow-lg: 0 4px 12px rgba(10, 25, 41, 0.08), 0 2px 4px rgba(10, 25, 41, 0.04);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Inter", Roboto, sans-serif;
+    background: var(--bg-page);
+    color: var(--text-primary);
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ===== TOP BAR ===== */
+  .topbar {
+    background: var(--navy-900);
+    color: #fff;
+    padding: 0 24px;
+    height: 56px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid var(--navy-800);
+    box-shadow: var(--shadow-md);
+  }
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .brand-mark {
+    width: 32px;
+    height: 32px;
+    background: linear-gradient(135deg, #38bdf8, #0f766e);
+    border-radius: 6px;
+    display: grid;
+    place-items: center;
+    font-weight: 700;
+    font-size: 15px;
+    color: #fff;
+  }
+  .brand-text { font-size: 15px; font-weight: 600; letter-spacing: 0.2px; }
+  .brand-sub { font-size: 11px; color: var(--steel-200); font-weight: 400; margin-top: 1px; }
+
+  .topbar-right {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    font-size: 12px;
+    color: var(--steel-200);
+  }
+  .env-badge {
+    background: rgba(15, 118, 110, 0.15);
+    color: #6ee7b7;
+    border: 1px solid rgba(15, 118, 110, 0.4);
+    padding: 3px 10px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.4px;
+  }
+  .user-chip {
+    display: flex; align-items: center; gap: 8px;
+    padding: 4px 10px 4px 4px;
+    background: var(--navy-800);
+    border-radius: 20px;
+  }
+  .user-avatar {
+    width: 26px; height: 26px; border-radius: 50%;
+    background: var(--steel-500);
+    display: grid; place-items: center;
+    font-size: 11px; font-weight: 600; color: #fff;
+  }
+
+  /* ===== LAYOUT ===== */
+  .app {
+    display: grid;
+    grid-template-columns: 240px 1fr;
+    min-height: calc(100vh - 56px);
+  }
+
+  /* ===== SIDEBAR ===== */
+  .sidebar {
+    background: #fff;
+    border-right: 1px solid var(--border);
+    padding: 20px 0;
+  }
+  .side-section {
+    padding: 0 16px 20px;
+  }
+  .side-label {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: var(--text-muted);
+    font-weight: 600;
+    padding: 0 12px 8px;
+  }
+  .side-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 12px;
+    border-radius: 6px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 500;
+    transition: all 0.15s;
+  }
+  .side-item:hover { background: var(--bg-subtle); color: var(--text-primary); }
+  .side-item.active {
+    background: var(--accent-blue-bg);
+    color: var(--accent-blue);
+  }
+  .side-item .icon {
+    width: 16px; height: 16px; opacity: 0.8;
+  }
+  .side-divider {
+    height: 1px;
+    background: var(--border);
+    margin: 8px 16px;
+  }
+
+  /* ===== MAIN ===== */
+  .main {
+    padding: 24px 32px;
+    overflow-x: hidden;
+  }
+  .page-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 20px;
+  }
+  .page-title {
+    font-size: 20px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 4px;
+  }
+  .page-subtitle {
+    font-size: 13px;
+    color: var(--text-secondary);
+  }
+  .page-actions {
+    display: flex;
+    gap: 8px;
+  }
+  .btn {
+    padding: 8px 14px;
+    border-radius: 6px;
+    border: 1px solid var(--border-strong);
+    background: #fff;
+    color: var(--text-primary);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    transition: all 0.15s;
+  }
+  .btn:hover { background: var(--bg-subtle); border-color: var(--steel-400); }
+  .btn-primary {
+    background: var(--navy-800);
+    color: #fff;
+    border-color: var(--navy-800);
+  }
+  .btn-primary:hover { background: var(--navy-900); border-color: var(--navy-900); }
+  .btn-teal {
+    background: var(--accent-teal);
+    color: #fff;
+    border-color: var(--accent-teal);
+  }
+  .btn-teal:hover { background: #0d5f5a; }
+
+  /* ===== TABS ===== */
+  .tabs {
+    display: flex;
+    gap: 2px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 24px;
+    overflow-x: auto;
+  }
+  .tab {
+    padding: 10px 16px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all 0.15s;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .tab:hover { color: var(--text-primary); }
+  .tab.active {
+    color: var(--navy-800);
+    border-bottom-color: var(--navy-800);
+    font-weight: 600;
+  }
+  .tab-count {
+    background: var(--steel-50);
+    color: var(--text-secondary);
+    padding: 1px 7px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 600;
+  }
+  .tab.active .tab-count {
+    background: var(--accent-blue-bg);
+    color: var(--accent-blue);
+  }
+
+  /* ===== CARD ===== */
+  .card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    box-shadow: var(--shadow-sm);
+  }
+  .card-header {
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .card-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .card-body { padding: 18px; }
+
+  /* ===== KPI GRID ===== */
+  .kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    margin-bottom: 20px;
+  }
+  .kpi {
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px;
+    position: relative;
+    overflow: hidden;
+  }
+  .kpi::before {
+    content: '';
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    width: 3px;
+    background: var(--steel-400);
+  }
+  .kpi.teal::before { background: var(--accent-teal); }
+  .kpi.amber::before { background: var(--accent-amber); }
+  .kpi.red::before { background: var(--accent-red); }
+  .kpi.blue::before { background: var(--accent-blue); }
+
+  .kpi-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    color: var(--text-muted);
+    font-weight: 600;
+    margin-bottom: 6px;
+  }
+  .kpi-value {
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--text-primary);
+    line-height: 1.1;
+    margin-bottom: 4px;
+  }
+  .kpi-value .unit {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    margin-left: 4px;
+  }
+  .kpi-trend {
+    font-size: 11px;
+    color: var(--text-secondary);
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  /* ===== STATUS BADGES ===== */
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 9px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.2px;
+    border: 1px solid;
+  }
+  .badge-dot {
+    width: 6px; height: 6px; border-radius: 50%;
+  }
+  .badge.review {
+    background: var(--accent-amber-bg);
+    color: var(--accent-amber);
+    border-color: var(--accent-amber-border);
+  }
+  .badge.review .badge-dot { background: var(--accent-amber); }
+  .badge.clear {
+    background: var(--accent-teal-bg);
+    color: var(--accent-teal);
+    border-color: var(--accent-teal-border);
+  }
+  .badge.clear .badge-dot { background: var(--accent-teal); }
+  .badge.blocked {
+    background: var(--accent-red-bg);
+    color: var(--accent-red);
+    border-color: var(--accent-red-border);
+  }
+  .badge.blocked .badge-dot { background: var(--accent-red); }
+  .badge.info {
+    background: var(--accent-blue-bg);
+    color: var(--accent-blue);
+    border-color: var(--accent-blue-border);
+  }
+  .badge.info .badge-dot { background: var(--accent-blue); }
+  .badge.neutral {
+    background: var(--bg-subtle);
+    color: var(--text-secondary);
+    border-color: var(--border-strong);
+  }
+  .badge.neutral .badge-dot { background: var(--steel-400); }
+
+  /* ===== REQUEST BUILDER ===== */
+  .request-panel {
+    display: grid;
+    grid-template-columns: 1fr 380px;
+    gap: 20px;
+    margin-bottom: 24px;
+  }
+  .segment {
+    display: flex;
+    background: var(--bg-subtle);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 3px;
+    gap: 2px;
+    margin-bottom: 14px;
+  }
+  .segment button {
+    flex: 1;
+    padding: 7px 12px;
+    background: transparent;
+    border: none;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .segment button.active {
+    background: #fff;
+    color: var(--text-primary);
+    box-shadow: var(--shadow-sm);
+  }
+
+  .form-label {
+    display: block;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin-bottom: 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+  }
+  .form-input, .form-textarea, .form-select {
+    width: 100%;
+    padding: 9px 12px;
+    border: 1px solid var(--border-strong);
+    border-radius: 6px;
+    font-size: 13px;
+    font-family: inherit;
+    color: var(--text-primary);
+    background: #fff;
+    transition: border 0.15s, box-shadow 0.15s;
+  }
+  .form-input:focus, .form-textarea:focus, .form-select:focus {
+    outline: none;
+    border-color: var(--accent-blue);
+    box-shadow: 0 0 0 3px rgba(30, 64, 175, 0.1);
+  }
+  .form-textarea {
+    resize: vertical;
+    min-height: 120px;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+  .form-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-bottom: 14px;
+  }
+  .form-group { margin-bottom: 14px; }
+
+  .helper-text {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 4px;
+  }
+
+  .quick-samples {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 8px;
+  }
+  .chip {
+    padding: 4px 10px;
+    background: var(--bg-subtle);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    font-size: 11px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .chip:hover {
+    background: var(--accent-blue-bg);
+    border-color: var(--accent-blue-border);
+    color: var(--accent-blue);
+  }
+
+  /* ===== RESULTS ===== */
+  .results-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+    padding: 16px 18px;
+    background: linear-gradient(to right, #fff, var(--bg-subtle));
+    border: 1px solid var(--border);
+    border-radius: 8px;
+  }
+  .results-header-left {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+  .verdict-block .verdict-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    color: var(--text-muted);
+    font-weight: 600;
+  }
+  .verdict-block .verdict-value {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-top: 2px;
+  }
+
+  /* ===== CONTENT GRID ===== */
+  .content-grid {
+    display: grid;
+    grid-template-columns: 2fr 1fr;
+    gap: 20px;
+  }
+  .content-col {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  /* ===== METRIC ROW ===== */
+  .metric-row {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0;
+  }
+  .metric-item {
+    padding: 14px 18px;
+    border-right: 1px solid var(--border);
+  }
+  .metric-item:last-child { border-right: none; }
+  .metric-item-label {
+    font-size: 11px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+  .metric-item-value {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+
+  /* ===== CONTAINER VISUALIZER ===== */
+  .container-viz {
+    background: linear-gradient(180deg, #f0f4f8 0%, #e1e8ef 100%);
+    border-radius: 8px;
+    padding: 24px;
+    position: relative;
+  }
+  .container-shell {
+    background: #fff;
+    border: 2px solid var(--navy-800);
+    border-radius: 6px;
+    height: 160px;
+    position: relative;
+    overflow: hidden;
+    display: flex;
+    align-items: flex-end;
+  }
+  .zone {
+    height: 100%;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    padding: 8px 6px;
+    border-right: 1px dashed var(--steel-300);
+    position: relative;
+    transition: all 0.2s;
+    cursor: pointer;
+  }
+  .zone:hover { background: rgba(30, 64, 175, 0.03); }
+  .zone:last-child { border-right: none; }
+  .zone-fill {
+    width: 100%;
+    background: linear-gradient(180deg, var(--steel-400), var(--navy-700));
+    border-radius: 3px 3px 0 0;
+    position: relative;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding-top: 6px;
+    color: #fff;
+    font-size: 10px;
+    font-weight: 600;
+  }
+  .zone-fill.teal { background: linear-gradient(180deg, #34d399, var(--accent-teal)); }
+  .zone-fill.amber { background: linear-gradient(180deg, #fbbf24, var(--accent-amber)); }
+
+  .zone-label {
+    position: absolute;
+    bottom: -22px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 10px;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    font-weight: 500;
+  }
+
+  .container-legend {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 34px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border);
+    font-size: 12px;
+    color: var(--text-secondary);
+  }
+  .utilization-bar {
+    height: 6px;
+    background: var(--border);
+    border-radius: 3px;
+    overflow: hidden;
+    margin-top: 8px;
+  }
+  .utilization-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--accent-teal), var(--navy-700));
+    border-radius: 3px;
+    transition: width 0.4s;
+  }
+
+  /* ===== TABLES ===== */
+  .table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  .table thead th {
+    text-align: left;
+    padding: 10px 14px;
+    background: var(--bg-subtle);
+    color: var(--text-secondary);
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    border-bottom: 1px solid var(--border);
+  }
+  .table tbody td {
+    padding: 11px 14px;
+    border-bottom: 1px solid var(--border);
+    color: var(--text-primary);
+  }
+  .table tbody tr:last-child td { border-bottom: none; }
+  .table tbody tr:hover { background: var(--bg-subtle); }
+  .table .num { text-align: right; font-variant-numeric: tabular-nums; }
+  .table .item-name { font-weight: 500; }
+
+  /* ===== CHECKLIST / ACTIONS ===== */
+  .checklist { list-style: none; }
+  .checklist li {
+    display: flex;
+    gap: 10px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border);
+    align-items: flex-start;
+  }
+  .checklist li:last-child { border-bottom: none; }
+  .checklist input[type="checkbox"] {
+    margin-top: 3px;
+    width: 15px;
+    height: 15px;
+    accent-color: var(--accent-teal);
+    cursor: pointer;
+  }
+  .check-content { flex: 1; }
+  .check-title {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-primary);
+    margin-bottom: 2px;
+  }
+  .check-meta {
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+  .check-priority {
+    font-size: 10px;
+    font-weight: 600;
+    padding: 1px 6px;
+    border-radius: 3px;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+  }
+  .check-priority.high { background: var(--accent-red-bg); color: var(--accent-red); }
+  .check-priority.med { background: var(--accent-amber-bg); color: var(--accent-amber); }
+  .check-priority.low { background: var(--bg-subtle); color: var(--text-secondary); }
+
+  /* ===== INFO LIST ===== */
+  .info-list { list-style: none; }
+  .info-list li {
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 13px;
+  }
+  .info-list li:last-child { border-bottom: none; }
+  .info-list .label { color: var(--text-secondary); }
+  .info-list .value { font-weight: 500; color: var(--text-primary); }
+
+  /* ===== PARTNER STATUS ===== */
+  .partner-list { list-style: none; }
+  .partner-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .partner-item:last-child { border-bottom: none; }
+  .partner-info { display: flex; align-items: center; gap: 10px; }
+  .partner-icon {
+    width: 32px; height: 32px;
+    border-radius: 6px;
+    background: var(--bg-subtle);
+    display: grid; place-items: center;
+    font-size: 13px; font-weight: 600;
+    color: var(--text-secondary);
+  }
+  .partner-name { font-weight: 500; font-size: 13px; }
+  .partner-meta { font-size: 11px; color: var(--text-muted); }
+
+  /* ===== SHIPMENT LIST ===== */
+  .shipment-row {
+    display: grid;
+    grid-template-columns: 1fr 130px 130px 130px 100px 40px;
+    gap: 12px;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+    align-items: center;
+    transition: background 0.15s;
+    cursor: pointer;
+  }
+  .shipment-row:hover { background: var(--bg-subtle); }
+  .shipment-row.header {
+    background: var(--bg-subtle);
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    cursor: default;
+  }
+  .shipment-row.header:hover { background: var(--bg-subtle); }
+  .shipment-id { font-weight: 600; color: var(--navy-800); }
+  .shipment-route {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 12px; color: var(--text-secondary);
+  }
+  .icon-btn {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 4px;
+  }
+  .icon-btn:hover { background: var(--bg-subtle); color: var(--text-primary); }
+
+  /* ===== HIDDEN ===== */
+  .hidden { display: none !important; }
+
+  /* ===== EMPTY STATE ===== */
+  .empty-state {
+    text-align: center;
+    padding: 48px 24px;
+    color: var(--text-muted);
+  }
+  .empty-icon {
+    font-size: 32px;
+    opacity: 0.3;
+    margin-bottom: 8px;
+  }
+
+  /* ===== FOOTER ===== */
+  .footer-bar {
+    padding: 12px 32px;
+    border-top: 1px solid var(--border);
+    background: #fff;
+    font-size: 11px;
+    color: var(--text-muted);
+    display: flex;
+    justify-content: space-between;
+  }
+
+  /* ===== ANIMATIONS ===== */
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .tab-panel {
+    animation: fadeIn 0.2s ease-out;
+  }
+
+  /* ===== SCROLLBAR ===== */
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--steel-200); border-radius: 4px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--steel-400); }
+
+  /* Small icon SVG helpers */
+  .i {
+    display: inline-block;
+    width: 14px; height: 14px;
+    vertical-align: -2px;
+  }
+
+  @media (max-width: 1200px) {
+    .content-grid { grid-template-columns: 1fr; }
+    .kpi-grid { grid-template-columns: repeat(2, 1fr); }
+    .request-panel { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 900px) {
+    .app { grid-template-columns: 1fr; }
+    .sidebar { display: none; }
+    .main { padding: 16px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ============ TOP BAR ============ -->
+<header class="topbar">
+  <div class="brand">
+    <div class="brand-mark">M</div>
+    <div>
+      <div class="brand-text">Meridian Logistics</div>
+      <div class="brand-sub">Cargo Operations Console</div>
+    </div>
+  </div>
+  <div class="topbar-right">
+    <span class="env-badge">● OPERATIONS</span>
+    <span>Region: APAC / EMEA</span>
+    <div class="user-chip">
+      <div class="user-avatar">AK</div>
+      <span>A. Krishnan</span>
+    </div>
+  </div>
+</header>
+
+<div class="app">
+  <!-- ============ SIDEBAR ============ -->
+  <aside class="sidebar">
+    <div class="side-section">
+      <div class="side-label">Workspace</div>
+      <div class="side-item active">
+        <svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+        Dashboard
+      </div>
+      <div class="side-item">
+        <svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
+        Shipments
+      </div>
+      <div class="side-item">
+        <svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+        Live Tracking
+      </div>
+      <div class="side-item">
+        <svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
+        Documents
+      </div>
+    </div>
+    <div class="side-divider"></div>
+    <div class="side-section">
+      <div class="side-label">Planning</div>
+      <div class="side-item">
+        <svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.7 13.4a2 2 0 0 0 2 1.6h9.7a2 2 0 0 0 2-1.6L23 6H6"/></svg>
+        Procurement
+      </div>
+      <div class="side-item">
+        <svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 7h-3V4a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v3H4a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h16a1 1 0 0 0 1-1V8a1 1 0 0 0-1-1z"/></svg>
+        Container Planning
+      </div>
+      <div class="side-item">
+        <svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+        Compliance
+      </div>
+    </div>
+    <div class="side-divider"></div>
+    <div class="side-section">
+      <div class="side-label">Network</div>
+      <div class="side-item">
+        <svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        Suppliers
+      </div>
+      <div class="side-item">
+        <svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+        Partner Agents
+      </div>
+      <div class="side-item">
+        <svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+        Reports
+      </div>
+    </div>
+  </aside>
+
+  <!-- ============ MAIN ============ -->
+  <main class="main">
+    <div class="page-header">
+      <div>
+        <h1 class="page-title">Cargo Operations Dashboard</h1>
+        <div class="page-subtitle">Plan, validate, and dispatch container shipments from a single console.</div>
+      </div>
+      <div class="page-actions">
+        <button class="btn">
+          <svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Export
+        </button>
+        <button class="btn btn-primary" onclick="switchTab('new-request')">
+          <svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          New Request
+        </button>
+      </div>
+    </div>
+
+    <!-- ============ KPI STRIP ============ -->
+    <div class="kpi-grid">
+      <div class="kpi blue">
+        <div class="kpi-label">Active Shipments</div>
+        <div class="kpi-value">147</div>
+        <div class="kpi-trend">▲ 12 vs. last week</div>
+      </div>
+      <div class="kpi teal">
+        <div class="kpi-label">Cleared for Booking</div>
+        <div class="kpi-value">89 <span class="unit">/ 147</span></div>
+        <div class="kpi-trend">61% ready to dispatch</div>
+      </div>
+      <div class="kpi amber">
+        <div class="kpi-label">In Review</div>
+        <div class="kpi-value">42</div>
+        <div class="kpi-trend">Awaiting partner sign-off</div>
+      </div>
+      <div class="kpi red">
+        <div class="kpi-label">Blocked</div>
+        <div class="kpi-value">16</div>
+        <div class="kpi-trend">Requires action</div>
+      </div>
+    </div>
+
+    <!-- ============ TABS ============ -->
+    <div class="tabs">
+      <button class="tab active" data-tab="new-request" onclick="switchTab('new-request')">
+        <svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        New Request
+      </button>
+      <button class="tab" data-tab="overview" onclick="switchTab('overview')">Shipment Overview <span class="tab-count">147</span></button>
+      <button class="tab" data-tab="container" onclick="switchTab('container')">Container Plan</button>
+      <button class="tab" data-tab="procurement" onclick="switchTab('procurement')">Procurement</button>
+      <button class="tab" data-tab="compliance" onclick="switchTab('compliance')">Compliance & Docs</button>
+      <button class="tab" data-tab="costs" onclick="switchTab('costs')">Costs & Insurance</button>
+      <button class="tab" data-tab="partners" onclick="switchTab('partners')">Partner Checks <span class="tab-count">4</span></button>
+      <button class="tab" data-tab="actions" onclick="switchTab('actions')">Action Plan</button>
+    </div>
+
+    <!-- ============ TAB: NEW REQUEST ============ -->
+    <section id="tab-new-request" class="tab-panel">
+      <div class="request-panel">
+        <!-- LEFT: Form -->
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">
+              <svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
+              Build a shipment request
+            </div>
+            <span class="badge neutral"><span class="badge-dot"></span>DRAFT</span>
+          </div>
+          <div class="card-body">
+            <div class="segment">
+              <button class="active" onclick="switchMode(this, 'text')">Free Text</button>
+              <button onclick="switchMode(this, 'structured')">Structured Form</button>
+              <button onclick="switchMode(this, 'docs')">Upload Documents</button>
+            </div>
+
+            <div id="mode-text">
+              <div class="form-group">
+                <label class="form-label">Describe the request</label>
+                <textarea class="form-textarea" id="requestText">I need 50 TVs, 5 scooters, and 100 ceramic tiles. Prefer suppliers from India. Avoid China. Budget 13,000 USD. Destination: New York, USA. Preferred Incoterm: FOB.</textarea>
+                <div class="helper-text">Include quantities, destination, budget, and any supplier preferences.</div>
+              </div>
+              <div class="form-group">
+                <div class="form-label">Quick samples</div>
+                <div class="quick-samples">
+                  <span class="chip" onclick="loadSample(1)">Electronics — India → USA</span>
+                  <span class="chip" onclick="loadSample(2)">Hazardous cargo</span>
+                  <span class="chip" onclick="loadSample(3)">Perishables — cold chain</span>
+                  <span class="chip" onclick="loadSample(4)">Oversized machinery</span>
+                </div>
+              </div>
+            </div>
+
+            <div id="mode-structured" class="hidden">
+              <div class="form-row">
+                <div>
+                  <label class="form-label">Customer</label>
+                  <input class="form-input" value="Demo Customer Ltd." />
+                </div>
+                <div>
+                  <label class="form-label">Reference ID</label>
+                  <input class="form-input" value="SHP-2026-00847" />
+                </div>
+              </div>
+              <div class="form-row">
+                <div>
+                  <label class="form-label">Origin Country</label>
+                  <select class="form-select">
+                    <option>India</option><option>Vietnam</option><option>Turkey</option><option>Mexico</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="form-label">Destination Country</label>
+                  <select class="form-select">
+                    <option>United States</option><option>Germany</option><option>UAE</option><option>United Kingdom</option>
+                  </select>
+                </div>
+              </div>
+              <div class="form-row">
+                <div>
+                  <label class="form-label">Budget</label>
+                  <input class="form-input" value="13,000" />
+                </div>
+                <div>
+                  <label class="form-label">Currency</label>
+                  <select class="form-select">
+                    <option>USD</option><option>EUR</option><option>GBP</option><option>INR</option>
+                  </select>
+                </div>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Line Items</label>
+                <table class="table" style="border:1px solid var(--border); border-radius:6px;">
+                  <thead>
+                    <tr><th>Item</th><th class="num">Qty</th><th>Notes</th></tr>
+                  </thead>
+                  <tbody>
+                    <tr><td class="item-name">Flat-screen TVs (55")</td><td class="num">50</td><td>Fragile, non-stackable</td></tr>
+                    <tr><td class="item-name">Electric Scooters</td><td class="num">5</td><td>Lithium battery</td></tr>
+                    <tr><td class="item-name">Ceramic Tiles (crated)</td><td class="num">100</td><td>Heavy, stackable</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div id="mode-docs" class="hidden">
+              <div style="border:2px dashed var(--border-strong); border-radius:8px; padding:32px; text-align:center; background:var(--bg-subtle);">
+                <svg style="width:32px; height:32px; color:var(--text-muted); margin-bottom:8px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                <div style="font-weight:500; color:var(--text-primary); margin-bottom:4px;">Drop files here or click to upload</div>
+                <div style="font-size:12px; color:var(--text-muted);">Accepts: Invoice, Packing List, Bill of Lading, Certificate of Origin</div>
+                <div style="font-size:11px; color:var(--text-muted); margin-top:4px;">PDF, DOCX, TXT — up to 10 MB per file</div>
+              </div>
+              <div style="margin-top:14px;">
+                <div style="font-size:12px; color:var(--text-secondary); margin-bottom:6px;">Uploaded files</div>
+                <div style="padding:10px 14px; background:var(--bg-subtle); border:1px solid var(--border); border-radius:6px; display:flex; justify-content:space-between; align-items:center;">
+                  <div style="display:flex; align-items:center; gap:10px;">
+                    <svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--accent-blue);"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
+                    <div>
+                      <div style="font-size:13px; font-weight:500;">commercial_invoice.pdf</div>
+                      <div style="font-size:11px; color:var(--text-muted);">142 KB — Invoice detected</div>
+                    </div>
+                  </div>
+                  <span class="badge clear"><span class="badge-dot"></span>PARSED</span>
+                </div>
+              </div>
+            </div>
+
+            <div style="display:flex; gap:8px; margin-top:20px;">
+              <button class="btn btn-teal" onclick="runPipeline()">
+                <svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                Process Request
+              </button>
+              <button class="btn">Save Draft</button>
+              <button class="btn">Clear</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- RIGHT: Summary card -->
+        <div>
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">Request Preview</div>
+            </div>
+            <div class="card-body">
+              <ul class="info-list">
+                <li><span class="label">Type</span><span class="value">Shopping + Logistics</span></li>
+                <li><span class="label">Line items</span><span class="value">3</span></li>
+                <li><span class="label">Total units</span><span class="value">155</span></li>
+                <li><span class="label">Origin</span><span class="value">India (preferred)</span></li>
+                <li><span class="label">Destination</span><span class="value">United States</span></li>
+                <li><span class="label">Budget</span><span class="value">USD 13,000</span></li>
+                <li><span class="label">Priority</span><span class="value">Standard</span></li>
+              </ul>
+              <div style="margin-top:14px; padding:12px; background:var(--accent-blue-bg); border:1px solid var(--accent-blue-border); border-radius:6px; font-size:12px; color:var(--accent-blue);">
+                <strong>Next step:</strong> Processing will identify suppliers, plan container loading, check compliance, and return a booking-readiness verdict.
+              </div>
+            </div>
+          </div>
+
+          <div class="card" style="margin-top:16px;">
+            <div class="card-header">
+              <div class="card-title">Recent Requests</div>
+            </div>
+            <div class="card-body" style="padding:0;">
+              <div style="padding:12px 18px; border-bottom:1px solid var(--border); cursor:pointer;" onclick="switchTab('overview')">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                  <span style="font-weight:600; font-size:13px; color:var(--navy-800);">SHP-2026-00846</span>
+                  <span class="badge clear"><span class="badge-dot"></span>CLEAR</span>
+                </div>
+                <div style="font-size:11px; color:var(--text-muted); margin-top:2px;">Mumbai → Rotterdam · 2 hrs ago</div>
+              </div>
+              <div style="padding:12px 18px; border-bottom:1px solid var(--border); cursor:pointer;" onclick="switchTab('overview')">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                  <span style="font-weight:600; font-size:13px; color:var(--navy-800);">SHP-2026-00845</span>
+                  <span class="badge review"><span class="badge-dot"></span>REVIEW</span>
+                </div>
+                <div style="font-size:11px; color:var(--text-muted); margin-top:2px;">Chennai → New York · 5 hrs ago</div>
+              </div>
+              <div style="padding:12px 18px; cursor:pointer;" onclick="switchTab('overview')">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                  <span style="font-weight:600; font-size:13px; color:var(--navy-800);">SHP-2026-00844</span>
+                  <span class="badge blocked"><span class="badge-dot"></span>BLOCKED</span>
+                </div>
+                <div style="font-size:11px; color:var(--text-muted); margin-top:2px;">Ho Chi Minh → Hamburg · 8 hrs ago</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Results appear below after "Process" -->
+      <div id="results-area" class="hidden">
+        <div class="results-header">
+          <div class="results-header-left">
+            <div class="verdict-block">
+              <div class="verdict-label">Request ID</div>
+              <div class="verdict-value">SHP-2026-00847</div>
+            </div>
+            <div style="width:1px; height:32px; background:var(--border);"></div>
+            <div class="verdict-block">
+              <div class="verdict-label">Verdict</div>
+              <div class="verdict-value">
+                <span class="badge review"><span class="badge-dot"></span>REVIEW REQUIRED</span>
+              </div>
+            </div>
+            <div style="width:1px; height:32px; background:var(--border);"></div>
+            <div class="verdict-block">
+              <div class="verdict-label">Booking Score</div>
+              <div class="verdict-value">40 / 100</div>
+            </div>
+          </div>
+          <div style="display:flex; gap:8px;">
+            <button class="btn" onclick="switchTab('container')">View Container Plan →</button>
+            <button class="btn btn-primary">Send for Sign-off</button>
+          </div>
+        </div>
+
+        <div class="content-grid">
+          <div class="content-col">
+            <div class="card">
+              <div class="metric-row">
+                <div class="metric-item">
+                  <div class="metric-item-label">Total Volume</div>
+                  <div class="metric-item-value">19.41 CBM</div>
+                </div>
+                <div class="metric-item">
+                  <div class="metric-item-label">Total Weight</div>
+                  <div class="metric-item-value">2,250 kg</div>
+                </div>
+                <div class="metric-item">
+                  <div class="metric-item-label">Recommended</div>
+                  <div class="metric-item-value">20ft Standard (FCL)</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-header">
+                <div class="card-title">Executive Summary</div>
+                <span class="badge review"><span class="badge-dot"></span>NEEDS INFO</span>
+              </div>
+              <div class="card-body">
+                <p style="margin-bottom:14px; color:var(--text-primary); font-size:13.5px;">
+                  Shipment is usable for first-pass planning but is not yet ready for booking. Cargo fits comfortably in a single 20ft standard container at 58% utilization. Three items flagged for handling review, and Incoterm confirmation is required before partner sign-off.
+                </p>
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
+                  <div>
+                    <div style="font-size:11px; text-transform:uppercase; letter-spacing:0.5px; color:var(--text-muted); font-weight:600; margin-bottom:8px;">Strengths</div>
+                    <ul style="list-style:none; font-size:12.5px; color:var(--text-secondary);">
+                      <li style="padding:3px 0;">✓ Cargo fits within container safe capacity</li>
+                      <li style="padding:3px 0;">✓ Suppliers identified from preferred region</li>
+                      <li style="padding:3px 0;">✓ Within stated budget envelope</li>
+                    </ul>
+                  </div>
+                  <div>
+                    <div style="font-size:11px; text-transform:uppercase; letter-spacing:0.5px; color:var(--text-muted); font-weight:600; margin-bottom:8px;">Risks & Gaps</div>
+                    <ul style="list-style:none; font-size:12.5px; color:var(--text-secondary);">
+                      <li style="padding:3px 0;">⚠ Lithium-ion batteries in scooters — hazmat review</li>
+                      <li style="padding:3px 0;">⚠ Incoterm not confirmed (defaulted to FOB)</li>
+                      <li style="padding:3px 0;">⚠ Insurance quote pending</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="content-col">
+            <div class="card">
+              <div class="card-header"><div class="card-title">Partner Check Status</div></div>
+              <div class="card-body">
+                <ul class="partner-list">
+                  <li class="partner-item">
+                    <div class="partner-info">
+                      <div class="partner-icon">R</div>
+                      <div>
+                        <div class="partner-name">Risk Agent</div>
+                        <div class="partner-meta">Cargo & route risk</div>
+                      </div>
+                    </div>
+                    <span class="badge review"><span class="badge-dot"></span>REVIEW</span>
+                  </li>
+                  <li class="partner-item">
+                    <div class="partner-info">
+                      <div class="partner-icon">C</div>
+                      <div>
+                        <div class="partner-name">Compliance Agent</div>
+                        <div class="partner-meta">Hazmat & restrictions</div>
+                      </div>
+                    </div>
+                    <span class="badge review"><span class="badge-dot"></span>REVIEW</span>
+                  </li>
+                  <li class="partner-item">
+                    <div class="partner-info">
+                      <div class="partner-icon">T</div>
+                      <div>
+                        <div class="partner-name">Trader Agent</div>
+                        <div class="partner-meta">Supplier negotiation</div>
+                      </div>
+                    </div>
+                    <span class="badge clear"><span class="badge-dot"></span>CLEAR</span>
+                  </li>
+                  <li class="partner-item">
+                    <div class="partner-info">
+                      <div class="partner-icon">F</div>
+                      <div>
+                        <div class="partner-name">Finance Agent</div>
+                        <div class="partner-meta">Duties & landed cost</div>
+                      </div>
+                    </div>
+                    <span class="badge info"><span class="badge-dot"></span>PENDING</span>
+                  </li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ TAB: OVERVIEW ============ -->
+    <section id="tab-overview" class="tab-panel hidden">
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">All Shipments</div>
+          <div style="display:flex; gap:8px;">
+            <input class="form-input" placeholder="Search by ID, customer, or destination…" style="width:280px; padding:6px 10px; font-size:12px;" />
+            <select class="form-select" style="width:auto; padding:6px 10px; font-size:12px;">
+              <option>All statuses</option><option>Clear</option><option>Review</option><option>Blocked</option>
+            </select>
+          </div>
+        </div>
+        <div>
+          <div class="shipment-row header">
+            <div>Shipment</div><div>Origin → Destination</div><div>Container</div><div>Volume / Weight</div><div>Status</div><div></div>
+          </div>
+          <div class="shipment-row">
+            <div>
+              <div class="shipment-id">SHP-2026-00847</div>
+              <div style="font-size:11px; color:var(--text-muted);">Demo Customer Ltd.</div>
+            </div>
+            <div class="shipment-route">Mumbai → New York</div>
+            <div>20ft Standard</div>
+            <div>19.4 CBM / 2.25t</div>
+            <div><span class="badge review"><span class="badge-dot"></span>REVIEW</span></div>
+            <div><button class="icon-btn">→</button></div>
+          </div>
+          <div class="shipment-row">
+            <div>
+              <div class="shipment-id">SHP-2026-00846</div>
+              <div style="font-size:11px; color:var(--text-muted);">Nordic Trading AB</div>
+            </div>
+            <div class="shipment-route">Mumbai → Rotterdam</div>
+            <div>40ft HC</div>
+            <div>62.1 CBM / 8.4t</div>
+            <div><span class="badge clear"><span class="badge-dot"></span>CLEAR</span></div>
+            <div><button class="icon-btn">→</button></div>
+          </div>
+          <div class="shipment-row">
+            <div>
+              <div class="shipment-id">SHP-2026-00845</div>
+              <div style="font-size:11px; color:var(--text-muted);">Atlas Retail Corp</div>
+            </div>
+            <div class="shipment-route">Chennai → New York</div>
+            <div>20ft Standard</div>
+            <div>26.8 CBM / 3.1t</div>
+            <div><span class="badge review"><span class="badge-dot"></span>REVIEW</span></div>
+            <div><button class="icon-btn">→</button></div>
+          </div>
+          <div class="shipment-row">
+            <div>
+              <div class="shipment-id">SHP-2026-00844</div>
+              <div style="font-size:11px; color:var(--text-muted);">Meridian Auto Parts</div>
+            </div>
+            <div class="shipment-route">Ho Chi Minh → Hamburg</div>
+            <div>40ft Standard</div>
+            <div>54.2 CBM / 11.8t</div>
+            <div><span class="badge blocked"><span class="badge-dot"></span>BLOCKED</span></div>
+            <div><button class="icon-btn">→</button></div>
+          </div>
+          <div class="shipment-row">
+            <div>
+              <div class="shipment-id">SHP-2026-00843</div>
+              <div style="font-size:11px; color:var(--text-muted);">Fresh Foods Global</div>
+            </div>
+            <div class="shipment-route">Istanbul → Dubai</div>
+            <div>20ft Reefer</div>
+            <div>18.9 CBM / 4.7t</div>
+            <div><span class="badge clear"><span class="badge-dot"></span>CLEAR</span></div>
+            <div><button class="icon-btn">→</button></div>
+          </div>
+          <div class="shipment-row">
+            <div>
+              <div class="shipment-id">SHP-2026-00842</div>
+              <div style="font-size:11px; color:var(--text-muted);">Bright Home Décor</div>
+            </div>
+            <div class="shipment-route">Jaipur → London</div>
+            <div>20ft Standard</div>
+            <div>22.3 CBM / 2.9t</div>
+            <div><span class="badge clear"><span class="badge-dot"></span>CLEAR</span></div>
+            <div><button class="icon-btn">→</button></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ TAB: CONTAINER ============ -->
+    <section id="tab-container" class="tab-panel hidden">
+      <div class="content-grid">
+        <div class="content-col">
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">20ft Standard Container — Load Layout</div>
+              <span class="badge clear"><span class="badge-dot"></span>FITS SAFELY</span>
+            </div>
+            <div class="card-body">
+              <div class="container-viz">
+                <div class="container-shell">
+                  <div class="zone" style="width:20%;" title="Zone 1: Scooters (heavy base)">
+                    <div class="zone-fill teal" style="height:55%;">1</div>
+                    <div class="zone-label">Scooters</div>
+                  </div>
+                  <div class="zone" style="width:30%;" title="Zone 2: Ceramic tiles (heavy, stackable)">
+                    <div class="zone-fill" style="height:72%;">2</div>
+                    <div class="zone-label">Ceramic Tiles</div>
+                  </div>
+                  <div class="zone" style="width:35%;" title="Zone 3: TVs (fragile, top layer)">
+                    <div class="zone-fill amber" style="height:65%;">3</div>
+                    <div class="zone-label">TVs (Fragile)</div>
+                  </div>
+                  <div class="zone" style="width:15%;" title="Zone 4: Buffer">
+                    <div class="zone-fill" style="height:18%; opacity:0.4;">—</div>
+                    <div class="zone-label">Buffer</div>
+                  </div>
+                </div>
+                <div class="container-legend">
+                  <div>
+                    <div style="font-weight:600; color:var(--text-primary);">Utilization</div>
+                    <div>19.41 / 33.20 CBM used</div>
+                    <div class="utilization-bar" style="width:200px;">
+                      <div class="utilization-fill" style="width:58.5%;"></div>
+                    </div>
+                  </div>
+                  <div style="text-align:right;">
+                    <div style="font-weight:600; color:var(--text-primary);">58.5%</div>
+                    <div>Unused safe capacity: 8.81 CBM</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">Cargo Mix</div>
+              <span style="font-size:12px; color:var(--text-muted);">3 items · 155 units</span>
+            </div>
+            <table class="table">
+              <thead>
+                <tr><th>Item</th><th>Dimensions (m)</th><th class="num">Qty</th><th class="num">Unit CBM</th><th class="num">Total CBM</th><th class="num">Weight</th><th>Tags</th></tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td class="item-name">Electric Scooters</td>
+                  <td>1.4 × 0.5 × 1.2</td>
+                  <td class="num">5</td>
+                  <td class="num">0.84</td>
+                  <td class="num">4.20</td>
+                  <td class="num">450 kg</td>
+                  <td><span class="badge neutral" style="font-size:10px;">HEAVY</span></td>
+                </tr>
+                <tr>
+                  <td class="item-name">Ceramic Tiles (crated)</td>
+                  <td>1.0 × 0.6 × 0.09</td>
+                  <td class="num">100</td>
+                  <td class="num">0.056</td>
+                  <td class="num">5.61</td>
+                  <td class="num">1,200 kg</td>
+                  <td><span class="badge neutral" style="font-size:10px;">STACKABLE</span></td>
+                </tr>
+                <tr>
+                  <td class="item-name">Flat-screen TVs (55")</td>
+                  <td>1.2 × 0.2 × 0.8</td>
+                  <td class="num">50</td>
+                  <td class="num">0.192</td>
+                  <td class="num">9.60</td>
+                  <td class="num">600 kg</td>
+                  <td><span class="badge review" style="font-size:10px;">FRAGILE</span></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="card">
+            <div class="card-header"><div class="card-title">Loading Sequence</div></div>
+            <div class="card-body">
+              <ul class="checklist">
+                <li>
+                  <div style="width:24px; height:24px; border-radius:50%; background:var(--navy-800); color:#fff; display:grid; place-items:center; font-size:11px; font-weight:600; flex-shrink:0;">1</div>
+                  <div class="check-content">
+                    <div class="check-title">Load Scooters into rear floor zone</div>
+                    <div class="check-meta">Heaviest items first · anchor with straps · even weight distribution</div>
+                  </div>
+                </li>
+                <li>
+                  <div style="width:24px; height:24px; border-radius:50%; background:var(--navy-800); color:#fff; display:grid; place-items:center; font-size:11px; font-weight:600; flex-shrink:0;">2</div>
+                  <div class="check-content">
+                    <div class="check-title">Stack Ceramic Tile crates in middle zone</div>
+                    <div class="check-meta">Stackable up to 4 layers · maintain floor contact with pallets</div>
+                  </div>
+                </li>
+                <li>
+                  <div style="width:24px; height:24px; border-radius:50%; background:var(--navy-800); color:#fff; display:grid; place-items:center; font-size:11px; font-weight:600; flex-shrink:0;">3</div>
+                  <div class="check-content">
+                    <div class="check-title">Load TVs in upright rows near doors</div>
+                    <div class="check-meta">Fragile · do not stack · add protective dunnage between rows</div>
+                  </div>
+                </li>
+                <li>
+                  <div style="width:24px; height:24px; border-radius:50%; background:var(--navy-800); color:#fff; display:grid; place-items:center; font-size:11px; font-weight:600; flex-shrink:0;">4</div>
+                  <div class="check-content">
+                    <div class="check-title">Fill voids and secure with airbags</div>
+                    <div class="check-meta">Prevent shifting during transit · seal container</div>
+                  </div>
+                </li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        <div class="content-col">
+          <div class="card">
+            <div class="card-header"><div class="card-title">Container Options</div></div>
+            <div class="card-body" style="padding:0;">
+              <div style="padding:14px 18px; border-bottom:1px solid var(--border); background:var(--accent-teal-bg);">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                  <div style="font-weight:600; color:var(--text-primary);">20ft Standard <span class="badge clear" style="margin-left:6px;">RECOMMENDED</span></div>
+                </div>
+                <div style="font-size:12px; color:var(--text-secondary);">1 container · 58.5% utilization · Fits within safe capacity</div>
+              </div>
+              <div style="padding:14px 18px; border-bottom:1px solid var(--border);">
+                <div style="font-weight:600; margin-bottom:4px;">40ft Standard</div>
+                <div style="font-size:12px; color:var(--text-secondary);">1 container · 29% utilization · Under-utilized</div>
+              </div>
+              <div style="padding:14px 18px;">
+                <div style="font-weight:600; margin-bottom:4px;">LCL (Less than Container Load)</div>
+                <div style="font-size:12px; color:var(--text-secondary);">Not preferred · fragile cargo risk in consolidation</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header"><div class="card-title">Fit Check</div></div>
+            <div class="card-body">
+              <ul class="info-list">
+                <li><span class="label">Volume used</span><span class="value">19.41 / 28.22 CBM</span></li>
+                <li><span class="label">Weight used</span><span class="value">2,250 / 28,200 kg</span></li>
+                <li><span class="label">Weight headroom</span><span class="value" style="color:var(--accent-teal);">92% free</span></li>
+                <li><span class="label">Risk score</span><span class="value">6 / 10</span></li>
+                <li><span class="label">Readiness</span><span class="value">Ready for review</span></li>
+              </ul>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header"><div class="card-title">Route Recommendation</div></div>
+            <div class="card-body">
+              <div style="padding:12px; background:var(--bg-subtle); border-radius:6px; margin-bottom:10px;">
+                <div style="font-size:11px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.5px; font-weight:600;">Primary Route</div>
+                <div style="font-weight:600; margin-top:4px;">Mumbai (INBOM) → New York (USNYC)</div>
+                <div style="font-size:12px; color:var(--text-secondary); margin-top:4px;">Via Suez · Est. 28 days · Maersk / MSC alliance</div>
+              </div>
+              <div style="font-size:12px; color:var(--text-secondary);">Alternate: Nhava Sheva → Norfolk (32 days, lower cost)</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ TAB: PROCUREMENT ============ -->
+    <section id="tab-procurement" class="tab-panel hidden">
+      <div class="content-grid">
+        <div class="content-col">
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">Supplier Recommendations</div>
+              <span class="badge clear"><span class="badge-dot"></span>3 SELECTED</span>
+            </div>
+            <table class="table">
+              <thead>
+                <tr><th>Supplier</th><th>Item</th><th>Origin</th><th class="num">Unit Cost</th><th class="num">Lead Time</th><th>Rating</th></tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td class="item-name">Bharat Electronics Ltd.</td>
+                  <td>Flat-screen TVs</td>
+                  <td>Bengaluru, IN</td>
+                  <td class="num">USD 145</td>
+                  <td class="num">18 days</td>
+                  <td>★★★★☆ 4.6</td>
+                </tr>
+                <tr>
+                  <td class="item-name">Hero Electric Vehicles</td>
+                  <td>Electric Scooters</td>
+                  <td>Ludhiana, IN</td>
+                  <td class="num">USD 620</td>
+                  <td class="num">21 days</td>
+                  <td>★★★★★ 4.8</td>
+                </tr>
+                <tr>
+                  <td class="item-name">Kajaria Ceramics</td>
+                  <td>Ceramic Tiles</td>
+                  <td>Morbi, IN</td>
+                  <td class="num">USD 18</td>
+                  <td class="num">12 days</td>
+                  <td>★★★★☆ 4.5</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="card">
+            <div class="card-header"><div class="card-title">Purchase Order Draft</div></div>
+            <div class="card-body">
+              <div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:16px; margin-bottom:16px;">
+                <div>
+                  <div style="font-size:11px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.5px; font-weight:600;">Subtotal</div>
+                  <div style="font-size:18px; font-weight:600; margin-top:4px;">USD 12,150</div>
+                </div>
+                <div>
+                  <div style="font-size:11px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.5px; font-weight:600;">Budget Utilization</div>
+                  <div style="font-size:18px; font-weight:600; margin-top:4px; color:var(--accent-teal);">93.5%</div>
+                </div>
+                <div>
+                  <div style="font-size:11px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.5px; font-weight:600;">Remaining</div>
+                  <div style="font-size:18px; font-weight:600; margin-top:4px;">USD 850</div>
+                </div>
+              </div>
+              <div style="padding:12px; background:var(--accent-amber-bg); border:1px solid var(--accent-amber-border); border-radius:6px; font-size:12px; color:var(--accent-amber);">
+                <strong>Negotiation point:</strong> Volume discount available at 60+ TV units — supplier indicated 4% off if order size increases.
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="content-col">
+          <div class="card">
+            <div class="card-header"><div class="card-title">Procurement Quality</div></div>
+            <div class="card-body">
+              <ul class="info-list">
+                <li><span class="label">Suppliers evaluated</span><span class="value">12</span></li>
+                <li><span class="label">Suppliers shortlisted</span><span class="value">3</span></li>
+                <li><span class="label">Region preference met</span><span class="value" style="color:var(--accent-teal);">Yes (India)</span></li>
+                <li><span class="label">Excluded regions</span><span class="value">China ✓</span></li>
+                <li><span class="label">Alt. currency risk</span><span class="value">Low</span></li>
+              </ul>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header"><div class="card-title">Advisor Notes</div></div>
+            <div class="card-body">
+              <ul style="list-style:none; font-size:13px; color:var(--text-primary);">
+                <li style="padding:8px 0; border-bottom:1px solid var(--border);">
+                  <div style="font-weight:500; margin-bottom:2px;">Bundle scooter + TV shipment</div>
+                  <div style="font-size:11px; color:var(--text-muted);">Both from northern India — consolidate inland transport</div>
+                </li>
+                <li style="padding:8px 0; border-bottom:1px solid var(--border);">
+                  <div style="font-weight:500; margin-bottom:2px;">Request BIS certification upfront</div>
+                  <div style="font-size:11px; color:var(--text-muted);">For electronic goods entering US market</div>
+                </li>
+                <li style="padding:8px 0;">
+                  <div style="font-weight:500; margin-bottom:2px;">Lock in tile pricing now</div>
+                  <div style="font-size:11px; color:var(--text-muted);">Q3 ceramic prices trending upward</div>
+                </li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ TAB: COMPLIANCE ============ -->
+    <section id="tab-compliance" class="tab-panel hidden">
+      <div class="content-grid">
+        <div class="content-col">
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">Required Documents</div>
+              <span class="badge review"><span class="badge-dot"></span>3 OF 5 READY</span>
+            </div>
+            <div class="card-body">
+              <ul class="checklist">
+                <li>
+                  <input type="checkbox" checked />
+                  <div class="check-content">
+                    <div class="check-title">Commercial Invoice</div>
+                    <div class="check-meta">Parsed and validated</div>
+                  </div>
+                  <span class="badge clear"><span class="badge-dot"></span>READY</span>
+                </li>
+                <li>
+                  <input type="checkbox" checked />
+                  <div class="check-content">
+                    <div class="check-title">Packing List</div>
+                    <div class="check-meta">Matches invoice line items</div>
+                  </div>
+                  <span class="badge clear"><span class="badge-dot"></span>READY</span>
+                </li>
+                <li>
+                  <input type="checkbox" checked />
+                  <div class="check-content">
+                    <div class="check-title">Certificate of Origin</div>
+                    <div class="check-meta">India Chamber of Commerce</div>
+                  </div>
+                  <span class="badge clear"><span class="badge-dot"></span>READY</span>
+                </li>
+                <li>
+                  <input type="checkbox" />
+                  <div class="check-content">
+                    <div class="check-title">Bill of Lading</div>
+                    <div class="check-meta">Awaiting shipping line confirmation</div>
+                  </div>
+                  <span class="badge review"><span class="badge-dot"></span>PENDING</span>
+                </li>
+                <li>
+                  <input type="checkbox" />
+                  <div class="check-content">
+                    <div class="check-title">Hazmat Declaration (IMDG)</div>
+                    <div class="check-meta">Required for lithium-ion batteries in scooters</div>
+                  </div>
+                  <span class="badge blocked"><span class="badge-dot"></span>MISSING</span>
+                </li>
+              </ul>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header"><div class="card-title">Compliance Checks</div></div>
+            <table class="table">
+              <thead><tr><th>Check</th><th>Result</th><th>Notes</th></tr></thead>
+              <tbody>
+                <tr>
+                  <td class="item-name">Restricted product screen</td>
+                  <td><span class="badge clear"><span class="badge-dot"></span>PASS</span></td>
+                  <td>No restricted items detected</td>
+                </tr>
+                <tr>
+                  <td class="item-name">Country of origin</td>
+                  <td><span class="badge clear"><span class="badge-dot"></span>PASS</span></td>
+                  <td>India — no sanctions</td>
+                </tr>
+                <tr>
+                  <td class="item-name">Destination country</td>
+                  <td><span class="badge clear"><span class="badge-dot"></span>PASS</span></td>
+                  <td>United States — permitted</td>
+                </tr>
+                <tr>
+                  <td class="item-name">Hazardous materials</td>
+                  <td><span class="badge review"><span class="badge-dot"></span>REVIEW</span></td>
+                  <td>Lithium batteries — UN 3480 Class 9</td>
+                </tr>
+                <tr>
+                  <td class="item-name">Import duty class</td>
+                  <td><span class="badge info"><span class="badge-dot"></span>CALC</span></td>
+                  <td>Awaiting finance agent</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="content-col">
+          <div class="card">
+            <div class="card-header"><div class="card-title">Trade Terms</div></div>
+            <div class="card-body">
+              <ul class="info-list">
+                <li><span class="label">Incoterm (proposed)</span><span class="value">FOB Mumbai</span></li>
+                <li><span class="label">Origin</span><span class="value">India</span></li>
+                <li><span class="label">Destination</span><span class="value">United States</span></li>
+                <li><span class="label">Duty classification</span><span class="value">HS 8528 / 8711 / 6907</span></li>
+              </ul>
+              <div style="margin-top:14px; padding:12px; background:var(--accent-amber-bg); border:1px solid var(--accent-amber-border); border-radius:6px; font-size:12px; color:var(--accent-amber);">
+                <strong>Action needed:</strong> Confirm Incoterm with customer before finalizing quote.
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header"><div class="card-title">Clarification Questions</div></div>
+            <div class="card-body">
+              <ul style="list-style:none; font-size:13px;">
+                <li style="padding:8px 0; border-bottom:1px solid var(--border); color:var(--text-primary);">
+                  <span style="color:var(--accent-blue); font-weight:600; margin-right:6px;">Q1.</span>
+                  Preferred Incoterm — FOB, CIF, or DDP?
+                </li>
+                <li style="padding:8px 0; border-bottom:1px solid var(--border); color:var(--text-primary);">
+                  <span style="color:var(--accent-blue); font-weight:600; margin-right:6px;">Q2.</span>
+                  Insurance coverage — all-risk or basic?
+                </li>
+                <li style="padding:8px 0; color:var(--text-primary);">
+                  <span style="color:var(--accent-blue); font-weight:600; margin-right:6px;">Q3.</span>
+                  Final delivery port preference?
+                </li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ TAB: COSTS ============ -->
+    <section id="tab-costs" class="tab-panel hidden">
+      <div class="kpi-grid">
+        <div class="kpi blue">
+          <div class="kpi-label">Goods Cost</div>
+          <div class="kpi-value">$12,150</div>
+          <div class="kpi-trend">Ex-works</div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-label">Freight (est.)</div>
+          <div class="kpi-value">$2,850</div>
+          <div class="kpi-trend">20ft FCL sea freight</div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-label">Duty & Tax (est.)</div>
+          <div class="kpi-value">$1,420</div>
+          <div class="kpi-trend">US import duty</div>
+        </div>
+        <div class="kpi teal">
+          <div class="kpi-label">Landed Cost</div>
+          <div class="kpi-value">$16,420</div>
+          <div class="kpi-trend">All-in estimate</div>
+        </div>
+      </div>
+
+      <div class="content-grid">
+        <div class="content-col">
+          <div class="card">
+            <div class="card-header"><div class="card-title">Cost Breakdown</div></div>
+            <table class="table">
+              <thead><tr><th>Line item</th><th>Category</th><th class="num">Amount (USD)</th><th class="num">% of total</th></tr></thead>
+              <tbody>
+                <tr><td class="item-name">Purchase — TVs</td><td>Goods</td><td class="num">7,250</td><td class="num">44.2%</td></tr>
+                <tr><td class="item-name">Purchase — Scooters</td><td>Goods</td><td class="num">3,100</td><td class="num">18.9%</td></tr>
+                <tr><td class="item-name">Purchase — Ceramic Tiles</td><td>Goods</td><td class="num">1,800</td><td class="num">11.0%</td></tr>
+                <tr><td class="item-name">Ocean freight</td><td>Logistics</td><td class="num">2,450</td><td class="num">14.9%</td></tr>
+                <tr><td class="item-name">Inland trucking</td><td>Logistics</td><td class="num">400</td><td class="num">2.4%</td></tr>
+                <tr><td class="item-name">US import duty (est.)</td><td>Duty</td><td class="num">1,180</td><td class="num">7.2%</td></tr>
+                <tr><td class="item-name">Port handling fees</td><td>Duty</td><td class="num">240</td><td class="num">1.5%</td></tr>
+                <tr style="font-weight:600; background:var(--bg-subtle);"><td>Total landed cost</td><td></td><td class="num">16,420</td><td class="num">100%</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="content-col">
+          <div class="card">
+            <div class="card-header"><div class="card-title">Insurance Recommendation</div></div>
+            <div class="card-body">
+              <div style="padding:14px; background:var(--bg-subtle); border-radius:6px; margin-bottom:12px;">
+                <div style="font-size:11px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.5px; font-weight:600;">Recommended</div>
+                <div style="font-size:15px; font-weight:600; margin-top:4px;">Institute Cargo Clauses (A)</div>
+                <div style="font-size:12px; color:var(--text-secondary); margin-top:4px;">All-risk marine coverage</div>
+              </div>
+              <ul class="info-list">
+                <li><span class="label">Insured value</span><span class="value">$13,365</span></li>
+                <li><span class="label">Premium rate</span><span class="value">0.35%</span></li>
+                <li><span class="label">Est. premium</span><span class="value">$47</span></li>
+                <li><span class="label">Deductible</span><span class="value">$250</span></li>
+              </ul>
+              <div style="margin-top:12px; font-size:12px; color:var(--text-secondary);">
+                Recommended for shipments containing fragile electronics and hazardous materials.
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ TAB: PARTNERS ============ -->
+    <section id="tab-partners" class="tab-panel hidden">
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">Partner Agent Coordination</div>
+          <span style="font-size:12px; color:var(--text-muted);">Last sync: 2 min ago</span>
+        </div>
+        <div class="card-body">
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
+            <div style="border:1px solid var(--border); border-radius:8px; padding:16px;">
+              <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:12px;">
+                <div style="display:flex; gap:12px; align-items:center;">
+                  <div class="partner-icon" style="width:40px; height:40px; background:var(--accent-red-bg); color:var(--accent-red);">R</div>
+                  <div>
+                    <div style="font-weight:600;">Risk Agent</div>
+                    <div style="font-size:11px; color:var(--text-muted);">Route & cargo risk analysis</div>
+                  </div>
+                </div>
+                <span class="badge review"><span class="badge-dot"></span>REVIEW</span>
+              </div>
+              <div style="font-size:12.5px; color:var(--text-secondary); line-height:1.6;">
+                Route Mumbai → New York carries elevated risk score (6/10) due to fragile electronics and hazmat classification on scooters. Recommend all-risk marine insurance and secure loading protocol.
+              </div>
+              <div style="margin-top:12px; padding-top:12px; border-top:1px solid var(--border); font-size:11px; color:var(--text-muted);">
+                Response time: 1.2s · Confidence: 87%
+              </div>
+            </div>
+
+            <div style="border:1px solid var(--border); border-radius:8px; padding:16px;">
+              <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:12px;">
+                <div style="display:flex; gap:12px; align-items:center;">
+                  <div class="partner-icon" style="width:40px; height:40px; background:var(--accent-amber-bg); color:var(--accent-amber);">C</div>
+                  <div>
+                    <div style="font-weight:600;">Compliance Agent</div>
+                    <div style="font-size:11px; color:var(--text-muted);">Regulatory & hazmat screening</div>
+                  </div>
+                </div>
+                <span class="badge review"><span class="badge-dot"></span>REVIEW</span>
+              </div>
+              <div style="font-size:12.5px; color:var(--text-secondary); line-height:1.6;">
+                Lithium-ion batteries classified UN 3480 Class 9. IMDG declaration and dangerous goods packaging required. TVs and tiles pass all screens.
+              </div>
+              <div style="margin-top:12px; padding-top:12px; border-top:1px solid var(--border); font-size:11px; color:var(--text-muted);">
+                Response time: 0.9s · Confidence: 94%
+              </div>
+            </div>
+
+            <div style="border:1px solid var(--border); border-radius:8px; padding:16px;">
+              <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:12px;">
+                <div style="display:flex; gap:12px; align-items:center;">
+                  <div class="partner-icon" style="width:40px; height:40px; background:var(--accent-teal-bg); color:var(--accent-teal);">T</div>
+                  <div>
+                    <div style="font-weight:600;">Trader Agent</div>
+                    <div style="font-size:11px; color:var(--text-muted);">Supplier & pricing intelligence</div>
+                  </div>
+                </div>
+                <span class="badge clear"><span class="badge-dot"></span>CLEAR</span>
+              </div>
+              <div style="font-size:12.5px; color:var(--text-secondary); line-height:1.6;">
+                All three suppliers verified. Pricing within 3% of market benchmark. Volume discount opportunity flagged on TV order (60+ units gets 4% off).
+              </div>
+              <div style="margin-top:12px; padding-top:12px; border-top:1px solid var(--border); font-size:11px; color:var(--text-muted);">
+                Response time: 1.4s · Confidence: 91%
+              </div>
+            </div>
+
+            <div style="border:1px solid var(--border); border-radius:8px; padding:16px;">
+              <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:12px;">
+                <div style="display:flex; gap:12px; align-items:center;">
+                  <div class="partner-icon" style="width:40px; height:40px; background:var(--accent-blue-bg); color:var(--accent-blue);">F</div>
+                  <div>
+                    <div style="font-weight:600;">Finance Agent</div>
+                    <div style="font-size:11px; color:var(--text-muted);">Duties, tax & landed cost</div>
+                  </div>
+                </div>
+                <span class="badge info"><span class="badge-dot"></span>PENDING</span>
+              </div>
+              <div style="font-size:12.5px; color:var(--text-secondary); line-height:1.6;">
+                Landed cost calculation in progress. Preliminary duty estimate: $1,420. Final figure awaits Incoterm confirmation.
+              </div>
+              <div style="margin-top:12px; padding-top:12px; border-top:1px solid var(--border); font-size:11px; color:var(--text-muted);">
+                Estimated completion: 30s
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ TAB: ACTIONS ============ -->
+    <section id="tab-actions" class="tab-panel hidden">
+      <div class="content-grid">
+        <div class="content-col">
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">Immediate Actions</div>
+              <span class="badge review"><span class="badge-dot"></span>4 OPEN</span>
+            </div>
+            <div class="card-body">
+              <ul class="checklist">
+                <li>
+                  <input type="checkbox" />
+                  <div class="check-content">
+                    <div class="check-title">Confirm Incoterm with customer</div>
+                    <div class="check-meta">Owner: Sales — Priority: High</div>
+                  </div>
+                  <span class="check-priority high">HIGH</span>
+                </li>
+                <li>
+                  <input type="checkbox" />
+                  <div class="check-content">
+                    <div class="check-title">Obtain IMDG hazmat declaration for scooters</div>
+                    <div class="check-meta">Owner: Compliance — Priority: High</div>
+                  </div>
+                  <span class="check-priority high">HIGH</span>
+                </li>
+                <li>
+                  <input type="checkbox" />
+                  <div class="check-content">
+                    <div class="check-title">Request insurance quote — ICC (A)</div>
+                    <div class="check-meta">Owner: Ops — Priority: Medium</div>
+                  </div>
+                  <span class="check-priority med">MED</span>
+                </li>
+                <li>
+                  <input type="checkbox" />
+                  <div class="check-content">
+                    <div class="check-title">Explore volume discount on TV order</div>
+                    <div class="check-meta">Owner: Procurement — Priority: Medium</div>
+                  </div>
+                  <span class="check-priority med">MED</span>
+                </li>
+              </ul>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header"><div class="card-title">Before Booking</div></div>
+            <div class="card-body">
+              <ul class="checklist">
+                <li>
+                  <input type="checkbox" />
+                  <div class="check-content">
+                    <div class="check-title">Finalize Bill of Lading with shipping line</div>
+                    <div class="check-meta">Depends on: Incoterm confirmation</div>
+                  </div>
+                </li>
+                <li>
+                  <input type="checkbox" />
+                  <div class="check-content">
+                    <div class="check-title">Confirm supplier lead times align with vessel schedule</div>
+                    <div class="check-meta">Cutoff: 5 days before ETD</div>
+                  </div>
+                </li>
+                <li>
+                  <input type="checkbox" />
+                  <div class="check-content">
+                    <div class="check-title">Issue purchase orders to all three suppliers</div>
+                    <div class="check-meta">After customer sign-off</div>
+                  </div>
+                </li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        <div class="content-col">
+          <div class="card">
+            <div class="card-header"><div class="card-title">Booking Readiness</div></div>
+            <div class="card-body">
+              <div style="text-align:center; padding:8px 0 16px;">
+                <div style="font-size:36px; font-weight:700; color:var(--accent-amber); line-height:1;">40</div>
+                <div style="font-size:12px; color:var(--text-muted); margin-top:4px;">out of 100</div>
+                <div style="margin-top:10px;"><span class="badge review"><span class="badge-dot"></span>NEEDS INFO</span></div>
+              </div>
+              <div class="utilization-bar" style="height:8px; margin-bottom:14px;">
+                <div class="utilization-fill" style="width:40%; background:var(--accent-amber);"></div>
+              </div>
+              <ul class="info-list">
+                <li><span class="label">Ready items</span><span class="value">6</span></li>
+                <li><span class="label">Under review</span><span class="value">4</span></li>
+                <li><span class="label">Missing info</span><span class="value">3</span></li>
+                <li><span class="label">Blockers</span><span class="value">1</span></li>
+              </ul>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header"><div class="card-title">Next Milestone</div></div>
+            <div class="card-body">
+              <div style="padding:12px; background:var(--accent-blue-bg); border-radius:6px;">
+                <div style="font-size:11px; color:var(--accent-blue); text-transform:uppercase; letter-spacing:0.5px; font-weight:600;">Target Gate</div>
+                <div style="font-weight:600; margin-top:4px;">Booking Sign-off</div>
+                <div style="font-size:12px; color:var(--text-secondary); margin-top:6px;">
+                  Once Incoterm is confirmed and hazmat declaration secured, this shipment moves to booking-ready.
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<div class="footer-bar">
+  <span>Meridian Logistics · Cargo Operations Console · v3.4.1</span>
+  <span>All operational data on this dashboard is internal use only.</span>
+</div>
+
+<script>
+  // ---- Tab switching ----
+  function switchTab(name) {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.add('hidden'));
+    const btn = document.querySelector(`.tab[data-tab="${name}"]`);
+    if (btn) btn.classList.add('active');
+    const panel = document.getElementById(`tab-${name}`);
+    if (panel) panel.classList.remove('hidden');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  // ---- Request-mode switching ----
+  function switchMode(btn, mode) {
+    btn.parentElement.querySelectorAll('button').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    ['text', 'structured', 'docs'].forEach(m => {
+      const el = document.getElementById('mode-' + m);
+      if (el) el.classList.toggle('hidden', m !== mode);
+    });
+  }
+
+  // ---- Sample loader ----
+  const samples = {
+    1: "I need 50 TVs, 5 scooters, and 100 ceramic tiles. Prefer suppliers from India. Avoid China. Budget 13,000 USD. Destination: New York, USA. Preferred Incoterm: FOB.",
+    2: "Ship 200 drums of industrial cleaning solvent (UN 1993) from Chennai to Antwerp. Need IMDG-compliant handling and documentation.",
+    3: "Need to ship 15 pallets of fresh Alphonso mangoes from Mumbai to Dubai. Cold chain required, delivery within 5 days.",
+    4: "Ship one industrial press machine, 12m long x 3m wide x 4m high, 18 tonnes, from Pune to Rotterdam. Special container required."
+  };
+  function loadSample(id) {
+    document.getElementById('requestText').value = samples[id];
+  }
+
+  // ---- Simulate pipeline run ----
+  function runPipeline() {
+    const btn = event.target.closest('.btn');
+    const original = btn.innerHTML;
+    btn.innerHTML = '<span style="display:inline-block; width:12px; height:12px; border:2px solid #fff; border-top-color:transparent; border-radius:50%; animation:spin 0.8s linear infinite;"></span> Processing...';
+    btn.disabled = true;
+
+    setTimeout(() => {
+      btn.innerHTML = original;
+      btn.disabled = false;
+      const results = document.getElementById('results-area');
+      results.classList.remove('hidden');
+      results.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 1400);
+  }
+
+  // Spin animation
+  const style = document.createElement('style');
+  style.textContent = '@keyframes spin { to { transform: rotate(360deg); } }';
+  document.head.appendChild(style);
+</script>
+</body>
+</html>

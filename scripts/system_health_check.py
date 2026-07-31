@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import json
 from pathlib import Path
@@ -30,6 +30,7 @@ def _check_user_agent_response(
     check_name: str,
     response: dict,
     expected_agents: list[str],
+    expected_review_services: list[str] | None = None,
 ) -> bool:
     errors: list[str] = []
 
@@ -39,10 +40,15 @@ def _check_user_agent_response(
         errors.extend(contract_result["errors"])
 
     agents_called = response.get("agents_called", [])
+    review_services_called = response.get("review_services_called", [])
 
     for agent_name in expected_agents:
         if agent_name not in agents_called:
             errors.append(f"missing expected agent: {agent_name}")
+
+    for service_name in expected_review_services or []:
+        if service_name not in review_services_called:
+            errors.append(f"missing expected review service: {service_name}")
 
     final_verdict = response.get("final_verdict", {})
     verdict = final_verdict.get("verdict")
@@ -75,6 +81,8 @@ def _run_shopping_json_flow() -> bool:
         expected_agents=[
             "shopping_agent",
             "logistics_agent",
+        ],
+        expected_review_services=[
             "partner_review_service",
         ],
     )
@@ -94,6 +102,8 @@ def _run_document_to_logistics_flow() -> bool:
         expected_agents=[
             "document_ai_agent",
             "logistics_agent",
+        ],
+        expected_review_services=[
             "partner_review_service",
         ],
     )
@@ -148,6 +158,8 @@ def _run_logistics_json_flow() -> bool:
             response=response,
             expected_agents=[
                 "logistics_agent",
+            ],
+            expected_review_services=[
                 "partner_review_service",
             ],
         )

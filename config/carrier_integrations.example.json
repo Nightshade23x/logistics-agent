@@ -1,0 +1,41 @@
+{
+  "providers": [
+    {
+      "id": "company_carrier",
+      "display_name": "Company Carrier API",
+      "type": "generic_rest",
+      "enabled": true,
+      "environment": "sandbox",
+      "base_url": "https://sandbox-api.example.com",
+      "quote_path": "/v1/rates",
+      "health_path": "/health",
+      "timeout_seconds": 15,
+      "capabilities": ["quotes"],
+      "auth": {
+        "type": "bearer",
+        "token_env": "COMPANY_CARRIER_API_TOKEN"
+      },
+      "request_map": {
+        "origin_country": "shipment.origin.country",
+        "destination_country": "shipment.destination.country",
+        "total_weight_kg": "shipment.weight_kg",
+        "total_cbm": "shipment.volume_cbm",
+        "package_count": "shipment.package_count",
+        "declared_value_usd": "shipment.declared_value_usd",
+        "currency": "currency",
+        "hazardous": "shipment.hazardous"
+      },
+      "response_map": {
+        "quotes": "data.rates",
+        "service_code": "service.code",
+        "service_name": "service.name",
+        "amount": "total.amount",
+        "currency": "total.currency",
+        "transit_days_min": "transit.min_days",
+        "transit_days_max": "transit.max_days",
+        "warnings": "warnings",
+        "reference": "quote_id"
+      }
+    }
+  ]
+}

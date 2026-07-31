@@ -56,3 +56,24 @@ wandb/
 # Local handoff zip/staging files
 handoff_frontend_model_training/
 frontend_handoff_model_training.zip
+
+frontend/node_modules/
+node_modules/
+
+# Vite build output
+frontend/dist/
+
+backups/
+
+backups/
+
+# Generated test and diagnostic reports
+test_outputs/
+
+# Local development, generated output, and secrets
+.env.*
+!.env.example
+
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/

@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from pathlib import Path
 import sys
@@ -23,7 +23,8 @@ def test_backend_service_json_request():
     assert payload["decision"] == "review_required"
     assert "shopping_agent" in payload["agents_called"]
     assert "logistics_agent" in payload["agents_called"]
-    assert "partner_review_service" in payload["agents_called"]
+    assert "partner_review_service" not in payload["agents_called"]
+    assert payload["partner_review_status"] == "partner_review_not_configured"
     assert payload["backend_validation"]["response_contract_valid"] is True
     assert payload["request_metadata"]["request_type"] == "json_file"
     assert payload["request_metadata"]["served_by"] == "backend_service"
@@ -41,6 +42,7 @@ def test_backend_service_json_request_with_raw_response():
     assert payload["backend_validation"]["response_contract_valid"] is True
     assert payload["request_metadata"]["include_raw_response"] is True
     assert payload["raw_response"]["agent_name"] == "user_agent"
+    assert payload["raw_response"]["review_services_called"] == ["partner_review_service"]
 
 
 def test_backend_service_document_request():
@@ -55,7 +57,8 @@ def test_backend_service_document_request():
     assert payload["detected_intent"] == "document"
     assert "document_ai_agent" in payload["agents_called"]
     assert "logistics_agent" in payload["agents_called"]
-    assert "partner_review_service" in payload["agents_called"]
+    assert "partner_review_service" not in payload["agents_called"]
+    assert payload["partner_review_status"] == "partner_review_not_configured"
     assert payload["backend_validation"]["response_contract_valid"] is True
     assert payload["request_metadata"]["request_type"] == "document_files"
     assert len(payload["request_metadata"]["input_source"]) == 2
