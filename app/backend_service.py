@@ -11321,6 +11321,22 @@ def _v49_single_item(text: str) -> dict[str, Any]:
         dimensions = [_v49_len(float(dm.group(1)), dm.group(2)),
                       _v49_len(float(dm.group(3)), dm.group(4)),
                       _v49_len(float(dm.group(5)), dm.group(6))]
+    else:
+        # Also accept the natural shared-unit form: "2 x 2 x 2 m".
+        shared_dm = _re.search(
+            rf"(\d+(?:\.\d+)?)\s*x\s*(\d+(?:\.\d+)?)\s*x\s*"
+            rf"(\d+(?:\.\d+)?)\s*{lu}\b",
+            text,
+            _re.I,
+        )
+        if shared_dm:
+            shared_unit = shared_dm.group(4)
+            dimensions = [
+                _v49_len(float(shared_dm.group(1)), shared_unit),
+                _v49_len(float(shared_dm.group(2)), shared_unit),
+                _v49_len(float(shared_dm.group(3)), shared_unit),
+            ]
+    if dimensions:
         total_cbm = round(quantity * dimensions[0] * dimensions[1] * dimensions[2], 6)
     each_weight = bool(_re.search(
         r"\beach\b.{0,220}\b(?:weighs?|weighing|weight(?:\s+is)?|wt\.?)\b",
@@ -11465,11 +11481,31 @@ def _v49_number(value: float | None) -> str:
 
 
 def _v49_special_cargo(text: str) -> bool:
+    """Detect positive dangerous-goods declarations without treating negation as cargo risk."""
     import re as _re
+
+    value = str(text or "")
+    hazard_term = (
+        r"(?:radioactive|radionuclide|isotope|lithium(?:-ion)?|"
+        r"batter(?:y|ies)|dangerous\s+goods?|hazardous(?:\s+materials?|\s+cargo)?|"
+        r"UN\s*\d{4})"
+    )
+    negated_patterns = (
+        rf"\b(?:does|do|did)\s+not\s+(?:contain|include|carry)\s+(?:any\s+)?{hazard_term}\b",
+        rf"\b(?:contains?|includes?|carries?)\s+no\s+{hazard_term}\b",
+        rf"\bwithout\s+(?:any\s+)?{hazard_term}\b",
+        rf"\bfree\s+of\s+{hazard_term}\b",
+        rf"\bnon[-\s]+{hazard_term}\b",
+        rf"\bnot\s+{hazard_term}\b",
+        rf"\bno\s+{hazard_term}\b",
+    )
+    for pattern in negated_patterns:
+        value = _re.sub(pattern, " ", value, flags=_re.I)
+
     return bool(_re.search(
         r"\b(?:radioactive|radionuclide|isotope|lithium(?:-ion)?|batter(?:y|ies)|"
-        r"dangerous goods?|hazardous|UN\s*\d{4})\b",
-        text,
+        r"dangerous\s+goods?|hazardous|UN\s*\d{4})\b",
+        value,
         _re.I,
     ))
 
@@ -11653,6 +11689,259 @@ def _v49_repair_all_strings(
             special_cargo=special_cargo,
         )
     return node
+
+
+# NEGATED_HAZARD_STANDARD_VISUALIZER_V53
+# A statement such as "does not contain hazardous materials" previously matched
+# the bare word "hazardous". V49 then replaced an ordinary available visualizer
+# with a dangerous-goods review object whose container and dimensions were null.
+def _v53_declares_nonhazardous(text: str) -> bool:
+    import re as _re
+
+    value = str(text or "")
+    patterns = (
+        r"\b(?:does|do|did)\s+not\s+(?:contain|include|carry)\s+(?:any\s+)?"
+        r"(?:hazardous(?:\s+materials?|\s+cargo)?|dangerous\s+goods?|"
+        r"lithium(?:-ion)?\s+batter(?:y|ies)|batter(?:y|ies)|radioactive(?:\s+materials?)?)\b",
+        r"\b(?:contains?|includes?|carries?)\s+no\s+"
+        r"(?:hazardous(?:\s+materials?|\s+cargo)?|dangerous\s+goods?|"
+        r"lithium(?:-ion)?\s+batter(?:y|ies)|batter(?:y|ies)|radioactive(?:\s+materials?)?)\b",
+        r"\b(?:without|free\s+of)\s+(?:any\s+)?"
+        r"(?:hazardous(?:\s+materials?|\s+cargo)?|dangerous\s+goods?|"
+        r"lithium(?:-ion)?\s+batter(?:y|ies)|batter(?:y|ies)|radioactive(?:\s+materials?)?)\b",
+        r"\bnon[-\s]?hazardous\b",
+        r"\bnot\s+hazardous\b",
+        r"\bno\s+hazardous(?:\s+materials?|\s+cargo)?\b",
+    )
+    return any(_re.search(pattern, value, flags=_re.I) for pattern in patterns)
+
+
+def _v53_standard_container_plan(
+    total_cbm: float,
+    total_weight_kg: float,
+    dimensions: list[float],
+) -> dict[str, Any] | None:
+    """Use the established V16 planner, with a narrow deterministic fallback."""
+    item = {
+        "dimensions_m": {
+            "length": dimensions[0],
+            "width": dimensions[1],
+            "height": dimensions[2],
+        }
+    }
+    planner = globals().get("_phase2_v16_container")
+    if callable(planner):
+        try:
+            result = planner(total_cbm, total_weight_kg, item)
+            if isinstance(result, dict):
+                return result
+        except Exception:
+            pass
+
+    from itertools import permutations as _permutations
+
+    specs = (
+        ("20ft Standard Container", "fcl_preferred", 33.2, 28.22, 28200.0, (5.90, 2.35, 2.39)),
+        ("40ft Standard Container", "fcl_preferred", 67.7, 57.55, 26700.0, (12.03, 2.35, 2.39)),
+        ("40ft High Cube Container", "fcl_preferred", 76.4, 64.94, 26500.0, (12.03, 2.35, 2.69)),
+    )
+    for name, load_type, capacity, safe_capacity, max_payload, internal in specs:
+        fits_item = any(
+            length <= internal[0] and width <= internal[1] and height <= internal[2]
+            for length, width, height in _permutations(dimensions)
+        )
+        if fits_item and total_cbm <= safe_capacity and total_weight_kg <= max_payload:
+            return {
+                "selected_container": name,
+                "recommended_load_type": load_type,
+                "capacity_cbm": capacity,
+                "safe_capacity_cbm": safe_capacity,
+                "max_payload_kg": max_payload,
+                "utilization_percent": round(total_cbm / capacity * 100.0, 2),
+                "fit_status": "fits_selected_container",
+                "fit_warnings": [],
+            }
+    return None
+
+
+def _v53_sync_standard_visualizer(
+    payload: dict[str, Any],
+    *,
+    text: str,
+    facts: dict[str, Any],
+    cbm: float | None,
+    weight: float | None,
+) -> None:
+    """Restore a normal visualizer when explicit ordinary-cargo facts are complete."""
+    import re as _re
+
+    if not isinstance(payload, dict) or _v49_special_cargo(text):
+        return
+    if cbm is None or weight is None:
+        return
+
+    dimensions = facts.get("dimensions_m")
+    quantity = facts.get("quantity")
+    if (
+        not isinstance(dimensions, list)
+        or len(dimensions) != 3
+        or not all(isinstance(value, (int, float)) and value > 0 for value in dimensions)
+        or not isinstance(quantity, (int, float))
+        or quantity <= 0
+    ):
+        return
+
+    plan = _v53_standard_container_plan(float(cbm), float(weight), [float(value) for value in dimensions])
+    if not isinstance(plan, dict):
+        return
+
+    selected = str(plan.get("selected_container") or "")
+    if selected not in {
+        "20ft Standard Container",
+        "40ft Standard Container",
+        "40ft High Cube Container",
+    }:
+        return
+
+    product = str(facts.get("product") or "cargo").strip() or "cargo"
+    unit_cbm = round(float(dimensions[0]) * float(dimensions[1]) * float(dimensions[2]), 6)
+    fragile = bool(_re.search(r"\bfragile\b", text, flags=_re.I)) and not bool(
+        _re.search(r"\b(?:not|non[-\s]?)\s*fragile\b", text, flags=_re.I)
+    )
+    stackable = bool(_re.search(r"\bstackable\b", text, flags=_re.I)) and not bool(
+        _re.search(r"\b(?:not|non[-\s]?)\s*stackable\b", text, flags=_re.I)
+    )
+
+    item = {
+        "item_name": product,
+        "quantity": int(quantity) if float(quantity).is_integer() else quantity,
+        "dimensions_m": {
+            "length": float(dimensions[0]),
+            "width": float(dimensions[1]),
+            "height": float(dimensions[2]),
+        },
+        "unit_cbm": unit_cbm,
+        "total_cbm": float(cbm),
+        "total_weight_kg": float(weight),
+        "fragile": fragile,
+        "stackable": stackable,
+        "hazardous": False,
+        "category_tags": [
+            value
+            for value, enabled in (
+                ("general_cargo", True),
+                ("fragile", fragile),
+                ("stackable", stackable),
+            )
+            if enabled
+        ],
+    }
+
+    metrics = payload.setdefault("logistics_metrics", {})
+    if isinstance(metrics, dict):
+        metrics["total_cbm"] = float(cbm)
+        metrics["total_weight_kg"] = float(weight)
+        metrics["recommended_container"] = selected
+        metrics["recommended_load_type"] = plan.get("recommended_load_type")
+
+    visualizer = payload.setdefault("logistics_visualizer", {})
+    if not isinstance(visualizer, dict):
+        visualizer = {}
+        payload["logistics_visualizer"] = visualizer
+
+    fit_status = str(plan.get("fit_status") or "fits_selected_container")
+    warnings = list(plan.get("fit_warnings") or [])
+    visualizer.clear()
+    visualizer.update({
+        "visualizer_type": "container_load_visualizer",
+        "status": "available",
+        "reason": "Validated dimensions and shipment totals are available for first-pass container planning.",
+        "container": {
+            "selected_container": selected,
+            "recommended_load_type": plan.get("recommended_load_type"),
+            "total_cbm": float(cbm),
+            "total_weight_kg": float(weight),
+            "total_items": item["quantity"],
+            "capacity_cbm": plan.get("capacity_cbm"),
+            "safe_capacity_cbm": plan.get("safe_capacity_cbm"),
+            "max_payload_kg": plan.get("max_payload_kg"),
+            "utilization_percent": plan.get("utilization_percent"),
+        },
+        "cargo_mix": [item],
+        "loading_sequence": [
+            {
+                "sequence_number": 1,
+                "item_name": product,
+                "quantity": item["quantity"],
+                "suggested_zone": "general_stackable_zone" if stackable else "protected_middle_zone",
+                "reason": (
+                    "Keep fragile cargo protected while maintaining the stated stackability."
+                    if fragile
+                    else "Load according to the validated dimensions and weight."
+                ),
+            }
+        ],
+        "fit_check": {
+            "status": fit_status,
+            "selected_container_checked": selected,
+            "warnings": warnings,
+            "recommendations": [
+                "Confirm final packed measurements and carrier equipment limits before booking."
+            ],
+            "item_fit_results": [
+                {
+                    "item_name": product,
+                    "fits_selected_container": fit_status == "fits_selected_container",
+                }
+            ],
+        },
+        # CONTAINER_DISPLAY_METRICS_SYNC_V55
+        # The 3D details panel reads this object directly. Keep it as complete as
+        # the container summary so it cannot fall back to 0% while CBM is known.
+        "display_metrics": {
+            "loaded_cbm": float(cbm),
+            "container_cbm": float(plan.get("capacity_cbm")),
+            "remaining_cbm": round(
+                max(0.0, float(plan.get("capacity_cbm")) - float(cbm)),
+                2,
+            ),
+            "utilization_percent": float(plan.get("utilization_percent")),
+            "total_weight_kg": float(weight),
+            "basis": "explicit_dimensions_and_weight_v53",
+        },
+    })
+
+    authoritative = payload.get("authoritative_shipment_item_v49")
+    if isinstance(authoritative, dict):
+        authoritative.update(item)
+
+    for key in ("logistics_quality_review",):
+        section = payload.get(key)
+        if isinstance(section, dict):
+            section["total_cbm"] = float(cbm)
+            section["total_weight_kg"] = float(weight)
+            section["recommended_container"] = selected
+            section["recommended_load_type"] = plan.get("recommended_load_type")
+
+    for section in payload.get("ui_sections", []) if isinstance(payload.get("ui_sections"), list) else []:
+        if not isinstance(section, dict):
+            continue
+        if section.get("section_id") in {"shipment_snapshot", "logistics"}:
+            section_metrics = section.setdefault("metrics", {})
+            if isinstance(section_metrics, dict):
+                section_metrics["total_cbm"] = float(cbm)
+                section_metrics["total_weight_kg"] = float(weight)
+                section_metrics["recommended_container"] = selected
+                section_metrics["recommended_load_type"] = plan.get("recommended_load_type")
+
+    metadata = payload.setdefault("request_metadata", {})
+    if isinstance(metadata, dict):
+        metadata["negated_hazard_visualizer_v53"] = {
+            "status": "standard_visualizer_restored",
+            "explicit_nonhazardous_declaration": _v53_declares_nonhazardous(text),
+            "selected_container": selected,
+            "dimensions_source": "explicit_user_input",
+        }
 
 
 def _v49_sync_specialist_surfaces(
@@ -11979,6 +12268,13 @@ def _v49_apply_live_response_consistency(
     dimensions_known = bool(facts.get("dimensions_m")) or bool(cbm)
     removed: list[str] = []
     _v49_prune(payload, dimensions_known, bool(weight), removed)
+    _v53_sync_standard_visualizer(
+        payload,
+        text=text,
+        facts=facts,
+        cbm=cbm,
+        weight=weight,
+    )
     _v49_sync_specialist_surfaces(
         payload,
         text=text,
