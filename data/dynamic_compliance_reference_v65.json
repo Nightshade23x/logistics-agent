@@ -1,0 +1,143 @@
+{
+  "version": "2026-07-31-v65",
+  "agreements": {
+    "israel|uae": {
+      "agreement_name": "UAE–Israel Comprehensive Economic Partnership Agreement (CEPA)",
+      "summary": "Official static reference identifies the UAE–Israel CEPA, in force from 1 April 2023. Product eligibility still requires HS-code, tariff-line, and rules-of-origin review.",
+      "source": "UAE Ministry of Economy and Tourism — UAE–Israel CEPA",
+      "proof_of_origin_documents": [
+        "UAE–Israel CEPA proof of origin accepted by the importing customs authority",
+        "Commercial invoice with the required origin declaration where permitted"
+      ],
+      "warnings": [
+        "Agreement existence does not prove that the specific product qualifies for preferential duty."
+      ],
+      "recommendations": [
+        "Confirm the HS code and current preferential tariff line under the UAE–Israel CEPA.",
+        "Confirm the product-specific rules of origin and accepted proof-of-origin wording before claiming preference."
+      ]
+    }
+  },
+  "country_pair_controls": {
+    "iran|israel": {
+      "control_type": "high_restriction_country_pair",
+      "status": "blocked",
+      "summary": "Iran–Israel trade must be treated as blocked pending current official legal, sanctions, licensing, banking, carrier, and counterparty review.",
+      "blockers": [
+        "Do not book an Iran–Israel shipment unless qualified legal and customs specialists confirm that the transaction is permitted.",
+        "Official import/export licensing and sanctions review is required for the country pair, counterparties, banks, carrier, cargo, and end use."
+      ],
+      "flags": [
+        "High-restriction country pair requires official verification.",
+        "Restricted-party and sanctions screening is mandatory before any commercial commitment."
+      ],
+      "conditional_documents": [
+        "Country-specific import/export licence or official permit",
+        "Sanctions and restricted-party screening record",
+        "End-user certificate",
+        "End-use statement",
+        "Carrier acceptance confirmation",
+        "Banking and payment-compliance approval"
+      ],
+      "recommendations": [
+        "Obtain written confirmation from the relevant customs, export-control, sanctions, and legal authorities before proceeding.",
+        "Screen exporter, importer, beneficial owners, banks, carrier, vessel, cargo, and end user against current official restrictions."
+      ]
+    }
+  },
+  "cargo_controls": [
+    {
+      "id": "dual_use",
+      "match_any": [
+        "dual-use",
+        "dual use",
+        "thermal camera",
+        "commercial drone",
+        "industrial drone"
+      ],
+      "blockers": [
+        "Potential dual-use goods require export-control classification before booking.",
+        "Do not ship until the exporter confirms whether an export licence, re-export authorisation, or no-licence determination applies."
+      ],
+      "flags": [
+        "Dual-use and end-use controls require specialist review."
+      ],
+      "conditional_documents": [
+        "Dual-use classification assessment",
+        "Export-control licence or written no-licence determination",
+        "End-user certificate",
+        "End-use statement",
+        "Import permit or approval if required",
+        "Restricted-party screening record",
+        "Carrier acceptance confirmation"
+      ],
+      "warnings": [
+        "Civilian intended use does not by itself remove dual-use controls."
+      ],
+      "recommendations": [
+        "Confirm product specifications, technical parameters, HS code, export-control classification, end user, and end use.",
+        "Obtain all required export, re-export, transit, and import approvals before booking."
+      ]
+    },
+    {
+      "id": "lithium_battery",
+      "match_any": [
+        "lithium-ion batter",
+        "lithium ion batter",
+        "lithium battery",
+        "lithium batteries"
+      ],
+      "blockers": [
+        "Lithium battery cargo requires dangerous-goods classification and carrier acceptance before booking."
+      ],
+      "flags": [
+        "Battery transport documents and test evidence are required."
+      ],
+      "conditional_documents": [
+        "Battery declaration",
+        "UN38.3 test summary",
+        "SDS/MSDS or battery safety data sheet",
+        "Dangerous Goods Declaration",
+        "Carrier dangerous-goods acceptance confirmation"
+      ],
+      "warnings": [
+        "Battery state, watt-hours, packing instruction, and whether batteries are standalone or packed with equipment must be confirmed."
+      ],
+      "recommendations": [
+        "Confirm UN number, watt-hours, state of charge where applicable, packing instruction, labels, and UN38.3 evidence."
+      ]
+    },
+    {
+      "id": "radioactive_class_7",
+      "match_any": [
+        "radioactive",
+        "class 7",
+        "iridium-192",
+        "iridium 192"
+      ],
+      "blockers": [
+        "Radioactive Class 7 cargo is blocked pending competent-authority approval, certified packaging, security controls, and carrier acceptance.",
+        "Do not book until radioactive-material import/export permits and package certification are confirmed."
+      ],
+      "flags": [
+        "Radioactive Class 7 specialist compliance review is mandatory."
+      ],
+      "conditional_documents": [
+        "Class 7 Dangerous Goods Declaration",
+        "Competent-authority approval or permit",
+        "Radioactive-material import/export licence",
+        "Radioactive material package design certificate",
+        "Radiation safety certificate",
+        "Transport security plan",
+        "Emergency response instructions",
+        "Carrier acceptance confirmation"
+      ],
+      "warnings": [
+        "Radioactive cargo cannot be handled as ordinary freight."
+      ],
+      "recommendations": [
+        "Confirm radionuclide, activity, package type, transport index, labels, security plan, route restrictions, and emergency arrangements with qualified specialists."
+      ]
+    }
+  ]
+}
