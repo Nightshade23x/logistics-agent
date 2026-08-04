@@ -1,3 +1,7 @@
+# BACKEND ORCHESTRATION
+# Contains the main shipment-processing pipeline and compatibility layers.
+# For the walkthrough, focus on the final process_text_request definition.
+
 from __future__ import annotations
 
 
@@ -13031,6 +13035,11 @@ def _original_input_sync_volume_v70(payload, volume):
     flexible["volume_unit"] = volume.get("display_unit")
 
 
+# FINAL BACKEND ENTRY POINT
+# This is the final active backend function used by the API.
+# It runs the shipment pipeline and returns the complete response.
+# Earlier functions with the same name are compatibility layers.
+
 def process_text_request(*args, **kwargs):
     original_text = ""
 
@@ -13092,3 +13101,781 @@ def process_text_request(*args, **kwargs):
 
     return payload
 # END ORIGINAL_INPUT_DISPLAY_UNITS_V70
+
+
+# FINAL NONPOSITIVE QUANTITY WEIGHT AUTHORITY V78
+# This runs after every backend enrichment and display-unit step.
+# It prevents a zero or negative quantity from regaining a shipment total.
+_FINAL_NONPOSITIVE_QUANTITY_WEIGHT_AUTHORITY_V78_PREVIOUS = process_text_request
+
+
+def _v78_number(value):
+    try:
+        if value is None or isinstance(value, bool):
+            return None
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _v78_nonpositive_authoritative_quantity(payload):
+    if not isinstance(payload, dict):
+        return None
+
+    validation = payload.get("input_validation_v44")
+    if not isinstance(validation, dict):
+        return None
+
+    facts = validation.get("authoritative_facts")
+    if not isinstance(facts, dict):
+        return None
+
+    quantity = _v78_number(facts.get("quantity"))
+    if quantity is None or quantity > 0:
+        return None
+
+    errors = validation.get("errors")
+    if not isinstance(errors, list):
+        return None
+
+    error_text = " ".join(str(error) for error in errors).lower()
+    if "quantity must be greater than zero" not in error_text:
+        return None
+
+    return quantity
+
+
+def _v78_clear_shipment_weight_totals(value):
+    if isinstance(value, dict):
+        for key in list(value):
+            if key in {
+                "total_weight_kg",
+                "display_total_weight",
+            }:
+                value[key] = None
+                continue
+
+            if key == "weight_known":
+                value[key] = False
+                continue
+
+            _v78_clear_shipment_weight_totals(value[key])
+
+    elif isinstance(value, list):
+        for item in value:
+            _v78_clear_shipment_weight_totals(item)
+
+
+def _v78_apply_final_nonpositive_quantity_authority(payload):
+    quantity = _v78_nonpositive_authoritative_quantity(payload)
+    if quantity is None:
+        return payload
+
+    _v78_clear_shipment_weight_totals(payload)
+
+    display = payload.get("display_measurements")
+    if isinstance(display, dict):
+        weight = display.get("weight")
+        if isinstance(weight, dict):
+            weight["package_count"] = (
+                int(quantity) if quantity.is_integer() else quantity
+            )
+            weight["total_weight"] = None
+
+    metadata = payload.setdefault("request_metadata", {})
+    if isinstance(metadata, dict):
+        metadata["final_nonpositive_quantity_weight_authority_v78"] = {
+            "status": "applied",
+            "authoritative_quantity": (
+                int(quantity) if quantity.is_integer() else quantity
+            ),
+            "shipment_weight_totals_cleared": True,
+            "per_package_weight_preserved": True,
+        }
+
+    return payload
+
+
+def process_text_request(*args, **kwargs):
+    payload = _FINAL_NONPOSITIVE_QUANTITY_WEIGHT_AUTHORITY_V78_PREVIOUS(
+        *args,
+        **kwargs,
+    )
+    return _v78_apply_final_nonpositive_quantity_authority(payload)
+
+
+# EXPLICIT IMPERIAL TOTAL WEIGHT PRECISION V79
+# Preserve the original display value in pounds while canonicalising an
+# explicitly stated shipment total that converts to within 0.01 kg of a
+# whole kilogram. Per-package weights and ordinary conversions are untouched.
+_EXPLICIT_IMPERIAL_TOTAL_WEIGHT_PRECISION_V79_PREVIOUS = process_text_request
+
+
+def _v79_number(value):
+    try:
+        if value is None or isinstance(value, bool):
+            return None
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _v79_original_text(payload, args, kwargs):
+    if args and isinstance(args[0], str):
+        return args[0]
+
+    for key in (
+        "request_text",
+        "text",
+        "user_request",
+        "prompt",
+    ):
+        value = kwargs.get(key)
+        if isinstance(value, str):
+            return value
+
+    if isinstance(payload, dict):
+        metadata = payload.get("request_metadata")
+        if isinstance(metadata, dict):
+            for key in (
+                "original_input_source",
+                "input_source",
+            ):
+                value = metadata.get(key)
+                if isinstance(value, str):
+                    return value
+
+    return ""
+
+
+def _v79_explicit_total_lb(text):
+    import re as _v79_re
+
+    match = _v79_re.search(
+        r"(?i)\btotal(?:\s+(?:shipment|cargo|load))?\s+weight"
+        r"\s*(?:is|=|:)?\s*([0-9][0-9,.]*)\s*"
+        r"(lb|lbs?|llb|llbs?|pounds?)\b",
+        text or "",
+    )
+    if not match:
+        return None
+
+    try:
+        return float(match.group(1).replace(",", ""))
+    except (TypeError, ValueError):
+        return None
+
+
+def _v79_has_nonpositive_quantity_error(payload):
+    if not isinstance(payload, dict):
+        return False
+
+    validation = payload.get("input_validation_v44")
+    if not isinstance(validation, dict):
+        return False
+
+    facts = validation.get("authoritative_facts")
+    if not isinstance(facts, dict):
+        return False
+
+    quantity = _v79_number(facts.get("quantity"))
+    if quantity is None or quantity > 0:
+        return False
+
+    errors = validation.get("errors")
+    if not isinstance(errors, list):
+        return False
+
+    error_text = " ".join(str(error) for error in errors).lower()
+    return "quantity must be greater than zero" in error_text
+
+
+def _v79_replace_matching_total_weights(
+    value,
+    *,
+    old_total,
+    new_total,
+):
+    if isinstance(value, dict):
+        for key, child in list(value.items()):
+            if key == "total_weight_kg":
+                number = _v79_number(child)
+                if (
+                    number is not None
+                    and abs(number - old_total) <= 0.02
+                ):
+                    value[key] = new_total
+                    continue
+
+            _v79_replace_matching_total_weights(
+                child,
+                old_total=old_total,
+                new_total=new_total,
+            )
+
+    elif isinstance(value, list):
+        for child in value:
+            _v79_replace_matching_total_weights(
+                child,
+                old_total=old_total,
+                new_total=new_total,
+            )
+
+
+def _v79_apply_explicit_imperial_total_precision(
+    payload,
+    *,
+    original_text,
+):
+    if not isinstance(payload, dict):
+        return payload
+
+    if _v79_has_nonpositive_quantity_error(payload):
+        return payload
+
+    pounds = _v79_explicit_total_lb(original_text)
+    if pounds is None or pounds <= 0:
+        return payload
+
+    exact_kg = pounds * 0.45359237
+    whole_kg = round(exact_kg)
+
+    if abs(exact_kg - whole_kg) > 0.01:
+        return payload
+
+    metrics = payload.get("logistics_metrics")
+    if not isinstance(metrics, dict):
+        return payload
+
+    current_total = _v79_number(
+        metrics.get("total_weight_kg")
+    )
+    if current_total is None:
+        return payload
+
+    if abs(current_total - exact_kg) > 0.02:
+        return payload
+
+    canonical_total = int(whole_kg)
+
+    _v79_replace_matching_total_weights(
+        payload,
+        old_total=current_total,
+        new_total=canonical_total,
+    )
+
+    metadata = payload.setdefault("request_metadata", {})
+    if isinstance(metadata, dict):
+        metadata[
+            "explicit_imperial_total_weight_precision_v79"
+        ] = {
+            "status": "applied",
+            "display_total_weight_lb": pounds,
+            "raw_converted_total_weight_kg": round(
+                exact_kg,
+                6,
+            ),
+            "canonical_total_weight_kg": canonical_total,
+            "tolerance_kg": 0.01,
+        }
+
+    return payload
+
+
+def process_text_request(*args, **kwargs):
+    payload = (
+        _EXPLICIT_IMPERIAL_TOTAL_WEIGHT_PRECISION_V79_PREVIOUS(
+            *args,
+            **kwargs,
+        )
+    )
+    original_text = _v79_original_text(
+        payload,
+        args,
+        kwargs,
+    )
+    return _v79_apply_explicit_imperial_total_precision(
+        payload,
+        original_text=original_text,
+    )
+
+
+# PRACTICAL IMPERIAL WEIGHT PRECISION V80
+# Final backend authority for pound values intentionally chosen to represent
+# practical whole-kilogram totals, while preserving the original display unit.
+_PRACTICAL_IMPERIAL_PRECISION_V80_PREVIOUS = process_text_request
+
+
+def _v80_backend_original_text(args, kwargs, payload):
+    if args and isinstance(args[0], str):
+        return args[0]
+
+    for key in ("request_text", "text", "user_request", "prompt"):
+        value = kwargs.get(key)
+        if isinstance(value, str):
+            return value
+
+    if isinstance(payload, dict):
+        metadata = payload.get("request_metadata")
+        if isinstance(metadata, dict):
+            for key in ("original_input_source", "input_source"):
+                value = metadata.get(key)
+                if isinstance(value, str):
+                    return value
+
+    return ""
+
+
+def process_text_request(*args, **kwargs):
+    payload = _PRACTICAL_IMPERIAL_PRECISION_V80_PREVIOUS(
+        *args,
+        **kwargs,
+    )
+
+    from app.practical_imperial_precision_v80 import (
+        apply_practical_imperial_precision,
+    )
+
+    return apply_practical_imperial_precision(
+        payload,
+        _v80_backend_original_text(args, kwargs, payload),
+    )
+
+
+# FINAL WEIGHT TEXT CONTRACT V83
+# Applies the maintained total-weight answer line to every completed backend
+# response, including metric inputs that do not activate the imperial guards.
+_FINAL_WEIGHT_TEXT_CONTRACT_V83_PREVIOUS = process_text_request
+
+
+def _v83_number(value):
+    try:
+        if value is None or isinstance(value, bool):
+            return None
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _v83_total_weight(payload):
+    if not isinstance(payload, dict):
+        return None
+
+    metrics = payload.get("logistics_metrics")
+    if not isinstance(metrics, dict):
+        return None
+
+    return _v83_number(metrics.get("total_weight_kg"))
+
+
+def _v83_pretty_weight(total_weight_kg):
+    rounded = round(total_weight_kg)
+
+    if abs(total_weight_kg - rounded) <= 1e-9:
+        return str(int(rounded))
+
+    return (
+        f"{total_weight_kg:.6f}"
+        .rstrip("0")
+        .rstrip(".")
+    )
+
+
+def _v83_normalize_weight_text(text, total_weight_kg):
+    import re as _v83_re
+
+    if not isinstance(text, str):
+        return text
+
+    pretty = _v83_pretty_weight(total_weight_kg)
+    rounded = round(total_weight_kg)
+
+    forms = {
+        str(total_weight_kg),
+        f"{total_weight_kg:.6f}".rstrip("0").rstrip("."),
+        f"{total_weight_kg:.4f}".rstrip("0").rstrip("."),
+        f"{total_weight_kg:.3f}".rstrip("0").rstrip("."),
+        f"{total_weight_kg:.2f}".rstrip("0").rstrip("."),
+        f"{total_weight_kg:.1f}".rstrip("0").rstrip("."),
+    }
+
+    if abs(total_weight_kg - rounded) <= 1e-9:
+        whole = int(rounded)
+        forms.update(
+            {
+                str(whole),
+                f"{whole}.0",
+                f"{whole}.00",
+                f"{whole:,}",
+                f"{whole:,}.0",
+                f"{whole:,}.00",
+            }
+        )
+
+    ordered = sorted(
+        (form for form in forms if form),
+        key=len,
+        reverse=True,
+    )
+
+    if ordered:
+        pattern = (
+            r"(?<![0-9.])(?:"
+            + "|".join(
+                _v83_re.escape(form)
+                for form in ordered
+            )
+            + r")\s*kg\b"
+        )
+        text = _v83_re.sub(
+            pattern,
+            f"{pretty} kg",
+            text,
+            flags=_v83_re.IGNORECASE,
+        )
+
+    expected_line = f"- Total weight: {pretty} kg"
+    line_pattern = (
+        r"(?im)^-\s*Total weight:\s*[^\r\n]*$"
+    )
+
+    if _v83_re.search(line_pattern, text):
+        text = _v83_re.sub(
+            line_pattern,
+            expected_line,
+            text,
+        )
+    elif expected_line not in text:
+        stripped = text.rstrip()
+        text = (
+            expected_line
+            if not stripped
+            else stripped + "\n" + expected_line
+        )
+
+    return text
+
+
+def _v83_rewrite_strings(value, total_weight_kg):
+    if isinstance(value, dict):
+        for key, child in list(value.items()):
+            value[key] = _v83_rewrite_strings(
+                child,
+                total_weight_kg,
+            )
+        return value
+
+    if isinstance(value, list):
+        for index, child in enumerate(value):
+            value[index] = _v83_rewrite_strings(
+                child,
+                total_weight_kg,
+            )
+        return value
+
+    if isinstance(value, tuple):
+        return tuple(
+            _v83_rewrite_strings(
+                child,
+                total_weight_kg,
+            )
+            for child in value
+        )
+
+    if isinstance(value, str):
+        return _v83_normalize_weight_text(
+            value,
+            total_weight_kg,
+        )
+
+    return value
+
+
+def _v83_ensure_answer_field(value, total_weight_kg):
+    if isinstance(value, dict):
+        if isinstance(value.get("answer_text"), str):
+            value["answer_text"] = (
+                _v83_normalize_weight_text(
+                    value["answer_text"],
+                    total_weight_kg,
+                )
+            )
+            return value
+
+        value["answer_text"] = (
+            _v83_normalize_weight_text(
+                "",
+                total_weight_kg,
+            )
+        )
+        return value
+
+    if isinstance(value, str):
+        return _v83_normalize_weight_text(
+            value,
+            total_weight_kg,
+        )
+
+    if value is None:
+        return _v83_normalize_weight_text(
+            "",
+            total_weight_kg,
+        )
+
+    return value
+
+
+def _v83_apply_final_weight_text_contract(payload):
+    if not isinstance(payload, dict):
+        return payload
+
+    total_weight_kg = _v83_total_weight(payload)
+    if total_weight_kg is None:
+        return payload
+
+    payload = _v83_rewrite_strings(
+        payload,
+        total_weight_kg,
+    )
+
+    payload["final_answer"] = _v83_ensure_answer_field(
+        payload.get("final_answer"),
+        total_weight_kg,
+    )
+    payload["display_answer"] = _v83_ensure_answer_field(
+        payload.get("display_answer"),
+        total_weight_kg,
+    )
+    payload["frontend_answer"] = _v83_ensure_answer_field(
+        payload.get("frontend_answer"),
+        total_weight_kg,
+    )
+
+    metadata = payload.setdefault(
+        "request_metadata",
+        {},
+    )
+    if isinstance(metadata, dict):
+        metadata["final_weight_text_contract_v83"] = {
+            "status": "applied",
+            "total_weight_kg": total_weight_kg,
+            "display_value": _v83_pretty_weight(
+                total_weight_kg,
+            ),
+        }
+
+    return payload
+
+
+def process_text_request(*args, **kwargs):
+    payload = _FINAL_WEIGHT_TEXT_CONTRACT_V83_PREVIOUS(
+        *args,
+        **kwargs,
+    )
+    return _v83_apply_final_weight_text_contract(
+        payload,
+    )
+
+
+# NARROW FINAL WEIGHT CONTRACT V84
+# Replaces the broad V83 recursive string rewrite with an answer-field-only
+# formatter. Numeric and non-answer logistics fields are never modified.
+def _v84_weight_number(value):
+    try:
+        if value is None or isinstance(value, bool):
+            return None
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _v84_pretty_weight(total_weight_kg):
+    rounded = round(total_weight_kg)
+    if abs(total_weight_kg - rounded) <= 1e-9:
+        return str(int(rounded))
+    return f"{total_weight_kg:.6f}".rstrip("0").rstrip(".")
+
+
+def _v84_sync_answer_text(value, total_weight_kg):
+    import re as _v84_re
+
+    pretty = _v84_pretty_weight(total_weight_kg)
+    expected_line = f"- Total weight: {pretty} kg"
+
+    if value is None:
+        return expected_line
+
+    if not isinstance(value, str):
+        return value
+
+    text = value
+
+    # Normalize only kilogram values already present in answer text.
+    text = _v84_re.sub(
+        r"(?<![0-9.])"
+        + _v84_re.escape(str(int(round(total_weight_kg))))
+        + r"(?:\.0+)?\s*kg\b",
+        f"{pretty} kg",
+        text,
+        flags=_v84_re.IGNORECASE,
+    )
+
+    line_pattern = r"(?im)^-\s*Total weight:\s*[^\r\n]*$"
+    if _v84_re.search(line_pattern, text):
+        return _v84_re.sub(line_pattern, expected_line, text)
+
+    stripped = text.rstrip()
+    return expected_line if not stripped else stripped + "\n" + expected_line
+
+
+def _v84_sync_answer_value(value, total_weight_kg):
+    if isinstance(value, dict):
+        answer_text = value.get("answer_text")
+        value["answer_text"] = _v84_sync_answer_text(
+            answer_text,
+            total_weight_kg,
+        )
+        return value
+
+    return _v84_sync_answer_text(
+        value,
+        total_weight_kg,
+    )
+
+
+def _v83_apply_final_weight_text_contract(payload):
+    if not isinstance(payload, dict):
+        return payload
+
+    metrics = payload.get("logistics_metrics")
+    if not isinstance(metrics, dict):
+        return payload
+
+    total_weight_kg = _v84_weight_number(
+        metrics.get("total_weight_kg")
+    )
+    if total_weight_kg is None:
+        return payload
+
+    payload["final_answer"] = _v84_sync_answer_value(
+        payload.get("final_answer"),
+        total_weight_kg,
+    )
+    payload["display_answer"] = _v84_sync_answer_value(
+        payload.get("display_answer"),
+        total_weight_kg,
+    )
+    payload["frontend_answer"] = _v84_sync_answer_value(
+        payload.get("frontend_answer"),
+        total_weight_kg,
+    )
+
+    metadata = payload.setdefault("request_metadata", {})
+    if isinstance(metadata, dict):
+        metadata["narrow_final_weight_contract_v84"] = {
+            "status": "applied",
+            "total_weight_kg": total_weight_kg,
+            "display_value": _v84_pretty_weight(
+                total_weight_kg
+            ),
+        }
+
+    return payload
+
+
+# EXPLICIT TOTAL UNIT WEIGHT AUTHORITY V88
+# For cargo whose weight was supplied as an aggregate total, the canonical
+# per-unit weight is total_weight_kg / quantity. This fixes final payload
+# consistency without changing parsing or total-weight calculations.
+_EXPLICIT_TOTAL_UNIT_WEIGHT_AUTHORITY_V88_PREVIOUS = (
+    _v83_apply_final_weight_text_contract
+)
+
+
+def _v88_number(value):
+    try:
+        if value is None or isinstance(value, bool):
+            return None
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _v88_clean_number(value):
+    rounded = round(value)
+    if abs(value - rounded) <= 1e-9:
+        return int(rounded)
+    return round(value, 6)
+
+
+def _v88_sync_explicit_total_unit_weights(payload):
+    if not isinstance(payload, dict):
+        return payload
+
+    visualizer = payload.get("logistics_visualizer")
+    if not isinstance(visualizer, dict):
+        return payload
+
+    cargo_mix = visualizer.get("cargo_mix")
+    if not isinstance(cargo_mix, list):
+        return payload
+
+    changed = 0
+
+    for item in cargo_mix:
+        if not isinstance(item, dict):
+            continue
+
+        if str(item.get("weight_source") or "").lower() != "explicit_total":
+            continue
+
+        quantity = _v88_number(item.get("quantity"))
+        total_weight = _v88_number(
+            item.get("total_weight_kg")
+        )
+
+        if total_weight is None:
+            total_weight = _v88_number(
+                item.get("weight_kg")
+            )
+
+        if (
+            quantity is None
+            or quantity <= 0
+            or total_weight is None
+        ):
+            continue
+
+        canonical_unit = _v88_clean_number(
+            total_weight / quantity
+        )
+
+        if item.get("unit_weight_kg") != canonical_unit:
+            item["unit_weight_kg"] = canonical_unit
+            changed += 1
+
+    if changed:
+        metadata = payload.setdefault(
+            "request_metadata",
+            {},
+        )
+        if isinstance(metadata, dict):
+            metadata[
+                "explicit_total_unit_weight_authority_v88"
+            ] = {
+                "status": "applied",
+                "items_corrected": changed,
+            }
+
+    return payload
+
+
+def _v83_apply_final_weight_text_contract(payload):
+    payload = (
+        _EXPLICIT_TOTAL_UNIT_WEIGHT_AUTHORITY_V88_PREVIOUS(
+            payload
+        )
+    )
+    return _v88_sync_explicit_total_unit_weights(
+        payload
+    )

@@ -1,3 +1,7 @@
+# API SERVER
+# Defines the HTTP endpoints used by the frontend.
+# The text endpoint passes shipment requests to the backend service.
+
 """
 Thin HTTP API layer over the existing Python agent pipeline.
 
@@ -197,6 +201,10 @@ def health() -> dict[str, Any]:
 # 1) Full pipeline — recommended entry points (mirrors backend_service.py)
 # ---------------------------------------------------------------------------
 
+# MAIN TEXT REQUEST ENDPOINT
+# Receives the shipment request from POST /api/request/text.
+# It calls backend_service.process_text_request and returns JSON.
+
 @app.post("/api/request/text")
 def request_text(body: TextRequest) -> dict[str, Any]:
     return process_text_request(body.user_text, include_raw_response=body.include_raw_response)
@@ -323,3 +331,465 @@ def integrations_quotes(
         return get_carrier_quotes(_model_payload(body))
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+# FASTAPI FINAL WEIGHT AUTHORITY V85
+# The API route may retain an earlier backend/interpreter callable. Wrap the
+# completed route endpoint so the original request text is used to canonicalise
+# the final JSON payload immediately before FastAPI serialises it.
+def _v85_collect_request_text(value, candidates, seen):
+    object_id = id(value)
+    if object_id in seen:
+        return
+    seen.add(object_id)
+
+    if isinstance(value, str):
+        stripped = value.strip()
+        if not stripped:
+            return
+
+        lowered = stripped.lower()
+        score = min(len(stripped), 500)
+
+        if "ship" in lowered:
+            score += 2000
+        if " from " in lowered and " to " in lowered:
+            score += 1000
+        if any(
+            token in lowered
+            for token in (
+                " lb",
+                " lbs",
+                " pound",
+                " kg",
+                " cbm",
+                "crate",
+                "pallet",
+            )
+        ):
+            score += 700
+
+        candidates.append((score, stripped))
+        return
+
+    if isinstance(value, dict):
+        priority_keys = (
+            "user_text",
+            "request_text",
+            "user_request",
+            "prompt",
+            "text",
+            "original_text",
+            "input_text",
+        )
+
+        for key in priority_keys:
+            if key in value:
+                _v85_collect_request_text(
+                    value.get(key),
+                    candidates,
+                    seen,
+                )
+
+        for key, child in value.items():
+            if key not in priority_keys:
+                _v85_collect_request_text(
+                    child,
+                    candidates,
+                    seen,
+                )
+        return
+
+    if isinstance(value, (list, tuple)):
+        for child in value:
+            _v85_collect_request_text(
+                child,
+                candidates,
+                seen,
+            )
+        return
+
+    for attribute in (
+        "user_text",
+        "request_text",
+        "user_request",
+        "prompt",
+        "text",
+        "original_text",
+        "input_text",
+    ):
+        try:
+            child = getattr(value, attribute)
+        except Exception:
+            continue
+
+        _v85_collect_request_text(
+            child,
+            candidates,
+            seen,
+        )
+
+    model_dump = getattr(value, "model_dump", None)
+    if callable(model_dump):
+        try:
+            dumped = model_dump()
+        except Exception:
+            dumped = None
+
+        if dumped is not None:
+            _v85_collect_request_text(
+                dumped,
+                candidates,
+                seen,
+            )
+
+
+def _v85_original_request_text(args, kwargs):
+    candidates = []
+    seen = set()
+
+    _v85_collect_request_text(
+        args,
+        candidates,
+        seen,
+    )
+    _v85_collect_request_text(
+        kwargs,
+        candidates,
+        seen,
+    )
+
+    if not candidates:
+        return ""
+
+    candidates.sort(
+        key=lambda item: item[0],
+        reverse=True,
+    )
+    return candidates[0][1]
+
+
+def _v85_finalize_payload(payload, original_text):
+    if not isinstance(payload, dict):
+        return payload
+
+    from app.practical_imperial_precision_v80 import (
+        apply_practical_imperial_precision,
+    )
+    from app.backend_service import (
+        _v83_apply_final_weight_text_contract,
+    )
+
+    payload = apply_practical_imperial_precision(
+        payload,
+        original_text,
+    )
+    payload = _v83_apply_final_weight_text_contract(
+        payload,
+    )
+
+    metadata = payload.setdefault(
+        "request_metadata",
+        {},
+    )
+    if isinstance(metadata, dict):
+        metadata["fastapi_final_weight_authority_v85"] = {
+            "status": "applied",
+            "request_text_found": bool(original_text),
+        }
+
+    return payload
+
+
+def _v85_finalize_route_result(result, original_text):
+    if isinstance(result, dict):
+        return _v85_finalize_payload(
+            result,
+            original_text,
+        )
+
+    model_dump = getattr(result, "model_dump", None)
+    if callable(model_dump):
+        try:
+            dumped = model_dump()
+        except Exception:
+            dumped = None
+
+        if isinstance(dumped, dict):
+            return _v85_finalize_payload(
+                dumped,
+                original_text,
+            )
+
+    body = getattr(result, "body", None)
+    if isinstance(body, (bytes, bytearray)):
+        import json as _v85_json
+
+        try:
+            decoded = _v85_json.loads(
+                bytes(body).decode("utf-8")
+            )
+        except Exception:
+            decoded = None
+
+        if isinstance(decoded, dict):
+            from fastapi.responses import JSONResponse
+
+            decoded = _v85_finalize_payload(
+                decoded,
+                original_text,
+            )
+
+            headers = {
+                key: value
+                for key, value in result.headers.items()
+                if key.lower()
+                not in {
+                    "content-length",
+                    "content-type",
+                }
+            }
+
+            return JSONResponse(
+                content=decoded,
+                status_code=getattr(
+                    result,
+                    "status_code",
+                    200,
+                ),
+                headers=headers,
+                background=getattr(
+                    result,
+                    "background",
+                    None,
+                ),
+            )
+
+    return result
+
+
+def _v85_install_request_text_route_wrapper():
+    import inspect as _v85_inspect
+
+    for route in getattr(app, "routes", []):
+        if getattr(route, "path", None) != "/api/request/text":
+            continue
+
+        methods = getattr(route, "methods", set()) or set()
+        if "POST" not in methods:
+            continue
+
+        original = getattr(route, "endpoint", None)
+        if original is None:
+            continue
+
+        if getattr(
+            original,
+            "_fastapi_final_weight_authority_v85",
+            False,
+        ):
+            continue
+
+        if _v85_inspect.iscoroutinefunction(original):
+            async def wrapped(
+                *args,
+                __original=original,
+                **kwargs,
+            ):
+                original_text = _v85_original_request_text(
+                    args,
+                    kwargs,
+                )
+                result = await __original(
+                    *args,
+                    **kwargs,
+                )
+                return _v85_finalize_route_result(
+                    result,
+                    original_text,
+                )
+        else:
+            def wrapped(
+                *args,
+                __original=original,
+                **kwargs,
+            ):
+                original_text = _v85_original_request_text(
+                    args,
+                    kwargs,
+                )
+                result = __original(
+                    *args,
+                    **kwargs,
+                )
+                return _v85_finalize_route_result(
+                    result,
+                    original_text,
+                )
+
+        wrapped.__name__ = getattr(
+            original,
+            "__name__",
+            "request_text_v85",
+        )
+        wrapped.__doc__ = getattr(
+            original,
+            "__doc__",
+            None,
+        )
+        wrapped.__signature__ = _v85_inspect.signature(
+            original
+        )
+        wrapped._fastapi_final_weight_authority_v85 = True
+
+        route.endpoint = wrapped
+
+        dependant = getattr(route, "dependant", None)
+        if dependant is not None:
+            dependant.call = wrapped
+
+
+
+_v85_install_request_text_route_wrapper()
+
+
+# FASTAPI RESPONSE FINAL WEIGHT AUTHORITY V87
+# Final response-only correction for POST /api/request/text.
+# This middleware avoids replacing FastAPI's cached APIRoute application.
+@app.middleware("http")
+async def _fastapi_final_weight_authority_v87_middleware(
+    request,
+    call_next,
+):
+    import json as _v87_json
+
+    is_target = (
+        request.method.upper() == "POST"
+        and request.url.path == "/api/request/text"
+    )
+    original_text = ""
+
+    if is_target:
+        try:
+            request_body = await request.body()
+            request_data = _v87_json.loads(
+                request_body.decode("utf-8")
+            )
+            if isinstance(request_data, dict):
+                original_text = str(
+                    request_data.get("user_text")
+                    or request_data.get("request_text")
+                    or request_data.get("text")
+                    or ""
+                )
+        except Exception:
+            original_text = ""
+
+    response = await call_next(request)
+
+    if (
+        not is_target
+        or response.status_code != 200
+        or "application/json"
+        not in response.headers.get(
+            "content-type",
+            "",
+        ).lower()
+    ):
+        return response
+
+    raw_body = b""
+
+    try:
+        chunks = []
+        async for chunk in response.body_iterator:
+            if isinstance(chunk, bytes):
+                chunks.append(chunk)
+            elif isinstance(chunk, bytearray):
+                chunks.append(bytes(chunk))
+            elif isinstance(chunk, memoryview):
+                chunks.append(chunk.tobytes())
+            else:
+                chunks.append(str(chunk).encode("utf-8"))
+
+        raw_body = b"".join(chunks)
+        payload = _v87_json.loads(
+            raw_body.decode("utf-8")
+        )
+
+        if not isinstance(payload, dict):
+            return response
+
+        from app.practical_imperial_precision_v80 import (
+            apply_practical_imperial_precision,
+        )
+        from app.backend_service import (
+            _v83_apply_final_weight_text_contract,
+        )
+
+        payload = apply_practical_imperial_precision(
+            payload,
+            original_text,
+        )
+        payload = _v83_apply_final_weight_text_contract(
+            payload,
+        )
+
+        metadata = payload.setdefault(
+            "request_metadata",
+            {},
+        )
+        if isinstance(metadata, dict):
+            metadata[
+                "fastapi_response_final_weight_authority_v87"
+            ] = {
+                "status": "applied",
+                "request_text_found": bool(original_text),
+            }
+
+        from fastapi.responses import JSONResponse
+
+        headers = {
+            key: value
+            for key, value in response.headers.items()
+            if key.lower()
+            not in {
+                "content-length",
+                "content-type",
+            }
+        }
+
+        return JSONResponse(
+            content=payload,
+            status_code=response.status_code,
+            headers=headers,
+            background=getattr(
+                response,
+                "background",
+                None,
+            ),
+        )
+
+    except Exception:
+        from starlette.responses import Response
+
+        headers = {
+            key: value
+            for key, value in response.headers.items()
+            if key.lower() != "content-length"
+        }
+
+        return Response(
+            content=raw_body,
+            status_code=response.status_code,
+            headers=headers,
+            media_type=response.headers.get(
+                "content-type",
+                "application/json",
+            ).split(";", 1)[0],
+            background=getattr(
+                response,
+                "background",
+                None,
+            ),
+        )
