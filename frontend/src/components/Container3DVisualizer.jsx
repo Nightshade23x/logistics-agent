@@ -987,11 +987,158 @@ export function buildLayout(result) {
     "Before booking, confirm carton dimensions, lashing, axle/load distribution, carrier limits, and dangerous-goods rules."
   );
 
+    // DIRECT_VOLUME_VISUAL_DEDUPE_V76
+  // The guided direct-volume request contains calculation-only sentences.
+  // Older visual ordering logic can mistake one of those sentences for a
+  // second cargo item. Remove only clearly synthetic calculation entries.
+  const syntheticCalculationItemV76 = (value) => {
+    if (!value || typeof value !== "object") return false;
+
+    const label = String(
+      value.name ??
+      value.item_name ??
+      value.itemName ??
+      value.cargo_name ??
+      value.cargoName ??
+      value.label ??
+      value.description ??
+      "",
+    )
+      .toLowerCase()
+      .replace(/\s+/g, " ")
+      .trim();
+
+    if (!label) return false;
+
+    return (
+      label.includes("for calculation") ||
+      label.includes("original package volume") ||
+      label.includes("total shipment volume") ||
+      label.includes("internal cbm") ||
+      label.includes("calculation only")
+    );
+  };
+
+  const originalCargoV76 = Array.isArray(ordered.cargo)
+    ? ordered.cargo
+    : [];
+
+  const validCargoV76 = originalCargoV76.filter(
+    (item) => !syntheticCalculationItemV76(item),
+  );
+
+  const cleanedCargoV76 = validCargoV76.length > 0
+    ? validCargoV76
+    : originalCargoV76;
+
+  const removedCargoV76 = validCargoV76.length > 0
+    ? originalCargoV76.filter(syntheticCalculationItemV76)
+    : [];
+
+  const removedNamesV76 = new Set(
+    removedCargoV76
+      .map((item) =>
+        String(
+          item?.name ??
+          item?.item_name ??
+          item?.itemName ??
+          item?.cargo_name ??
+          item?.cargoName ??
+          item?.label ??
+          "",
+        )
+          .toLowerCase()
+          .replace(/\s+/g, " ")
+          .trim(),
+      )
+      .filter(Boolean),
+  );
+
+  const removedColorsV76 = new Set(
+    removedCargoV76
+      .map((item) => String(item?.color ?? "").trim().toLowerCase())
+      .filter(Boolean),
+  );
+
+  const removedIndexesV76 = new Set(
+    originalCargoV76
+      .map((item, index) =>
+        syntheticCalculationItemV76(item) ? index : null,
+      )
+      .filter((index) => index !== null),
+  );
+
+  const belongsToRemovedCargoV76 = (value) => {
+    if (!value || typeof value !== "object") return false;
+    if (syntheticCalculationItemV76(value)) return true;
+
+    const label = String(
+      value.name ??
+      value.item_name ??
+      value.itemName ??
+      value.cargo_name ??
+      value.cargoName ??
+      value.label ??
+      "",
+    )
+      .toLowerCase()
+      .replace(/\s+/g, " ")
+      .trim();
+
+    if (label && removedNamesV76.has(label)) return true;
+
+    const color = String(
+      value.color ??
+      value.cargo_color ??
+      value.cargoColor ??
+      "",
+    )
+      .trim()
+      .toLowerCase();
+
+    if (color && removedColorsV76.has(color)) return true;
+
+    const possibleIndexes = [
+      value.cargo_index,
+      value.cargoIndex,
+      value.item_index,
+      value.itemIndex,
+      value.source_index,
+      value.sourceIndex,
+    ];
+
+    return possibleIndexes.some((index) => {
+      const numericIndex = Number(index);
+      return Number.isInteger(numericIndex) &&
+        removedIndexesV76.has(numericIndex);
+    });
+  };
+
+  const originalBoxesV76 = Array.isArray(packed.boxes)
+    ? packed.boxes
+    : [];
+
+  const cleanedBoxesV76 = removedCargoV76.length > 0
+    ? originalBoxesV76.filter(
+        (box) => !belongsToRemovedCargoV76(box),
+      )
+    : originalBoxesV76;
+
+  const originalSequenceV76 = Array.isArray(ordered.sequence)
+    ? ordered.sequence
+    : [];
+
+  const cleanedSequenceV76 = removedCargoV76.length > 0
+    ? originalSequenceV76.filter(
+        (step) => !belongsToRemovedCargoV76(step),
+      )
+    : originalSequenceV76;
+
   return {
     container,
-    cargo_mix: ordered.cargo,
-    boxes: packed.boxes,
-    loading_sequence: ordered.sequence,
+    cargo_mix: cleanedCargoV76,
+    boxes: cleanedBoxesV76,
+    loading_sequence: cleanedSequenceV76,
     loading_order_source: ordered.loading_order_source,
     usedBackendSequence: ordered.usedBackendSequence,
     utilization: displayUtil,
@@ -1005,7 +1152,7 @@ export function buildLayout(result) {
         ? "partial_bounded_preview"
         : "bounded_preview",
     packing_summary: {
-      visual_units: packed.boxes.length,
+      visual_units: cleanedBoxesV76.length,
       omitted_units: packed.omittedCount,
       rejected_out_of_bounds: packed.rejectedOutOfBounds,
     },
