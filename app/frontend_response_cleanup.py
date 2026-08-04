@@ -1,3 +1,7 @@
+# FRONTEND RESPONSE CLEANUP
+# This is the final formatting layer before the response reaches the frontend.
+# It keeps calculations consistent while preserving user-facing units.
+
 from __future__ import annotations
 
 import re
@@ -2130,6 +2134,10 @@ def _final_weight_unit_v71(raw_unit):
     return mapping.get(key, (None, None))
 
 
+# READ ORIGINAL WEIGHT UNIT
+# Reads the original request and extracts the display weight unit.
+# Example: 10 crates at 250 lb becomes 2500 lb for display.
+
 def _final_weight_v71(text):
     quantity = _final_quantity_v71(text)
     unit_pattern = (
@@ -2231,6 +2239,10 @@ def _final_volume_unit_v71(raw_unit):
     return mapping.get(key, (None, None))
 
 
+# READ ORIGINAL VOLUME UNIT
+# Reads the original request and extracts the display volume unit.
+# Example: 10 packages at 100 litres becomes 1000 L for display.
+
 def _final_volume_v71(text):
     quantity = _final_quantity_v71(text)
     unit_pattern = (
@@ -2271,6 +2283,10 @@ def _final_volume_v71(text):
 
     return None
 
+
+# SYNC DISPLAY AND INTERNAL WEIGHT
+# Writes the user-facing weight into the final response.
+# Kilograms stay internal and are repaired only when missing.
 
 def _final_sync_weight_v71(payload, weight):
     """Synchronise the original display unit and repair a missing canonical kg
@@ -2427,6 +2443,10 @@ def _final_sync_weight_v71(payload, weight):
     )
 
 
+# SYNC DISPLAY AND INTERNAL VOLUME
+# Writes the user-facing volume into the final response.
+# CBM remains the internal unit used for container planning.
+
 def _final_sync_volume_v71(payload, volume):
     if not isinstance(volume, dict):
         return
@@ -2476,6 +2496,10 @@ def _final_sync_volume_v71(payload, volume):
             )
 
 
+# FINAL FRONTEND CLEANUP
+# Normalises the final backend payload before it reaches the UI.
+# It removes stale values and applies the display-unit authority.
+
 def cleanup_frontend_response(*args, **kwargs):
     cleaned = _final_display_unit_previous_cleanup_v71(*args, **kwargs)
 
@@ -2503,3 +2527,105 @@ def cleanup_frontend_response(*args, **kwargs):
 
     return cleaned
 # END FINAL_DISPLAY_UNIT_AUTHORITY_V71
+
+
+# NONPOSITIVE QUANTITY WEIGHT GUARD V77
+# A zero or negative cargo quantity invalidates shipment totals.
+# This final guard prevents later display-unit cleanup from restoring
+# a per-package weight as though one package had been requested.
+_NONPOSITIVE_QUANTITY_WEIGHT_GUARD_V77_PREVIOUS = cleanup_frontend_response
+
+
+def _v77_number(value):
+    try:
+        if value is None or isinstance(value, bool):
+            return None
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _v77_authoritative_nonpositive_quantity(payload):
+    if not isinstance(payload, dict):
+        return None
+
+    validation = payload.get("input_validation_v44")
+    if not isinstance(validation, dict):
+        return None
+
+    facts = validation.get("authoritative_facts")
+    if not isinstance(facts, dict):
+        return None
+
+    quantity = _v77_number(facts.get("quantity"))
+    if quantity is None or quantity > 0:
+        return None
+
+    errors = validation.get("errors")
+    if not isinstance(errors, list):
+        return None
+
+    error_text = " ".join(str(error) for error in errors).lower()
+    if "quantity must be greater than zero" not in error_text:
+        return None
+
+    return quantity
+
+
+def _v77_clear_invalid_shipment_weight_fields(value):
+    if isinstance(value, dict):
+        for key in list(value):
+            if key in {
+                "total_weight_kg",
+                "display_total_weight",
+                "display_unit_weight",
+            }:
+                value[key] = None
+                continue
+
+            if key == "weight_known":
+                value[key] = False
+                continue
+
+            _v77_clear_invalid_shipment_weight_fields(value[key])
+
+    elif isinstance(value, list):
+        for item in value:
+            _v77_clear_invalid_shipment_weight_fields(item)
+
+
+def _v77_apply_nonpositive_quantity_guard(payload):
+    quantity = _v77_authoritative_nonpositive_quantity(payload)
+    if quantity is None:
+        return payload
+
+    _v77_clear_invalid_shipment_weight_fields(payload)
+
+    display = payload.get("display_measurements")
+    if isinstance(display, dict):
+        weight = display.get("weight")
+        if isinstance(weight, dict):
+            weight["package_count"] = (
+                int(quantity) if quantity.is_integer() else quantity
+            )
+            weight["total_weight"] = None
+
+    metadata = payload.setdefault("request_metadata", {})
+    if isinstance(metadata, dict):
+        metadata["nonpositive_quantity_weight_guard_v77"] = {
+            "status": "applied",
+            "authoritative_quantity": (
+                int(quantity) if quantity.is_integer() else quantity
+            ),
+            "shipment_weight_totals_cleared": True,
+        }
+
+    return payload
+
+
+def cleanup_frontend_response(payload, original_text=None):
+    payload = _NONPOSITIVE_QUANTITY_WEIGHT_GUARD_V77_PREVIOUS(
+        payload,
+        original_text,
+    )
+    return _v77_apply_nonpositive_quantity_guard(payload)

@@ -1,3 +1,7 @@
+# REQUEST INTERPRETER
+# Controls when the deterministic backend or optional LLM is used.
+# Use LLM_INTERPRETER_MODE=off for a fully local demonstration.
+
 from __future__ import annotations
 
 import json
@@ -1203,6 +1207,10 @@ def _v42_apply_local_facts(response: Any, facts: dict[str, Any]) -> Any:
     return response
 
 
+# DETERMINISTIC-FIRST EXECUTION
+# Runs the deterministic backend first.
+# An LLM is used only when the configured mode allows it.
+
 def run_backend_with_interpreter(
     user_text: str,
     deterministic_runner: Callable[[str], Any],
@@ -1329,3 +1337,282 @@ def run_backend_with_interpreter(
         structured_shipment=llm_result.structured_shipment,
     )
     return _attach_metadata(first_response, rejected, local_text)
+
+
+# PRACTICAL IMPERIAL WEIGHT PRECISION V80
+# The API interpreter may hold an earlier backend function reference, so the
+# same final authority is applied once more to the interpreter result.
+_PRACTICAL_IMPERIAL_PRECISION_V80_INTERPRETER_PREVIOUS = (
+    run_backend_with_interpreter
+)
+
+
+def _v80_interpreter_original_text(args, kwargs, result):
+    if args and isinstance(args[0], str):
+        return args[0]
+
+    for key in ("request_text", "text", "user_request", "prompt"):
+        value = kwargs.get(key)
+        if isinstance(value, str):
+            return value
+
+    candidates = []
+    if isinstance(result, dict):
+        candidates.append(result)
+    elif isinstance(result, (tuple, list)):
+        candidates.extend(
+            item for item in result if isinstance(item, dict)
+        )
+
+    for payload in candidates:
+        metadata = payload.get("request_metadata")
+        if isinstance(metadata, dict):
+            for key in ("original_input_source", "input_source"):
+                value = metadata.get(key)
+                if isinstance(value, str):
+                    return value
+
+    return ""
+
+
+def run_backend_with_interpreter(*args, **kwargs):
+    result = (
+        _PRACTICAL_IMPERIAL_PRECISION_V80_INTERPRETER_PREVIOUS(
+            *args,
+            **kwargs,
+        )
+    )
+
+    from app.practical_imperial_precision_v80 import (
+        apply_practical_imperial_precision_to_result,
+    )
+
+    return apply_practical_imperial_precision_to_result(
+        result,
+        _v80_interpreter_original_text(args, kwargs, result),
+    )
+
+
+# FINAL WEIGHT TEXT CONTRACT V83
+# Covers interpreter/API return shapes in case they retain an earlier backend
+# callable or return the payload inside a tuple/list.
+_FINAL_WEIGHT_TEXT_CONTRACT_V83_INTERPRETER_PREVIOUS = (
+    run_backend_with_interpreter
+)
+
+
+def _v83_apply_contract_to_interpreter_result(result):
+    from app.backend_service import (
+        _v83_apply_final_weight_text_contract,
+    )
+
+    if isinstance(result, dict):
+        return _v83_apply_final_weight_text_contract(
+            result,
+        )
+
+    if isinstance(result, list):
+        for index, item in enumerate(result):
+            if isinstance(item, dict):
+                result[index] = (
+                    _v83_apply_final_weight_text_contract(
+                        item,
+                    )
+                )
+        return result
+
+    if isinstance(result, tuple):
+        return tuple(
+            _v83_apply_final_weight_text_contract(item)
+            if isinstance(item, dict)
+            else item
+            for item in result
+        )
+
+    return result
+
+
+def run_backend_with_interpreter(*args, **kwargs):
+    result = (
+        _FINAL_WEIGHT_TEXT_CONTRACT_V83_INTERPRETER_PREVIOUS(
+            *args,
+            **kwargs,
+        )
+    )
+    return _v83_apply_contract_to_interpreter_result(
+        result,
+    )
+
+
+# API IMPERIAL PRECISION AUTHORITY V84
+# Extracts the original request from interpreter argument shapes, reapplies
+# practical imperial precision, then applies the narrow answer-text contract.
+_API_IMPERIAL_PRECISION_AUTHORITY_V84_PREVIOUS = (
+    run_backend_with_interpreter
+)
+
+
+def _v84_collect_request_text(value, candidates, seen):
+    object_id = id(value)
+    if object_id in seen:
+        return
+    seen.add(object_id)
+
+    if isinstance(value, str):
+        stripped = value.strip()
+        if stripped:
+            score = 0
+            lowered = stripped.lower()
+            if "ship" in lowered:
+                score += 1000
+            if any(
+                token in lowered
+                for token in (
+                    " lb",
+                    " lbs",
+                    " pound",
+                    " kg",
+                    " cbm",
+                    " from ",
+                    " to ",
+                )
+            ):
+                score += 500
+            score += min(len(stripped), 400)
+            candidates.append((score, stripped))
+        return
+
+    if isinstance(value, dict):
+        priority_keys = (
+            "user_text",
+            "request_text",
+            "user_request",
+            "prompt",
+            "text",
+            "original_text",
+            "input_text",
+        )
+        for key in priority_keys:
+            if key in value:
+                _v84_collect_request_text(
+                    value.get(key),
+                    candidates,
+                    seen,
+                )
+        for key, child in value.items():
+            if key not in priority_keys:
+                _v84_collect_request_text(
+                    child,
+                    candidates,
+                    seen,
+                )
+        return
+
+    if isinstance(value, (list, tuple)):
+        for child in value:
+            _v84_collect_request_text(
+                child,
+                candidates,
+                seen,
+            )
+        return
+
+    for attribute in (
+        "user_text",
+        "request_text",
+        "user_request",
+        "prompt",
+        "text",
+        "original_text",
+        "input_text",
+    ):
+        try:
+            child = getattr(value, attribute)
+        except Exception:
+            continue
+        _v84_collect_request_text(
+            child,
+            candidates,
+            seen,
+        )
+
+
+def _v84_original_request_text(args, kwargs):
+    candidates = []
+    seen = set()
+
+    _v84_collect_request_text(
+        args,
+        candidates,
+        seen,
+    )
+    _v84_collect_request_text(
+        kwargs,
+        candidates,
+        seen,
+    )
+
+    if not candidates:
+        return ""
+
+    candidates.sort(
+        key=lambda item: item[0],
+        reverse=True,
+    )
+    return candidates[0][1]
+
+
+def _v84_apply_to_result(result, original_text):
+    from app.practical_imperial_precision_v80 import (
+        apply_practical_imperial_precision_to_result,
+    )
+    from app.backend_service import (
+        _v83_apply_final_weight_text_contract,
+    )
+
+    result = apply_practical_imperial_precision_to_result(
+        result,
+        original_text,
+    )
+
+    if isinstance(result, dict):
+        return _v83_apply_final_weight_text_contract(
+            result
+        )
+
+    if isinstance(result, list):
+        for index, item in enumerate(result):
+            if isinstance(item, dict):
+                result[index] = (
+                    _v83_apply_final_weight_text_contract(
+                        item
+                    )
+                )
+        return result
+
+    if isinstance(result, tuple):
+        return tuple(
+            _v83_apply_final_weight_text_contract(item)
+            if isinstance(item, dict)
+            else item
+            for item in result
+        )
+
+    return result
+
+
+def run_backend_with_interpreter(*args, **kwargs):
+    original_text = _v84_original_request_text(
+        args,
+        kwargs,
+    )
+    result = (
+        _API_IMPERIAL_PRECISION_AUTHORITY_V84_PREVIOUS(
+            *args,
+            **kwargs,
+        )
+    )
+    return _v84_apply_to_result(
+        result,
+        original_text,
+    )
