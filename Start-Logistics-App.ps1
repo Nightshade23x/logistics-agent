@@ -1,5 +1,5 @@
-param(
-    [string]$Repo = "C:\Users\Samar\Desktop\logistics-agent",
+﻿param(
+    [string]$Repo = $PSScriptRoot,
     [string]$Python = "G:\venvs\logistics-training\Scripts\python.exe",
     [int]$BackendPort = 8000,
     [int]$FrontendPort = 5173,
@@ -237,3 +237,5 @@ else {
 
     exit 1
 }
+
+
