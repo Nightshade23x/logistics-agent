@@ -4,7 +4,11 @@ import { api } from "../api.js";
 import Badge from "../components/Badge.jsx";
 import AnswerCard from "../components/AnswerCard.jsx";
 import NeedMoreInfoCard from "../components/NeedMoreInfoCard.jsx";
-import GuidedShipmentWizard from "../components/GuidedShipmentWizard.jsx";
+import GuidedShipmentWizard, {
+  GUIDED_GOAL_OPTIONS,
+  buildGuidedShipmentRequestForGoal,
+  getGuidedShipmentGoal,
+} from "../components/GuidedShipmentWizard.jsx";
 import ShipmentProgress from "../components/ShipmentProgress.jsx";
 import SimpleResultOverview from "../components/SimpleResultOverview.jsx";
 import ViewControls from "../components/ViewControls.jsx";
@@ -215,6 +219,19 @@ export default function Dashboard() {
   }
 
 
+  // MENTOR WORKFLOW QUICK GOALS V89
+  async function runGuidedGoal(goal) {
+    const nextRequest = buildGuidedShipmentRequestForGoal(goal);
+
+    if (!nextRequest) {
+      setError("The saved guided shipment could not be reused. Edit the request step by step and try again.");
+      return;
+    }
+
+    await submit(nextRequest);
+  }
+
+
   async function submit(overrideText = null) {
     const submittedText = typeof overrideText === "string" ? overrideText.trim() : text.trim();
     if (mode === "text" && submittedText) setText(submittedText);
@@ -393,6 +410,25 @@ export default function Dashboard() {
               <button className="btn" onClick={clearEverything}>
                 Clear all
               </button>
+
+              {mode === "text" && userView === "simple" && simpleInputMode === "guided" && showCurrentResult && result && text.trim() && (
+                <>
+                  {GUIDED_GOAL_OPTIONS
+                    .filter((option) => option.value !== getGuidedShipmentGoal())
+                    .map((option) => (
+                      <button
+                        className="btn"
+                        type="button"
+                        key={option.value}
+                        onClick={() => runGuidedGoal(option.value)}
+                        disabled={loading}
+                        title="Reuse the current shipment details for this additional task"
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                </>
+              )}
             </div>
           </div>
         </div>

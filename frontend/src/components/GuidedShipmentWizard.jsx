@@ -233,6 +233,35 @@ function ReviewRow({ label, value }) {
   return <div className="wizard-review-row"><dt>{label}</dt><dd>{value || "Not provided"}</dd></div>;
 }
 
+// MENTOR WORKFLOW UX V89
+// Reuse the completed guided-shipment draft for another user goal without
+// forcing the user to walk backward through the five-step wizard.
+export const GUIDED_GOAL_OPTIONS = Object.freeze([
+  { value: "shipping_plan", label: "Create shipping plan" },
+  { value: "landed_cost", label: "Estimate landed cost" },
+  { value: "documents", label: "List required documents" },
+  { value: "suppliers", label: "Find suppliers and plan shipping" },
+]);
+
+export function getGuidedShipmentGoal() {
+  return loadDraft()?.goal || "shipping_plan";
+}
+
+export function buildGuidedShipmentRequestForGoal(goal) {
+  const supportedGoal = GUIDED_GOAL_OPTIONS.some((option) => option.value === goal);
+  if (!supportedGoal) return "";
+
+  const draft = { ...loadDraft(), goal };
+
+  try {
+    sessionStorage.setItem(SESSION_KEY, JSON.stringify(draft));
+  } catch {
+    // Session storage is optional.
+  }
+
+  return buildGuidedShipmentRequest(draft);
+}
+
 export default function GuidedShipmentWizard({ loading = false, onDraftChange, onSubmit }) {
   const [draft, setDraft] = useState(loadDraft);
   const [step, setStep] = useState(loadStep);
@@ -427,16 +456,16 @@ export default function GuidedShipmentWizard({ loading = false, onDraftChange, o
 
             {draft.measurementMode === "dimensions" ? (
               <>
+                <div className="form-group wizard-measurement-choice">
+                  <label className="form-label" htmlFor="wizard-dimensionUnit">Dimension unit</label>
+                  <select id="wizard-dimensionUnit" className="form-select" value={draft.dimensionUnit} onChange={(event) => update("dimensionUnit", event.target.value)}>
+                    <option value="m">Metres</option><option value="cm">Centimetres</option><option value="mm">Millimetres</option><option value="ft">Feet</option><option value="inches">Inches</option><option value="custom">Other — enter your own</option>
+                  </select>
+                </div>
                 <div className="wizard-grid measurement">
                   <div className="form-group"><label className="form-label" htmlFor="wizard-length">Length</label><input id="wizard-length" type="number" min="0" step="any" inputMode="decimal" className="form-input" value={draft.length} onChange={(event) => update("length", event.target.value)} placeholder="1.2" aria-invalid={Boolean(errors.length)} /><FieldError id="wizard-length-error">{errors.length}</FieldError></div>
                   <div className="form-group"><label className="form-label" htmlFor="wizard-width">Width</label><input id="wizard-width" type="number" min="0" step="any" inputMode="decimal" className="form-input" value={draft.width} onChange={(event) => update("width", event.target.value)} placeholder="1.0" /></div>
                   <div className="form-group"><label className="form-label" htmlFor="wizard-height">Height</label><input id="wizard-height" type="number" min="0" step="any" inputMode="decimal" className="form-input" value={draft.height} onChange={(event) => update("height", event.target.value)} placeholder="0.8" /></div>
-                  <div className="form-group">
-                    <label className="form-label" htmlFor="wizard-dimensionUnit">Dimension unit</label>
-                    <select id="wizard-dimensionUnit" className="form-select" value={draft.dimensionUnit} onChange={(event) => update("dimensionUnit", event.target.value)}>
-                      <option value="m">Metres</option><option value="cm">Centimetres</option><option value="mm">Millimetres</option><option value="ft">Feet</option><option value="inches">Inches</option><option value="custom">Other — enter your own</option>
-                    </select>
-                  </div>
                 </div>
                 {draft.dimensionUnit === "custom" && (
                   <div className="wizard-custom-unit">
@@ -468,13 +497,13 @@ export default function GuidedShipmentWizard({ loading = false, onDraftChange, o
             )}
 
             <div className="wizard-grid two wizard-weight-row">
-              <div className="form-group"><label className="form-label" htmlFor="wizard-weightPerPackage">Weight of one package</label><input id="wizard-weightPerPackage" type="number" min="0" step="any" inputMode="decimal" className="form-input" value={draft.weightPerPackage} onChange={(event) => update("weightPerPackage", event.target.value)} placeholder="250" aria-invalid={Boolean(errors.weightPerPackage)} /><FieldError id="wizard-weightPerPackage-error">{errors.weightPerPackage}</FieldError></div>
               <div className="form-group">
                 <label className="form-label" htmlFor="wizard-weightUnit">Weight unit</label>
                 <select id="wizard-weightUnit" className="form-select" value={draft.weightUnit} onChange={(event) => update("weightUnit", event.target.value)}>
                   <option value="kg">Kilograms</option><option value="g">Grams</option><option value="tonnes">Metric tonnes</option><option value="lb">Pounds</option><option value="oz">Ounces</option><option value="st">Stones</option><option value="custom">Other — enter your own</option>
                 </select>
               </div>
+              <div className="form-group"><label className="form-label" htmlFor="wizard-weightPerPackage">Weight of one package</label><input id="wizard-weightPerPackage" type="number" min="0" step="any" inputMode="decimal" className="form-input" value={draft.weightPerPackage} onChange={(event) => update("weightPerPackage", event.target.value)} placeholder="250" aria-invalid={Boolean(errors.weightPerPackage)} /><FieldError id="wizard-weightPerPackage-error">{errors.weightPerPackage}</FieldError></div>
             </div>
             {draft.weightUnit === "custom" && (
               <div className="wizard-custom-unit">
