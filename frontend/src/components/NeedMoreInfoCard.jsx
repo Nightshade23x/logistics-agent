@@ -57,6 +57,41 @@ function formatAnswerLine(question, answer) {
   return a;
 }
 
+// MISSING_INFO_SUPERSEDE_INCOTERM_V90
+// A corrected trade term supersedes an earlier standalone trade-term answer.
+function removePriorStandaloneIncotermAnswers(text) {
+  return String(text || "")
+    .replace(/^\s*Use\s+[A-Za-z]{2,12}\s+incoterm\.?\s*$/gim, "")
+    .replace(/^\s*Incoterm\s*(?:is|=|:)?\s*[A-Za-z]{2,12}\.?\s*$/gim, "")
+    .replace(/^\s*Trade\s+term\s*(?:is|=|:)?\s*[A-Za-z]{2,12}\.?\s*$/gim, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function buildUpdatedRequest(originalText, questions, answers, extraLine) {
+  let baseText = String(originalText || "").trim();
+  const formattedLines = [];
+
+  for (const question of questions) {
+    const answer = answers[question] || "";
+    const line = formatAnswerLine(question, answer);
+    if (!line) continue;
+
+    if (String(question || "").toLowerCase().includes("incoterm")) {
+      baseText = removePriorStandaloneIncotermAnswers(baseText);
+    }
+
+    formattedLines.push(line);
+  }
+
+  const additions = [...formattedLines, String(extraLine || "").trim()].filter(Boolean);
+
+  return [baseText, additions.join("\n")]
+    .filter(Boolean)
+    .join("\n\n")
+    .trim();
+}
+
 export default function NeedMoreInfoCard({ result, originalText, onResult }) {
   const questions =
     (result?.clarification_questions?.length && result.clarification_questions) ||
@@ -75,19 +110,15 @@ export default function NeedMoreInfoCard({ result, originalText, onResult }) {
   }
 
   async function handleSubmit() {
-    const formattedLines = questions
-      .map((q) => formatAnswerLine(q, answers[q] || ""))
-      .filter(Boolean);
-
+    const hasAnsweredQuestion = questions.some((q) => String(answers[q] || "").trim());
     const extraLine = extra.trim();
 
-    if (!formattedLines.length && !extraLine) {
+    if (!hasAnsweredQuestion && !extraLine) {
       setError("Answer at least one question, or add a note, before submitting.");
       return;
     }
 
-    const allLines = [...formattedLines, extraLine].filter(Boolean);
-    const combinedText = `${originalText}\n\n${allLines.join("\n")}`;
+    const combinedText = buildUpdatedRequest(originalText, questions, answers, extraLine);
 
     setLoading(true);
     setError(null);

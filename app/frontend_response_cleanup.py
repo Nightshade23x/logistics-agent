@@ -2629,3 +2629,276 @@ def cleanup_frontend_response(payload, original_text=None):
         original_text,
     )
     return _v77_apply_nonpositive_quantity_guard(payload)
+# ============================================================================
+# READINESS_RECONCILIATION_V92
+# Final narrow reconciliation for explicit user facts that arrive in the text
+# request after the specialist sections were originally built.
+# ============================================================================
+
+_cleanup_frontend_response_before_readiness_reconciliation_v92 = cleanup_frontend_response
+
+
+def _v92_as_list(value):
+    if isinstance(value, list):
+        return value
+    if value is None:
+        return []
+    return [value]
+
+
+def _v92_unique_text(values):
+    result = []
+    for value in _v92_as_list(values):
+        text = str(value or "").strip()
+        if text and text not in result:
+            result.append(text)
+    return result
+
+
+def _v92_input_text(payload, original_text=None):
+    if isinstance(original_text, str) and original_text.strip():
+        return original_text.strip()
+
+    metadata = payload.get("request_metadata")
+    if isinstance(metadata, dict):
+        source = metadata.get("input_source")
+        if isinstance(source, str):
+            return source.strip()
+
+    return ""
+
+
+def _v92_extract_declared_value_usd(text):
+    source = str(text or "")
+    patterns = (
+        r"\b(?:declared|procurement|cargo|commercial)\s+value"
+        r"(?:\s+(?:is|of))?\s*[:=]?\s*(?:USD\s*|\$\s*)?"
+        r"([0-9][0-9,]*(?:\.[0-9]+)?)\s*(?:USD|US\s*dollars?)?\b",
+
+        r"\b(?:declared|procurement|cargo|commercial)\s+value"
+        r"(?:\s+(?:is|of))?\s*[:=]?\s*USD\s*"
+        r"([0-9][0-9,]*(?:\.[0-9]+)?)\b",
+    )
+
+    for pattern in patterns:
+        match = re.search(pattern, source, re.IGNORECASE)
+        if not match:
+            continue
+        try:
+            value = float(match.group(1).replace(",", ""))
+        except Exception:
+            continue
+        if value > 0:
+            return value
+
+    return None
+
+
+def _v92_extract_hs_code(text):
+    source = str(text or "")
+    patterns = (
+        r"\b(?:use\s+)?HS\s*code\s*(?:is|=|:)?\s*"
+        r"([0-9]{4,10}(?:\.[0-9]{1,4})?)\b",
+        r"\bHS\s*(?:is|=|:)\s*([0-9]{4,10}(?:\.[0-9]{1,4})?)\b",
+    )
+
+    for pattern in patterns:
+        match = re.search(pattern, source, re.IGNORECASE)
+        if match:
+            return match.group(1)
+
+    return None
+
+
+def _v92_is_value_missing_message(value):
+    lower = str(value or "").lower()
+    return (
+        ("procurement value" in lower or "declared value" in lower)
+        and any(token in lower for token in ("missing", "needed", "incomplete", "blocker"))
+    ) or (
+        "procurement_value_usd" in lower
+        and any(token in lower for token in ("missing", "needed", "input"))
+    )
+
+
+def _v92_is_soft_hs_classification_message(value):
+    lower = str(value or "").lower()
+    return (
+        ("hs code" in lower and "could not" in lower and "classif" in lower)
+        or "default duty rate" in lower
+        or "fallback duty" in lower
+        or "default rate was used" in lower
+        or ("hs classification" in lower and "confirm" in lower)
+    )
+
+
+def _v92_prune_list(values, predicate):
+    return [value for value in _v92_as_list(values) if not predicate(value)]
+
+
+def _v92_sync_landed_cost(payload, declared_value):
+    if declared_value is None:
+        return
+
+    payload["procurement_value_usd"] = declared_value
+
+    finance_payload = payload.get("finance_payload")
+    if not isinstance(finance_payload, dict):
+        finance_payload = {}
+    finance_payload["procurement_value_usd"] = declared_value
+    payload["finance_payload"] = finance_payload
+
+    advice = payload.get("landed_cost_advice")
+    if not isinstance(advice, dict):
+        return
+
+    known = advice.get("known_inputs")
+    if not isinstance(known, dict):
+        known = {}
+    known["procurement_value_usd"] = declared_value
+    advice["known_inputs"] = known
+
+    advice["missing_cost_inputs"] = [
+        item
+        for item in _v92_as_list(advice.get("missing_cost_inputs"))
+        if str(item or "").strip().lower() != "procurement_value_usd"
+    ]
+    advice["blockers"] = _v92_prune_list(advice.get("blockers"), _v92_is_value_missing_message)
+    advice["missing_information"] = _v92_prune_list(advice.get("missing_information"), _v92_is_value_missing_message)
+    advice["user_questions"] = _v92_prune_list(advice.get("user_questions"), _v92_is_value_missing_message)
+
+    if advice.get("blockers"):
+        advice["status"] = "blocked"
+    elif advice.get("missing_cost_inputs"):
+        advice["status"] = "needs_more_information"
+    elif advice.get("warnings"):
+        advice["status"] = "review_required"
+    else:
+        advice["status"] = "clear"
+
+    payload["landed_cost_advice"] = advice
+
+
+def _v92_sync_trade_compliance(payload, hs_code):
+    compliance = payload.get("trade_compliance_readiness")
+    if not isinstance(compliance, dict):
+        return
+
+    blockers = _v92_unique_text(compliance.get("blockers"))
+    warnings = _v92_unique_text(compliance.get("warnings"))
+    missing = _v92_unique_text(compliance.get("missing_information"))
+    questions = _v92_unique_text(compliance.get("user_questions"))
+
+    soft_hs_blockers = [item for item in blockers if _v92_is_soft_hs_classification_message(item)]
+    hard_blockers = [item for item in blockers if not _v92_is_soft_hs_classification_message(item)]
+
+    if hs_code:
+        payload["hs_code"] = hs_code
+        compliance["hs_code"] = hs_code
+        compliance["hs_code_source"] = "user_supplied"
+
+        blockers = hard_blockers
+        warnings = [item for item in warnings if not _v92_is_soft_hs_classification_message(item)]
+        missing = [item for item in missing if not _v92_is_soft_hs_classification_message(item)]
+        questions = [item for item in questions if not _v92_is_soft_hs_classification_message(item)]
+    elif soft_hs_blockers and not hard_blockers:
+        blockers = []
+        for item in soft_hs_blockers:
+            if item not in warnings:
+                warnings.append(item)
+
+    compliance["blockers"] = blockers
+    compliance["warnings"] = warnings
+    compliance["missing_information"] = missing
+    compliance["user_questions"] = questions
+
+    if blockers:
+        compliance["status"] = "blocked"
+    elif missing or questions:
+        compliance["status"] = "needs_more_information"
+    elif warnings:
+        compliance["status"] = "review_required"
+    else:
+        compliance["status"] = "clear"
+
+    payload["trade_compliance_readiness"] = compliance
+
+
+def _v92_remove_stale_value_messages(payload, declared_value):
+    if declared_value is None:
+        return
+
+    for key in ("missing_information_preview", "clarification_questions"):
+        if key in payload:
+            payload[key] = _v92_prune_list(payload.get(key), _v92_is_value_missing_message)
+
+    action = payload.get("action_plan")
+    if isinstance(action, dict):
+        for key in ("immediate_actions", "before_booking", "user_questions"):
+            action[key] = _v92_prune_list(action.get(key), _v92_is_value_missing_message)
+        payload["action_plan"] = action
+
+    final_answer = payload.get("final_answer")
+    if isinstance(final_answer, dict):
+        for key in ("blockers", "warnings", "next_actions"):
+            final_answer[key] = _v92_prune_list(final_answer.get(key), _v92_is_value_missing_message)
+        payload["final_answer"] = final_answer
+
+
+def _v92_rebuild_readiness(payload, original_text=None):
+    text = _v92_input_text(payload, original_text)
+
+    metadata = payload.get("request_metadata")
+    if not isinstance(metadata, dict):
+        metadata = {}
+    if text:
+        metadata["input_source"] = text
+    payload["request_metadata"] = metadata
+
+    declared_value = _v92_extract_declared_value_usd(text)
+    hs_code = _v92_extract_hs_code(text)
+
+    _v92_sync_landed_cost(payload, declared_value)
+    _v92_sync_trade_compliance(payload, hs_code)
+    _v92_remove_stale_value_messages(payload, declared_value)
+
+    from app.booking_readiness_advisor import build_booking_readiness
+    from app.executive_summary_builder import build_executive_summary
+
+    booking = build_booking_readiness(payload)
+    payload["booking_readiness"] = booking
+    payload["booking_readiness_advice"] = booking
+
+    try:
+        from app.action_plan_builder import build_action_plan
+        payload["action_plan"] = build_action_plan(payload)
+    except Exception:
+        pass
+
+    payload["executive_summary"] = build_executive_summary(payload)
+
+    hard_blockers = _v92_as_list(booking.get("hard_blockers"))
+    ready_to_book = booking.get("ready_for_booking") is True
+
+    if ready_to_book:
+        payload["status"] = "ready_for_booking_review"
+        payload["decision"] = "ready_for_booking_review"
+        final_answer = payload.get("final_answer")
+        if isinstance(final_answer, dict):
+            final_answer["status"] = "ready_for_booking_review"
+            payload["final_answer"] = final_answer
+    elif hard_blockers:
+        pass
+    else:
+        if str(payload.get("status") or "").lower() not in {"critical_review_required", "blocked"}:
+            payload["status"] = "review_required"
+
+    return payload
+
+
+def cleanup_frontend_response(payload, original_text=None):
+    cleaned = _cleanup_frontend_response_before_readiness_reconciliation_v92(payload, original_text)
+    try:
+        return _v92_rebuild_readiness(cleaned, original_text)
+    except Exception:
+        return cleaned

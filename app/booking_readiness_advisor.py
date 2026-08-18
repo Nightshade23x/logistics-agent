@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from typing import Any
 
@@ -56,6 +56,188 @@ def _review_status(review: dict[str, Any]) -> str | None:
         return None
 
     return str(status).lower()
+
+
+# READY_TO_BOOK_GATE_V91
+# Separate true booking requirements from review-only, informational, and
+# document-pack follow-up items. The original lists remain in the payload for
+# transparency; these helpers decide only which items control the booking gate.
+_INFORMATIONAL_REVIEW_MARKERS = (
+    "no known free trade agreement",
+    "no free trade agreement",
+    "no known fta",
+    "gemini",
+    "deterministic fallback",
+    "review was not applicable",
+    "checks are not connected yet",
+)
+
+_CRITICAL_REVIEW_MARKERS = (
+    "hs code",
+    "hazard",
+    "dangerous goods",
+    "radioactive",
+    "sanction",
+    "prohibited",
+    "restricted",
+    "specialist review required",
+    "export control",
+    "import restriction",
+)
+
+_DOCUMENT_FOLLOWUP_MARKERS = (
+    "commercial invoice",
+    "packing list",
+    "bill of lading",
+    "airway bill",
+    "air waybill",
+)
+
+_SOFT_COST_BLOCKER_MARKERS = (
+    "procurement value",
+    "declared value",
+    "landed cost inputs are incomplete",
+    "landed_cost has blockers",
+    "estimated cargo value is missing",
+    "insurance advice is incomplete",
+)
+
+_GENERIC_MISSING_MESSAGES = {
+    "landed_cost needs more information.",
+    "document_requirements needs more information.",
+    "trade_compliance needs more information.",
+    "insurance needs more information.",
+    "trade_terms needs more information.",
+}
+
+
+def _gate_text(value: Any) -> str:
+    return " ".join(str(value or "").strip().lower().replace("_", " ").split())
+
+
+def _is_cost_workflow(payload: dict[str, Any]) -> bool:
+    intent = _gate_text(payload.get("detected_intent"))
+    if intent in {"finance", "landed cost", "landed cost calculation", "cost"}:
+        return True
+
+    metadata = payload.get("request_metadata")
+    source = metadata.get("input_source") if isinstance(metadata, dict) else None
+    return "landed cost" in _gate_text(source)
+
+
+def _contains_any(text: str, markers: tuple[str, ...]) -> bool:
+    # V91_REPAIR_NORMALIZED_MARKERS
+    # _gate_text() normalizes underscores/spaces in payload messages, so
+    # normalize the marker side too before comparing. Without this,
+    # "landed_cost has blockers" fails to match "landed cost has blockers"
+    # and is incorrectly treated as a hard blocker.
+    return any(_gate_text(marker) in text for marker in markers)
+
+
+def _classify_booking_gate(
+    payload: dict[str, Any],
+    blockers: list[str],
+    missing_information: list[str],
+    review_items: list[str],
+) -> dict[str, list[str]]:
+    cost_workflow = _is_cost_workflow(payload)
+
+    hard_blockers: list[str] = []
+    booking_missing: list[str] = []
+    booking_review: list[str] = []
+    informational: list[str] = []
+    pre_dispatch: list[str] = []
+
+    def add_unique(target: list[str], value: str) -> None:
+        cleaned = _clean_text(value)
+        if cleaned and cleaned not in target:
+            target.append(cleaned)
+
+    # Existing blockers remain authoritative unless they are cost/value
+    # completeness messages. Those are required data, not safety blockers.
+    for item in blockers:
+        normalized = _gate_text(item)
+
+        if _contains_any(normalized, _SOFT_COST_BLOCKER_MARKERS):
+            if "procurement value" in normalized or "declared value" in normalized:
+                add_unique(booking_missing, item)
+            elif cost_workflow:
+                add_unique(booking_missing, item)
+            else:
+                add_unique(informational, item)
+            continue
+
+        add_unique(hard_blockers, item)
+
+    for item in missing_information:
+        normalized = _gate_text(item)
+
+        if normalized in {_gate_text(value) for value in _GENERIC_MISSING_MESSAGES}:
+            add_unique(informational, item)
+            continue
+
+        if normalized.startswith("document:") or _contains_any(
+            normalized, _DOCUMENT_FOLLOWUP_MARKERS
+        ):
+            add_unique(pre_dispatch, item)
+            continue
+
+        is_cost_item = (
+            normalized.startswith("landed cost input:")
+            or any(
+                token in normalized
+                for token in (
+                    "procurement value",
+                    "declared value",
+                    "freight quote",
+                    "insurance premium",
+                    "duty rate",
+                    "import tax",
+                    "vat rate",
+                    "customs brokerage",
+                    "local delivery",
+                )
+            )
+        )
+
+        if is_cost_item:
+            if "procurement value" in normalized or "declared value" in normalized:
+                add_unique(booking_missing, item)
+            elif cost_workflow:
+                add_unique(booking_missing, item)
+            else:
+                add_unique(informational, item)
+            continue
+
+        add_unique(booking_missing, item)
+
+    for item in review_items:
+        normalized = _gate_text(item)
+
+        if _contains_any(normalized, _INFORMATIONAL_REVIEW_MARKERS):
+            add_unique(informational, item)
+            continue
+
+        if _contains_any(normalized, _CRITICAL_REVIEW_MARKERS):
+            add_unique(booking_review, item)
+            continue
+
+        # Ordinary review warnings stay visible but do not by themselves block
+        # the "Ready to book" gate.
+        add_unique(informational, item)
+
+    booking_requirements: list[str] = []
+    for item in hard_blockers + booking_missing + booking_review:
+        add_unique(booking_requirements, item)
+
+    return {
+        "hard_blockers": hard_blockers,
+        "booking_missing": booking_missing,
+        "booking_review": booking_review,
+        "booking_requirements": booking_requirements,
+        "informational": informational,
+        "pre_dispatch": pre_dispatch,
+    }
 
 
 def build_booking_readiness(payload: dict[str, Any]) -> dict[str, Any]:
@@ -159,34 +341,47 @@ def build_booking_readiness(payload: dict[str, Any]) -> dict[str, Any]:
 
     score = max(0, min(100, score))
 
-    if unique_blockers:
+    gate = _classify_booking_gate(
+        payload,
+        unique_blockers,
+        unique_missing_information,
+        unique_review_items,
+    )
+    hard_blockers = gate["hard_blockers"]
+    booking_missing = gate["booking_missing"]
+    booking_review = gate["booking_review"]
+    booking_requirements = gate["booking_requirements"]
+    informational_items = gate["informational"]
+    pre_dispatch_items = gate["pre_dispatch"]
+
+    if hard_blockers:
         status = "blocked"
         ready_for_booking = False
         ready_for_first_pass = False
         next_gate = "resolve_blockers"
-        summary = "Shipment is not ready because blockers must be resolved."
-    elif unique_missing_information:
+        summary = "Shipment is not ready because safety, compliance, or validation blockers must be resolved."
+    elif booking_missing:
         status = "needs_more_information"
         ready_for_booking = False
         ready_for_first_pass = True
-        next_gate = "fill_missing_information"
-        summary = "Shipment is usable for first-pass planning but missing information prevents booking."
-    elif unique_review_items:
+        next_gate = "fill_booking_requirements"
+        summary = "Shipment is ready for review, but required booking information is still missing."
+    elif booking_review:
         status = "review_required"
         ready_for_booking = False
         ready_for_first_pass = True
-        next_gate = "human_review"
-        summary = "Shipment is usable for first-pass planning but needs review before booking."
+        next_gate = "confirm_booking_review"
+        summary = "Shipment is ready for review, but a booking-critical specialist check still needs confirmation."
     else:
         status = "ready_for_booking_review"
         ready_for_booking = True
         ready_for_first_pass = True
         next_gate = "booking_review"
-        summary = "Shipment has enough first-pass information for booking review."
+        summary = "Shipment has the required information and checks to proceed to booking review."
 
     if ready_for_booking:
         score = max(score, 80)
-    elif ready_for_first_pass and not unique_blockers:
+    elif ready_for_first_pass and not hard_blockers:
         score = max(score, 40)
 
     return {
@@ -200,6 +395,12 @@ def build_booking_readiness(payload: dict[str, Any]) -> dict[str, Any]:
         "blockers": unique_blockers[:10],
         "missing_information": unique_missing_information[:10],
         "review_items": unique_review_items[:10],
+        "booking_requirements": booking_requirements[:10],
+        "booking_missing_items": booking_missing[:10],
+        "booking_review_items": booking_review[:10],
+        "hard_blockers": hard_blockers[:10],
+        "informational_items": informational_items[:10],
+        "pre_dispatch_items": pre_dispatch_items[:10],
         "ready_items": unique_ready_items[:10],
         "next_steps": unique_next_steps[:8],
     }
