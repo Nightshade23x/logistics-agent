@@ -1,4 +1,4 @@
-# Logistics Multi-Agent System – Knowledge Transfer
+﻿# Logistics Multi-Agent System â€“ Knowledge Transfer
 
 ## 1. Purpose
 
@@ -113,38 +113,38 @@ The frontend should render structured response fields rather than recalculate lo
 
 ```text
 logistics-agent/
-├── api_server.py
-├── Start-Logistics-App.ps1
-├── app/
-│   ├── backend_service.py
-│   ├── llm_request_interpreter.py
-│   ├── logistics_agent.py
-│   ├── document_agent.py
-│   ├── dynamic_compliance_enrichment.py
-│   ├── frontend_response_cleanup.py
-│   ├── practical_imperial_precision_v80.py
-│   ├── unit_converter.py
-│   ├── container_fit.py
-│   ├── container_strategy.py
-│   ├── shipping_load_advisor.py
-│   ├── loading_planner.py
-│   ├── packaging_advisor.py
-│   ├── logistics_risk.py
-│   ├── readiness_checklist.py
-│   └── route_advisor.py
-├── data/
-│   └── dynamic_compliance_reference_v65.json
-├── docs/
-│   ├── agent_contract.md
-│   └── architecture.md
-├── frontend/
-│   └── src/components/Container3DVisualizer.jsx
-├── scripts/
-│   ├── test_*.py
-│   └── legacy_tests_retired_20260804/
-├── backups/
-├── patch_logs/
-└── test_outputs/
+â”œâ”€â”€ api_server.py
+â”œâ”€â”€ Start-Logistics-App.ps1
+â”œâ”€â”€ app/
+â”‚   â”œâ”€â”€ backend_service.py
+â”‚   â”œâ”€â”€ llm_request_interpreter.py
+â”‚   â”œâ”€â”€ logistics_agent.py
+â”‚   â”œâ”€â”€ document_agent.py
+â”‚   â”œâ”€â”€ dynamic_compliance_enrichment.py
+â”‚   â”œâ”€â”€ frontend_response_cleanup.py
+â”‚   â”œâ”€â”€ practical_imperial_precision_v80.py
+â”‚   â”œâ”€â”€ unit_converter.py
+â”‚   â”œâ”€â”€ container_fit.py
+â”‚   â”œâ”€â”€ container_strategy.py
+â”‚   â”œâ”€â”€ shipping_load_advisor.py
+â”‚   â”œâ”€â”€ loading_planner.py
+â”‚   â”œâ”€â”€ packaging_advisor.py
+â”‚   â”œâ”€â”€ logistics_risk.py
+â”‚   â”œâ”€â”€ readiness_checklist.py
+â”‚   â””â”€â”€ route_advisor.py
+â”œâ”€â”€ data/
+â”‚   â””â”€â”€ dynamic_compliance_reference_v65.json
+â”œâ”€â”€ docs/
+â”‚   â”œâ”€â”€ agent_contract.md
+â”‚   â””â”€â”€ architecture.md
+â”œâ”€â”€ frontend/
+â”‚   â””â”€â”€ src/components/Container3DVisualizer.jsx
+â”œâ”€â”€ scripts/
+â”‚   â”œâ”€â”€ test_*.py
+â”‚   â””â”€â”€ legacy_tests_retired_20260804/
+â”œâ”€â”€ backups/
+â”œâ”€â”€ patch_logs/
+â””â”€â”€ test_outputs/
 ```
 
 `backups`, `patch_logs`, and `test_outputs` are local development artefacts rather than core application source code.
@@ -315,7 +315,7 @@ Represents cargo with fields such as:
 Calculates one item's cubic volume:
 
 ```text
-length × width × height
+length Ã— width Ã— height
 ```
 
 ### `total_cbm`
@@ -323,7 +323,7 @@ length × width × height
 Calculates:
 
 ```text
-unit CBM × quantity
+unit CBM Ã— quantity
 ```
 
 ### `total_weight_kg`
@@ -331,7 +331,7 @@ unit CBM × quantity
 Calculates:
 
 ```text
-unit weight × quantity
+unit weight Ã— quantity
 ```
 
 ### `validate_item`
@@ -364,8 +364,8 @@ This is the main Logistics Agent planning function. It normalises cargo, creates
 
 The backend decides whether a shipment is more suitable for:
 
-- **FCL** – Full Container Load;
-- **LCL** – Less than Container Load.
+- **FCL** â€“ Full Container Load;
+- **LCL** â€“ Less than Container Load.
 
 The recommendation can consider:
 
@@ -922,15 +922,15 @@ Do not merge unverified changes into `main`.
 Use this to show that the full application works:
 
 ```text
-Ship 20 boxes from Mumbai, India to Hamburg, Germany. Each box is 1 m × 0.5 m × 0.5 m and weighs 30 kg. Recommend the container and shipping plan.
+Ship 20 boxes from Mumbai, India to Hamburg, Germany. Each box is 1 m Ã— 0.5 m Ã— 0.5 m and weighs 30 kg. Recommend the container and shipping plan.
 ```
 
 The basic expected calculations are:
 
 ```text
-Unit CBM = 1 × 0.5 × 0.5 = 0.25 CBM
-Total CBM = 0.25 × 20 = 5 CBM
-Total weight = 30 × 20 = 600 kg
+Unit CBM = 1 Ã— 0.5 Ã— 0.5 = 0.25 CBM
+Total CBM = 0.25 Ã— 20 = 5 CBM
+Total weight = 30 Ã— 20 = 600 kg
 ```
 
 The resulting UI should demonstrate parsing, metrics, load/container recommendation and the container visualiser.
@@ -1253,3 +1253,56 @@ The key maintenance principles are:
 6. keep regression tests for discovered edge cases;
 7. ensure optional integrations fail safely;
 8. update this KT document whenever the API contract, core planning flow, major agent responsibility, or frontend response structure changes.
+
+<!-- START: WINDOWS_ONE_CLICK_LAUNCHER -->
+## One-click Windows Application Launcher
+
+The project includes two startup files in the repository root:
+
+- `Launch Shipping App.cmd` â€” user-facing one-click Windows launcher.
+- `Start-Logistics-App.ps1` â€” PowerShell startup script that performs the actual application startup.
+
+For normal use on Windows, double-click:
+
+```text
+Launch Shipping App.cmd
+```
+
+The batch launcher changes to its own directory using `%~dp0` and then calls the PowerShell launcher. This keeps the launcher portable when the repository is cloned or moved to another folder.
+
+Startup sequence:
+
+```text
+Launch Shipping App.cmd
+        |
+        v
+Start-Logistics-App.ps1
+        |
+        +--> checks the repository/startup environment
+        +--> starts the FastAPI backend
+        +--> starts the React/Vite frontend
+```
+
+Default development endpoints:
+
+- Frontend: `http://localhost:5173`
+- Backend: `http://127.0.0.1:8000`
+
+Manual fallback:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\Start-Logistics-App.ps1
+```
+
+### Launcher troubleshooting
+
+If the `.cmd` file does not start the application:
+
+1. Confirm `Launch Shipping App.cmd` and `Start-Logistics-App.ps1` are both in the repository root.
+2. Run `Start-Logistics-App.ps1` manually from PowerShell to expose any startup error.
+3. Confirm Python/virtual-environment and Node/npm dependencies are available.
+4. Confirm the backend and frontend ports are not already occupied.
+
+The launcher contains no machine-specific repository path and should therefore work after the repository is moved or cloned to another Windows directory.
+<!-- END: WINDOWS_ONE_CLICK_LAUNCHER -->
+

@@ -1,4 +1,4 @@
-# Logistics Agent
+﻿# Logistics Agent
 
 A modular logistics-planning application with a React frontend, FastAPI backend, specialist agents, deterministic calculations, optional LLM interpretation, route and document guidance, landed-cost analysis, and a 3D container-loading visualizer.
 
@@ -202,3 +202,46 @@ Before merging into `main`:
 ## License
 
 No license is currently selected. The repository owner should choose one before external reuse or redistribution.
+
+<!-- START: WINDOWS_ONE_CLICK_LAUNCHER -->
+## Quick Start on Windows
+
+### One-click launcher
+
+The easiest way to start the application on Windows is to double-click:
+
+```text
+Launch Shipping App.cmd
+```
+
+The launcher is portable and uses the repository folder it is stored in. It calls `Start-Logistics-App.ps1`, which performs the existing startup checks and launches both the backend and frontend.
+
+Startup flow:
+
+```text
+Launch Shipping App.cmd
+        |
+        v
+Start-Logistics-App.ps1
+        |
+        +--> FastAPI backend
+        |
+        +--> React/Vite frontend
+```
+
+Default local addresses:
+
+- Frontend: `http://localhost:5173`
+- Backend: `http://127.0.0.1:8000`
+
+### PowerShell fallback
+
+If the one-click launcher cannot be used, start the application manually from the repository root:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\Start-Logistics-App.ps1
+```
+
+The `.cmd` file is intended as the normal Windows demo/startup method, while the PowerShell command remains available for troubleshooting and development.
+<!-- END: WINDOWS_ONE_CLICK_LAUNCHER -->
+
