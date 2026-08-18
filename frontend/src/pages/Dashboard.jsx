@@ -220,12 +220,40 @@ export default function Dashboard() {
 
 
   // MENTOR WORKFLOW QUICK GOALS V89
-  async function runGuidedGoal(goal) {
-    const nextRequest = buildGuidedShipmentRequestForGoal(goal);
+  // FREE_TEXT_QUICK_GOALS_V92
+  function buildFreeTextGoalRequest(goal) {
+    const instructions = {
+      shipping_plan: "Create a shipping plan for this same shipment.",
+      landed_cost: "Estimate the landed cost for this same shipment using the shipment details already provided.",
+      documents: "List the required shipping and compliance documents for this same shipment.",
+      suppliers: "Find suppliers and plan shipping for this same shipment.",
+    };
+
+    const instruction = instructions[goal];
+    if (!instruction) return "";
+
+    const base = String(text || "")
+      .split(/\r?\n/)
+      .filter((line) => !/^\s*Requested task:/i.test(line))
+      .join("\n")
+      .trim();
+
+    return `${base}\n\nRequested task: ${instruction}`.trim();
+  }
+
+  async function runReusableGoal(goal) {
+    const nextRequest =
+      simpleInputMode === "guided"
+        ? buildGuidedShipmentRequestForGoal(goal)
+        : buildFreeTextGoalRequest(goal);
 
     if (!nextRequest) {
-      setError("The saved guided shipment could not be reused. Edit the request step by step and try again.");
+      setError("The current shipment could not be reused for that task. Review the request and try again.");
       return;
+    }
+
+    if (simpleInputMode === "free") {
+      setText(nextRequest);
     }
 
     await submit(nextRequest);
@@ -411,7 +439,7 @@ export default function Dashboard() {
                 Clear all
               </button>
 
-              {mode === "text" && userView === "simple" && simpleInputMode === "guided" && showCurrentResult && result && text.trim() && (
+              {mode === "text" && userView === "simple" && (simpleInputMode === "guided" || simpleInputMode === "free") && showCurrentResult && result && text.trim() && (
                 <>
                   {GUIDED_GOAL_OPTIONS
                     .filter((option) => option.value !== getGuidedShipmentGoal())
@@ -420,7 +448,7 @@ export default function Dashboard() {
                         className="btn"
                         type="button"
                         key={option.value}
-                        onClick={() => runGuidedGoal(option.value)}
+                        onClick={() => runReusableGoal(option.value)}
                         disabled={loading}
                         title="Reuse the current shipment details for this additional task"
                       >
